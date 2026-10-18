@@ -32,6 +32,17 @@ def git_archive(repo, out_zip, *paths):
     subprocess.run(["git", "-C", repo, "archive", "--format=zip", "-o", out_zip, "HEAD", *paths], check=True)
 
 
+def source_zip(repo, out_zip, *paths):
+    """Tracked files from the working tree (the Witcher Online clone is partial, so `git archive` would
+    download missing objects). Asset bundles are left out: they ship in the package itself."""
+    files = subprocess.run(["git", "-C", repo, "ls-files", "--", *paths], capture_output=True, text=True, check=True).stdout.split("\n")
+    with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        for rel in filter(None, files):
+            path = os.path.join(repo, rel)
+            if os.path.isfile(path) and not rel.endswith(".bundle"):
+                z.write(path, rel)
+
+
 def main():
     version = sys.argv[1]
     out = os.path.join(REPOS, "work", "dist", f"W3Coop-{version}")
@@ -72,7 +83,7 @@ def main():
     shutil.copy2(os.path.join(BRIDGE, "LICENSE.txt"), os.path.join(docs, "licenses", "WitcherNativeBridge-MIT.txt"))
     shutil.copy2(os.path.join(UAL, "LICENSE"), os.path.join(docs, "licenses", "UltimateASILoader-MIT.txt"))
     # Witcher Online is GPL-3.0: ship the modified source with the binaries
-    git_archive(WO, os.path.join(docs, "source", "WitcherOnline-remastered-5.01.zip"), "client", "server", "witcher/mods", "LICENSE", "README.md")
+    source_zip(WO, os.path.join(docs, "source", "WitcherOnline-remastered-5.01.zip"), "client", "server", "witcher/mods", "LICENSE", "README.md")
     git_archive(TOOLS, os.path.join(docs, "source", "w3relay.zip"), "relay")
 
     zip_path = out + ".zip"
