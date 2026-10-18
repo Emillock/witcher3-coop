@@ -1,8 +1,8 @@
 // w3relay: carries Witcher Online's UDP traffic over Steam (AppID 480 "Spacewar") so friends join through a
 // Steam lobby without IP addresses or port forwarding (the HXCoop relay pattern from coop-anything).
 //
-//   w3relay host [--server-port 40000] [--server-jar PATH] [--game-dir DIR] [--no-invite]
-//   w3relay join [--lobby ID] [--local-port 40100] [--game-dir DIR]
+//   w3relay host [--server-port 40000] [--server-jar PATH] [--game-dir DIR] [--name NAME] [--no-invite]
+//   w3relay join [--lobby ID] [--local-port 40100] [--game-dir DIR] [--name NAME]
 //
 // Host: creates a friends-only lobby; every remote player gets its own local UDP socket "connected" to the
 // Witcher Online server on 127.0.0.1, so the server sees each friend as a separate client.
@@ -457,7 +457,7 @@ namespace
 
 	// ---- config.xml of Witcher Online ----
 
-	void PointGameAtRelay(const std::wstring &gameDir, uint16_t port)
+	void PointGameAtRelay(const std::wstring &gameDir, uint16_t port, const std::string &name)
 	{
 		const std::wstring path = gameDir + L"\\bin\\WitcherOnline\\config.xml";
 		std::ifstream in(path);
@@ -475,6 +475,8 @@ namespace
 			std::ofstream(backup) << xml;
 		xml = std::regex_replace(xml, std::regex("<ServerIP>[^<]*</ServerIP>"), "<ServerIP>127.0.0.1</ServerIP>");
 		xml = std::regex_replace(xml, std::regex("<Port>[^<]*</Port>"), "<Port>" + std::to_string(port) + "</Port>");
+		if (!name.empty())
+			xml = std::regex_replace(xml, std::regex("<Username>[^<]*</Username>"), "<Username>" + name + "</Username>");
 		std::ofstream(path) << xml;
 		printf("Witcher Online now connects to 127.0.0.1:%u (previous config kept as config.xml.before-w3relay).\n", port);
 	}
@@ -726,8 +728,8 @@ namespace
 
 	void Usage()
 	{
-		printf("w3relay host [--server-port 40000] [--server-jar PATH] [--game-dir DIR] [--no-invite]\n"
-		       "w3relay join [--lobby ID] [--local-port 40100] [--game-dir DIR]\n");
+		printf("w3relay host [--server-port 40000] [--server-jar PATH] [--game-dir DIR] [--name NAME] [--no-invite]\n"
+		       "w3relay join [--lobby ID] [--local-port 40100] [--game-dir DIR] [--name NAME]\n");
 	}
 } // namespace
 
@@ -744,6 +746,7 @@ int wmain(int argc, wchar_t **argv)
 	uint16_t serverPort = 40000, localPort = 40100;
 	uint64_t lobby = 0;
 	std::wstring jar, gameDir;
+	std::string name;
 	bool invite = true;
 	for (int i = 2; i < argc; ++i)
 	{
@@ -759,6 +762,15 @@ int wmain(int argc, wchar_t **argv)
 			jar = argv[++i];
 		else if (arg == L"--game-dir" && hasValue)
 			gameDir = argv[++i];
+		else if (arg == L"--name" && hasValue)
+		{
+			// Witcher Online accepts letters, digits and _ (2-16 characters)
+			for (const wchar_t c : std::wstring(argv[++i]))
+			{
+				if (name.size() < 16 && ((c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9') || c == L'_'))
+					name += static_cast<char>(c);
+			}
+		}
 		else if (arg == L"--no-invite")
 			invite = false;
 		else
@@ -780,13 +792,13 @@ int wmain(int argc, wchar_t **argv)
 	{
 		g_isHost = true;
 		if (!gameDir.empty())
-			PointGameAtRelay(gameDir, serverPort);
+			PointGameAtRelay(gameDir, serverPort, name);
 		rc = RunHost(serverPort, jar, invite);
 	}
 	else if (mode == L"join")
 	{
 		if (!gameDir.empty())
-			PointGameAtRelay(gameDir, localPort);
+			PointGameAtRelay(gameDir, localPort, name);
 		rc = RunJoin(lobby, localPort);
 	}
 	else
