@@ -140,7 +140,8 @@ function W3T_SharedEnemyLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
             W3T_Quit(2);
             return false;
         }
-        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Default);
+        // the cheat channel: combat code resets the default one
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         pos = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 6.0;
         rot = thePlayer.GetWorldRotation();
         bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
@@ -176,8 +177,8 @@ function W3T_SharedEnemyLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
 }
 
 // shared_enemy, member: join the leader's party, then hit the drowner's puppet three times through the damage
-// manager (15 % of max health each). Each hit must come back from the leader as the same health (within 2 %);
-// then the puppet must die when the leader kills it, with no second drowner in this world.
+// manager. This game's stats scale each hit; the leader's health must drop by exactly the fraction this game
+// sent (within 2 %). Then the puppet must die when the leader kills it, with no second drowner in this world.
 function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     var action : W3DamageAction;
@@ -190,6 +191,7 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     if(!client.getInParty())
     {
         W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         client.joinParty(leader.username);
         return false;
     }
@@ -212,19 +214,28 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
         + " alive=" + coop.PuppetAlive(index) + " spawned=" + coop.PuppetSpawned(index) + " pending=" + coop.PendingHitCount()
         + " pos=" + W3T_VecStr(puppet.GetWorldPosition()));
 
-    // scenarioCount: hits confirmed so far (0-3), then 5 once the death was seen
+    // scenarioCount: hits confirmed so far (0-3), then 5 once the death was seen; scenarioFlag: a hit in flight
     if(bot.scenarioCount < 3)
     {
-        if(bot.scenarioValue == 0)
+        if(!bot.scenarioFlag)
         {
+            coop.lastHitFrac = 0;
             action = new W3DamageAction in theGame.damageMgr;
             action.Initialize(thePlayer, puppet, thePlayer, "W3T", EHRT_Light, CPS_Undefined, true, false, false, false);
-            action.AddDamage(theGame.params.DAMAGE_NAME_DIRECT, 0.15 * puppet.GetMaxHealth());
+            action.AddDamage(theGame.params.DAMAGE_NAME_DIRECT, 0.04 * puppet.GetMaxHealth());
             theGame.damageMgr.ProcessAction(action);
             delete action;
-            bot.scenarioValue = 1.0 - 0.15 * (bot.scenarioCount + 1);
+            if(coop.lastHitFrac <= 0)
+            {
+                W3T_Log("FAIL hit " + (bot.scenarioCount + 1) + " was not captured for the leader");
+                W3T_Quit(1);
+                return false;
+            }
+            bot.scenarioValue = MaxF(0, hp - coop.lastHitFrac);
+            bot.scenarioFlag = true;
             bot.scenarioTime = bot.ElapsedS();
-            W3T_Log("HIT " + (bot.scenarioCount + 1) + " sent, expect hp " + FloatToStringPrec(bot.scenarioValue, 2));
+            W3T_Log("HIT " + (bot.scenarioCount + 1) + " sent: " + FloatToStringPrec(coop.lastHitFrac, 4)
+                + " of max health after this game's stats, expect hp " + FloatToStringPrec(bot.scenarioValue, 4));
         }
         else if(coop.PendingHitCount() == 0 && bot.ElapsedS() - bot.scenarioTime >= 2.0)
         {
@@ -236,7 +247,7 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
                 return false;
             }
             bot.scenarioCount += 1;
-            bot.scenarioValue = 0;
+            bot.scenarioFlag = false;
             W3T_Log("HIT " + bot.scenarioCount + " confirmed by the leader: hp " + FloatToStringPrec(hp, 4));
         }
         return false;

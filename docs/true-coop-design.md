@@ -36,7 +36,7 @@ puppet); client bot applies 3 hits through the normal damage path; both log the 
 
 Kill switch: `MPGhosts_SharedEnemies` menu option; when off, everything below is inactive.
 
-### As built (steps 1-3; not yet run in game)
+### As built (steps 1-3; exit test passes)
 
 Code: `scripts/local/coopEnemies.ws` in the Witcher Online fork, plus a `COOP` opcode in the client ASI and the
 server. Step 4 (host enemies hurting ghosts) is not done yet.
@@ -56,17 +56,25 @@ server. Step 4 (host enemies hurting ghosts) is not done yet.
 - **Hits.** `CNewNPC.OnTakeDamage` is wrapped. For a puppet, the damage this game computed (own stats, skills,
   crits, the monster's resistances) is sent as a fraction of max health and zeroed locally. The leader applies
   the fraction as direct damage, with the member's ghost as attacker. Fractions keep level-scaled health
-  consistent between worlds.
+  consistent between worlds. The damage processor multiplies an NPC attacker's damage by
+  `damage_final_multiplier` (difficulty; 3.3x on the test save), so the leader divides it back out.
 - **Duplicates.** Hostile NPCs within 30 m of a member that match nothing in the leader's world are hidden and
   idled while the member mirrors the leader, and restored when the member leaves.
 - **Kill switch.** The menu toggle is `MPGhosts_LocalEnemiesOnly`; off (the default) means shared. A new label in
   the mod's `.w3strings` is still needed.
-- **Unknowns for the first in-game run:** whether `GetReadableName()` is a loadable depot path (the bot logs it,
-  and a failure shows as `spawnFailures`); whether `BTAP_AboveCombat` holds a monster's combat tree; how a
-  forced-idle monster reacts to hits.
+- **Confirmed in game:** `GetReadableName()` returns the depot path (`characters\npc_entities\monsters\
+  drowner_lvl1.w2ent`), and `LoadResource` spawns from it.
+- **Still open:** whether `BTAP_AboveCombat` keeps every monster's combat tree idle (the drowner puppet
+  followed the leader's positions); how forced-idle monsters look when hit; twin matching on real encounter
+  spawns (the test spawns by script, so the member had no twin).
 
-Tests: `server_coop_test.py` (server channel, no game) passes. The `shared_enemy` bot scenario is written and
-waits for a free PC: `run_test.py shared_enemy`.
+Tests (2026-10-18):
+- `server_coop_test.py` (server channel, no game): PASS.
+- `run_test.py shared_enemy`, 2 clients on one PC: PASS. The member sent three hits of 4 % after its own
+  stats. Both games agreed on 0.96, 0.92 and 0.88. The puppet died about 0.6 s after the leader's kill,
+  within 0.6 m of the real drowner, with no duplicate.
+- Earlier runs failed and found two bugs: an NPC difficulty multiplier on applied hits, and the test leader's
+  invulnerability being reset on the default channel (now `AIC_Cheat`).
 
 ## Milestone 2: combat feel
 

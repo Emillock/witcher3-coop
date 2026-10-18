@@ -178,6 +178,10 @@ def main():
                 elif ("rc", i) not in seen:
                     seen[("rc", i)] = rc
                     print(f"[{time.time() - t0:6.1f}s] {bot_name(i)} exited rc={rc}", flush=True)
+            # a failed bot decides the run; its peers would only wait for the timeout
+            if any(seen.get(("rc", i)) not in (None, 0) for i in range(len(procs))):
+                print(f"[{time.time() - t0:6.1f}s] a bot failed; stopping the run", flush=True)
+                break
             if alive == 0:
                 break
             time.sleep(1)
