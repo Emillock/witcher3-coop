@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Deploys the Witcher Online scripts + client, the compile stubs and the test bot, then runs a compile-only check.
+# Deploys the Witcher Online scripts + client (with the compat stand-ins) and the test bot, then runs a
+# compile-only check.
 # Usage: compile.sh <tag> [extra deploy args...]
 set -u
 T=/c/Users/User/Desktop/repos/witcher3-coop-tools
@@ -8,7 +9,6 @@ tag=$1; shift
 cd "$T"
 python -I deploy.py install --scripts-only --dlc --no-gwent \
   --extra "$W\\WitcherOnline\\client\\build\\Release\\WitcherOnlineClient.asi=bin\\x64_dx12\\WitcherOnlineClient.asi" \
-  --extra "$W\\witcher3-coop-tools\\compile-stubs\\modWO_DepStubs=mods\\modWO_DepStubs" \
   --extra "$W\\witcher3-coop-tools\\w3test\\modW3Test=mods\\modW3Test" \
   --extra "$W\\witcher3-coop-tools\\w3test\\build\\w3test.asi=bin\\x64_dx12\\w3test.asi" \
   "$@" | tail -1

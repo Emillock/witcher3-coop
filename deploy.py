@@ -23,6 +23,7 @@ GWENT_BUNDLE = (os.path.join("mods", "modWitcherOnline", "content", "blob0.bundl
 def mappings(a):
     w = os.path.join(REPO, "witcher")
     yield os.path.join(w, "mods", "modWitcherOnline"), os.path.join("mods", "modWitcherOnline")
+    yield os.path.join(w, "mods", "modWitcherOnlineCompat"), os.path.join("mods", "modWitcherOnlineCompat")
     if a.dlc or not a.scripts_only:
         yield os.path.join(w, "dlc", "dlcWitcherOnline"), os.path.join("dlc", "dlcWitcherOnline")
     if a.scripts_only:

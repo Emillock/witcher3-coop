@@ -5,6 +5,7 @@ import argparse
 import ctypes
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -51,6 +52,21 @@ def gpu_used_mb():
         return "unknown"
 
 
+RELAY_BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "relay", "build")
+
+
+def start_relay(run_dir, mock_dir, name, steam_id, args):
+    """w3relay with the mock steam_api64.dll next to it (one PC can't run two real Steam accounts)."""
+    d = os.path.join(run_dir, name)
+    os.makedirs(d)
+    shutil.copy2(os.path.join(RELAY_BUILD, "w3relay.exe"), d)
+    shutil.copy2(os.path.join(RELAY_BUILD, "mock", "steam_api64.dll"), d)
+    env = dict(os.environ, MOCK_STEAM_DIR=mock_dir, MOCK_STEAM_ID=str(steam_id), MOCK_STEAM_NAME=name)
+    return subprocess.Popen([os.path.join(d, "w3relay.exe")] + args, cwd=d, env=env,
+                            stdout=open(os.path.join(d, "relay.log"), "w"), stderr=subprocess.STDOUT,
+                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+
+
 def wait_in_world(log_path, limit, t0):
     """Waits until a bot's log shows it reached the world (or `limit` seconds)."""
     deadline = time.time() + limit
@@ -81,11 +97,12 @@ def main():
     ap.add_argument("--stagger", type=int, default=15)
     ap.add_argument("--timeout", type=int, default=420)
     ap.add_argument("--save", default="")
-    ap.add_argument("--grace", type=int, default=20, help="seconds a bot stays after passing")
+    ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
     ap.add_argument("--port", type=int, default=41000)
+    ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
     a = ap.parse_args()
 
-    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario)
+    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario + ("-relay" if a.relay else ""))
     os.makedirs(run_dir)
     print(f"run dir: {run_dir}", flush=True)
 
@@ -93,6 +110,16 @@ def main():
     server = subprocess.Popen(["java", "-jar", SERVER_JAR, str(a.port)], cwd=os.path.dirname(SERVER_JAR),
                               stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT)
     time.sleep(2)
+
+    relays = []
+    if a.relay:
+        mock_dir = os.path.join(run_dir, "mocksteam")
+        os.makedirs(mock_dir)
+        relays.append(start_relay(run_dir, mock_dir, "relay-host", 1001, ["host", "--server-port", str(a.port), "--no-invite"]))
+        time.sleep(1.5)
+        for i in range(1, a.bots):
+            relays.append(start_relay(run_dir, mock_dir, f"relay-{bot_name(i)}", 1001 + i,
+                                      ["join", "--local-port", str(a.port + 100 + i)]))
 
     procs = []
     t0 = time.time()
@@ -102,7 +129,8 @@ def main():
             save = make_sandbox(docs, a.save)
             print(f"[{time.time() - t0:6.1f}s] {bot_name(i)} sandbox with save {save}", flush=True)
             env = dict(os.environ, SteamAppId="292030", SteamGameId="292030", W3T_DOCUMENTS=docs,
-                       WO_USERNAME=bot_name(i), WO_SERVER_IP="127.0.0.1", WO_SERVER_PORT=str(a.port),
+                       WO_USERNAME=bot_name(i), WO_SERVER_IP="127.0.0.1",
+                       WO_SERVER_PORT=str(a.port + 100 + i if a.relay and i > 0 else a.port),
                        W3T_SCENARIO=a.scenario, W3T_DURATION=str(a.duration), W3T_SAVE=a.save,
                        W3T_PEERS=str(a.bots - 1), W3T_ROLE="mover" if i == 0 else "observer",
                        W3T_GRACE=str(a.grace),
@@ -122,6 +150,13 @@ def main():
                 next_stats = time.time() + 15
                 mem = ", ".join(f"{bot_name(i)} {private_mb(p.pid)} MB" for i, p in enumerate(procs) if p.poll() is None)
                 print(f"[{time.time() - t0:6.1f}s] stats: {mem}; GPU {gpu_used_mb()}", flush=True)
+            # bots stay in the world after passing (peers may still need them); end once all have passed
+            if len(procs) == a.bots and all(
+                    "PASS condition met" in open(os.path.join(run_dir, bot_name(i) + ".log"), encoding="utf-8", errors="replace").read()
+                    for i in range(a.bots) if os.path.exists(os.path.join(run_dir, bot_name(i) + ".log"))) \
+                    and all(os.path.exists(os.path.join(run_dir, bot_name(i) + ".log")) for i in range(a.bots)):
+                print(f"[{time.time() - t0:6.1f}s] every bot passed; stopping the run", flush=True)
+                break
             alive = 0
             for i, p in enumerate(procs):
                 rc = p.poll()
@@ -146,16 +181,25 @@ def main():
         for i, p in enumerate(procs):
             if p.poll() is None:
                 p.kill()
-                print(f"killed {bot_name(i)} (timeout)", flush=True)
+                print(f"stopped {bot_name(i)}", flush=True)
         try:
             server.stdin.write(b"stop\n")
             server.stdin.flush()
         except OSError:
             pass
+        for r in relays:
+            r.send_signal(subprocess.signal.CTRL_BREAK_EVENT)
         time.sleep(1)
         if server.poll() is None:
             server.kill()
         server_log.close()
+        for r in relays:
+            if r.poll() is None:
+                r.kill()
+        for name in sorted(os.listdir(run_dir)):
+            if name.startswith("relay-"):
+                text = open(os.path.join(run_dir, name, "relay.log"), encoding="utf-8", errors="replace").read()
+                print(f"--- {name}: {' | '.join(text.strip().splitlines()[-4:])}")
 
     logs = {}
     for i in range(a.bots):
