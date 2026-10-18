@@ -36,10 +36,10 @@ puppet); client bot applies 3 hits through the normal damage path; both log the 
 
 Kill switch: `MPGhosts_SharedEnemies` menu option; when off, everything below is inactive.
 
-### As built (steps 1-3; exit test passes)
+### As built (steps 1-4; exit tests pass)
 
 Code: `scripts/local/coopEnemies.ws` in the Witcher Online fork, plus a `COOP` opcode in the client ASI and the
-server. Step 4 (host enemies hurting ghosts) is not done yet.
+server.
 
 - **Transport.** `COOP` packets carry a channel name and fields. The server keeps each player's latest value per
   channel (at most 4) and rebroadcasts it every 100 ms, like Witcher Online's own state; the client passes a
@@ -47,7 +47,9 @@ server. Step 4 (host enemies hurting ghosts) is not done yet.
   the next one.
   - `en` (leader): `epoch seq area`, hit acknowledgements `user session lastSeq`, a template table, then per
     enemy `netId template appearance x y z yaw health alive`. At most 24 enemies.
-  - `hit` (member): `leader epoch session`, then every hit not yet acknowledged as `seq netId fraction`.
+  - `hit` (member): `leader epoch session hurtAck`, then every hit not yet acknowledged as `seq netId fraction`.
+  - `hurt` (leader): `epoch`, then every hit on a member's ghost not yet acknowledged, as
+    `user seq netId hitReaction` plus raw damage `type value` pairs.
 - **Roles.** Witcher Online's party decides: the leader of a party with members is the authority; a member
   mirrors its leader in the same area. Not in a party: nothing changes.
 - **Puppets.** Twin search: same `GetReadableName()` within 10 m, else spawn from that path with `LoadResource`.
@@ -58,6 +60,14 @@ server. Step 4 (host enemies hurting ghosts) is not done yet.
   the fraction as direct damage, with the member's ghost as attacker. Fractions keep level-scaled health
   consistent between worlds. The damage processor multiplies an NPC attacker's damage by
   `damage_final_multiplier` (difficulty; 3.3x on the test save), so the leader divides it back out.
+- **Monsters hurting members (step 4).** On the leader, party members' ghosts join the player's attitude group
+  and become gameplay-visible, since attack tickets skip invisible non-player targets (`btTicket.ws`). They stay
+  invulnerable. A `W3DamageManagerProcessor.ProcessAction` wrap records a shared monster's hit on a ghost: its
+  raw damage types and values and its hit reaction, before the ghost's invulnerability zeroes them. The member
+  applies them to its own Geralt with the monster's puppet as attacker, so the member's armor, Quen and
+  difficulty count; a hit that lands mid-dodge misses. The same wrap stops ghosts' own AI from damaging the
+  leader's monsters, since members' hits arrive as claims. The leader also collects NPCs hostile to a member's
+  ghost, not only to its own Geralt. Ghost hits register even though Witcher Online disables ghost collisions.
 - **Duplicates.** Hostile NPCs within 30 m of a member that match nothing in the leader's world are hidden and
   idled while the member mirrors the leader, and restored when the member leaves.
 - **Kill switch.** The menu toggle is `MPGhosts_LocalEnemiesOnly`; off (the default) means shared. A new label in
@@ -73,8 +83,13 @@ Tests (2026-10-18):
 - `run_test.py shared_enemy`, 2 clients on one PC: PASS. The member sent three hits of 4 % after its own
   stats. Both games agreed on 0.96, 0.92 and 0.88. The puppet died about 0.6 s after the leader's kill,
   within 0.6 m of the real drowner, with no duplicate.
-- Earlier runs failed and found two bugs: an NPC difficulty multiplier on applied hits, and the test leader's
-  invulnerability being reset on the default channel (now `AIC_Cheat`).
+- `run_test.py enemy_attacks`, 2 clients: PASS. The leader's drowner, neutral to the leader, attacked the
+  member's ghost. Five hits were captured and acknowledged, and the member took 560 and 588 damage from the
+  first two after its own armor.
+- Earlier runs failed and found three bugs:
+  - the NPC difficulty multiplier was applied to members' hits;
+  - the leader only tracked monsters hostile to its own Geralt;
+  - the test leader's invulnerability was reset on the default channel (now `AIC_Cheat`).
 
 ## Milestone 2: combat feel
 

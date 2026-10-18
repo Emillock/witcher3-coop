@@ -58,6 +58,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_SharedEnemyMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "enemy_attacks")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_EnemyAttacksLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     W3T_Log("FAIL unknown scenario " + scenario);
     W3T_Quit(2);
     return false;
@@ -276,6 +289,101 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     return bot.scenarioCount >= 5;
 }
 
+// enemy_attacks, leader: spawn a drowner next to the member's ghost, neutral to this Geralt so the ghost is its
+// only target. Passes once at least two of its hits on the ghost were sent and acknowledged.
+function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var drowner : CNewNPC;
+    var target : CActor;
+    var targetName : string;
+    var pos : Vector;
+    var rot : EulerAngles;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(coop.GetRole() != 1 || !member.ghost)
+        {
+            return false;
+        }
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        if(!template)
+        {
+            W3T_Log("FAIL drowner template not found");
+            W3T_Quit(2);
+            return false;
+        }
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        pos = member.ghost.GetWorldPosition() + VecFromHeading(member.ghost.GetHeading()) * 3.0;
+        rot = member.ghost.GetWorldRotation();
+        bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
+        drowner = (CNewNPC)bot.scenarioEntity;
+        drowner.SetAttitude(thePlayer, AIA_Neutral);
+        W3T_Log("ENEMY spawned drowner next to " + member.username + "'s ghost at " + W3T_VecStr(pos));
+        bot.scenarioCount = 1;
+        return false;
+    }
+
+    drowner = (CNewNPC)bot.scenarioEntity;
+    if(!drowner)
+    {
+        W3T_Log("FAIL drowner is gone");
+        W3T_Quit(2);
+        return false;
+    }
+
+    target = drowner.GetTarget();
+    targetName = "none";
+    if(target == thePlayer)
+    {
+        targetName = "leader";
+    }
+    else if(target && target.HasTag('MPEntity'))
+    {
+        targetName = "ghost";
+    }
+    else if(target)
+    {
+        targetName = target.GetReadableName();
+    }
+    W3T_Log("ENEMY leader drowner target=" + targetName + " hp=" + FloatToStringPrec(drowner.GetHealthPercents(), 4)
+        + " ghostHits=" + coop.ghostHitsSeen + " hurtsCaptured=" + coop.hurtsCaptured + " pendingHurts=" + coop.PendingHurtCount()
+        + " tracked=" + coop.HostNetIdOf(drowner) + " ghostAttitude=" + drowner.GetAttitude(member.ghost)
+        + " ghostDist=" + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), member.ghost.GetWorldPosition()), 2));
+
+    if(bot.scenarioCount == 1 && coop.hurtsCaptured >= 2 && coop.PendingHurtCount() == 0)
+    {
+        W3T_Log("ENEMY leader: " + coop.hurtsCaptured + " hits on the ghost sent and acknowledged");
+        bot.scenarioCount = 2;
+    }
+    return bot.scenarioCount == 2;
+}
+
+// enemy_attacks, member: join the leader's party; the leader's drowner attacks this player's ghost, and those
+// hits must land on this Geralt (at least two, with real damage after this game's armor).
+function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        return false;
+    }
+
+    W3T_Log("ENEMY member vitality=" + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0) + " hurtsApplied=" + coop.hurtsApplied
+        + " dodged=" + coop.hurtsDodged + " damageTaken=" + FloatToStringPrec(coop.hurtDamageTaken, 1) + " puppets=" + coop.PuppetCount());
+
+    if(bot.scenarioCount == 0 && coop.hurtsApplied >= 2 && coop.hurtDamageTaken > 0)
+    {
+        W3T_Log("ENEMY member took " + FloatToStringPrec(coop.hurtDamageTaken, 1) + " damage from " + coop.hurtsApplied
+            + " of the leader's drowner hits");
+        // survive the rest of the run
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        bot.scenarioCount = 1;
+    }
+    return bot.scenarioCount == 1;
+}
+
 function W3T_ReportExtra(bot : W3T_Bot)
 {
     var client : r_MultiplayerClient;
@@ -317,5 +425,6 @@ function W3T_ReportExtra(bot : W3T_Bot)
     W3T_Log("COOP role=" + coop.GetRole() + " party=" + client.getInParty() + "/" + client.getJoinedParty()
         + " leaderEnemies=" + coop.HostEnemyCount() + " puppets=" + coop.PuppetCount() + " suppressed=" + coop.SuppressedCount()
         + " hitsSent=" + coop.hitsSent + " hitsApplied=" + coop.hitsApplied + " spawned=" + coop.puppetsSpawned
-        + " twins=" + coop.twinsBound + " spawnFailures=" + coop.spawnFailures + " lastError=" + coop.lastError);
+        + " twins=" + coop.twinsBound + " spawnFailures=" + coop.spawnFailures + " hurtsCaptured=" + coop.hurtsCaptured
+        + " hurtsApplied=" + coop.hurtsApplied + " lastError=" + coop.lastError);
 }
