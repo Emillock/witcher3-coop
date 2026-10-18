@@ -82,6 +82,8 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `./compile.sh <tag>` (Git Bash) | Deploys the port and the test bot into the game folder and runs only the game's script compiler. |
 | `python run_test.py see_each_other` | Starts a local server and two games driven by the bot. They must spawn each other. |
 | `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
+| `python run_test.py shared_enemy` | Shared enemies (work in progress, [design](docs/true-coop-design.md)). The second bot joins the first one's party. The first spawns a drowner; the second hits its copy three times. Both must agree on its health, and the copy must die when the first bot kills it. |
+| `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
 | `python deploy.py uninstall` | Removes exactly the files deploy installed (`<root>\work\deploy-manifest.json`), restoring anything it replaced. |
 
 Under the test bot (`w3test.asi`, which runs only when the harness sets `W3T_DOCUMENTS`), each game uses a

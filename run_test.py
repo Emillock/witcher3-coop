@@ -94,7 +94,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("scenario")
     ap.add_argument("--bots", type=int, default=2)
-    ap.add_argument("--duration", type=int, default=60)
+    ap.add_argument("--duration", type=int, help="in-game seconds before a bot fails (default 60; shared_enemy 300)")
     ap.add_argument("--stagger", type=int, default=15)
     ap.add_argument("--timeout", type=int, default=420)
     ap.add_argument("--save", default="")
@@ -102,8 +102,11 @@ def main():
     ap.add_argument("--port", type=int, default=41000)
     ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
     a = ap.parse_args()
+    if a.duration is None:
+        # the leader waits for the member to load and join before the fight starts
+        a.duration = 300 if a.scenario == "shared_enemy" else 60
 
-    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario + ("-relay" if a.relay else ""))
+    run_dir =os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario + ("-relay" if a.relay else ""))
     os.makedirs(run_dir)
     print(f"run dir: {run_dir}", flush=True)
 

@@ -213,6 +213,8 @@ statemachine class W3T_Bot
     public var scenarioFlag : bool;
     public var scenarioTime : float;
     public var scenarioCount : int;
+    public var scenarioEntity : CEntity;
+    public var scenarioValue : float;
 
     public function Start()
     {

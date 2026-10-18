@@ -36,6 +36,38 @@ puppet); client bot applies 3 hits through the normal damage path; both log the 
 
 Kill switch: `MPGhosts_SharedEnemies` menu option; when off, everything below is inactive.
 
+### As built (steps 1-3; not yet run in game)
+
+Code: `scripts/local/coopEnemies.ws` in the Witcher Online fork, plus a `COOP` opcode in the client ASI and the
+server. Step 4 (host enemies hurting ghosts) is not done yet.
+
+- **Transport.** `COOP` packets carry a channel name and fields. The server keeps each player's latest value per
+  channel (at most 4) and rebroadcasts it every 100 ms, like Witcher Online's own state; the client passes a
+  channel's value to scripts only when it changed. Both channels are state, so a lost packet is repaired by
+  the next one.
+  - `en` (leader): `epoch seq area`, hit acknowledgements `user session lastSeq`, a template table, then per
+    enemy `netId template appearance x y z yaw health alive`. At most 24 enemies.
+  - `hit` (member): `leader epoch session`, then every hit not yet acknowledged as `seq netId fraction`.
+- **Roles.** Witcher Online's party decides: the leader of a party with members is the authority; a member
+  mirrors its leader in the same area. Not in a party: nothing changes.
+- **Puppets.** Twin search: same `GetReadableName()` within 10 m, else spawn from that path with `LoadResource`.
+  AI is pre-empted with `CAIDoNothingAction` at `BTAP_AboveCombat` (the pattern `DogNPC.ws` uses) and given back
+  on release. Movement uses the movement adjustor like Witcher Online's ghosts; health uses `SetHealthPerc`.
+- **Hits.** `CNewNPC.OnTakeDamage` is wrapped. For a puppet, the damage this game computed (own stats, skills,
+  crits, the monster's resistances) is sent as a fraction of max health and zeroed locally. The leader applies
+  the fraction as direct damage, with the member's ghost as attacker. Fractions keep level-scaled health
+  consistent between worlds.
+- **Duplicates.** Hostile NPCs within 30 m of a member that match nothing in the leader's world are hidden and
+  idled while the member mirrors the leader, and restored when the member leaves.
+- **Kill switch.** The menu toggle is `MPGhosts_LocalEnemiesOnly`; off (the default) means shared. A new label in
+  the mod's `.w3strings` is still needed.
+- **Unknowns for the first in-game run:** whether `GetReadableName()` is a loadable depot path (the bot logs it,
+  and a failure shows as `spawnFailures`); whether `BTAP_AboveCombat` holds a monster's combat tree; how a
+  forced-idle monster reacts to hits.
+
+Tests: `server_coop_test.py` (server channel, no game) passes. The `shared_enemy` bot scenario is written and
+waits for a free PC: `run_test.py shared_enemy`.
+
 ## Milestone 2: combat feel
 
 Animation mirroring for puppets (attack, hit reaction, death) from host behavior events; aggro on the
