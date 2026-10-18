@@ -21,6 +21,8 @@ GWENT_BUNDLE = (os.path.join("mods", "modWitcherOnline", "content", "blob0.bundl
 
 
 def mappings(a):
+    if a.no_repo:
+        return
     w = os.path.join(REPO, "witcher")
     yield os.path.join(w, "mods", "modWitcherOnline"), os.path.join("mods", "modWitcherOnline")
     yield os.path.join(w, "mods", "modWitcherOnlineCompat"), os.path.join("mods", "modWitcherOnlineCompat")
@@ -33,17 +35,25 @@ def mappings(a):
 
 
 def skipped(a, rel):
-    name = os.path.basename(rel)
-    if a.no_gwent and (name in GWENT_OVERRIDES or rel in GWENT_BUNDLE):
+    name = rel.split("\\")[-1]
+    if a.no_gwent and (name in GWENT_OVERRIDES or rel in {norm(p) for p in GWENT_BUNDLE}):
         return True
     # install notes at the mod root (input.settings.txt etc.) are not game files
-    return os.path.dirname(rel) == os.path.join("mods", "modWitcherOnline") and name.endswith((".txt", ".csv"))
+    return rel.rsplit("\\", 1)[0] == "mods\\modWitcherOnline" and name.endswith((".txt", ".csv"))
+
+
+def norm(rel):
+    # one spelling per path: "a/b" and "a\\b" must never be two manifest entries
+    return os.path.normpath(rel).replace("/", "\\")
 
 
 def load_manifest():
-    if os.path.exists(MANIFEST):
-        return json.load(open(MANIFEST, encoding="utf-8"))
-    return {"files": [], "backups": {}}
+    if not os.path.exists(MANIFEST):
+        return {"files": [], "backups": {}}
+    m = json.load(open(MANIFEST, encoding="utf-8"))
+    m["files"] = sorted({norm(f) for f in m["files"]})
+    m["backups"] = {norm(k): v for k, v in m["backups"].items()}
+    return m
 
 
 def install_file(src, rel, manifest):
@@ -66,11 +76,11 @@ def install(a):
     wanted = {}
     for src, rel_root in pairs:
         if os.path.isfile(src):
-            wanted[rel_root] = src
+            wanted[norm(rel_root)] = src
             continue
         for dp, _, fns in os.walk(src):
             for f in fns:
-                rel = os.path.join(rel_root, os.path.relpath(os.path.join(dp, f), src))
+                rel = norm(os.path.join(rel_root, os.path.relpath(os.path.join(dp, f), src)))
                 if not skipped(a, rel):
                     wanted[rel] = os.path.join(dp, f)
     for rel, src in wanted.items():
@@ -111,6 +121,7 @@ def main():
     ap.add_argument("--scripts-only", action="store_true")
     ap.add_argument("--no-gwent", action="store_true")
     ap.add_argument("--dlc", action="store_true", help="also install dlc\\dlcWitcherOnline (player ghost templates, emotes)")
+    ap.add_argument("--no-repo", action="store_true", help="install only the --extra sources (e.g. a built package)")
     ap.add_argument("--extra", action="append", default=[], help="<abs src>=<game-relative dst>")
     a = ap.parse_args()
     install(a) if a.action == "install" else uninstall()
