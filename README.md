@@ -1,0 +1,118 @@
+# Witcher 3 co-op (Remastered)
+
+Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Steam, using
+[Witcher Online](https://github.com/rejuvenate7/WitcherOnline) ported to the Remastered build.
+
+- The port of Witcher Online itself is in the fork
+  [Emillock/WitcherOnline, branch `remastered-5.01`](https://github.com/Emillock/WitcherOnline/tree/remastered-5.01).
+- This repo holds what goes around it:
+  - **w3relay**: carries the game's traffic over Steam, so nobody opens ports or shares an IP address.
+  - The **player package** builder.
+  - The **test harness** that runs two game copies on one PC with an in-game bot.
+
+## Status: v0.1.0 pre-release
+
+Players see each other in their own worlds. Each player keeps their own save; enemies, quests and loot
+are **not** shared yet. Gwent duels between players are switched off.
+
+| | |
+|---|---|
+| Tested | Two game copies on one PC see each other and follow each other's movement, both directly and through w3relay with a stand-in for Steam. w3relay creates and leaves a lobby on real Steam. |
+| Not tested yet | Two real Steam accounts on different PCs. Chat, emotes, horses, party and dialogue sync on 5.01. |
+| Next | Shared enemies and quest progress, see [docs/true-coop-design.md](docs/true-coop-design.md). |
+
+## Playing
+
+Download `W3Coop-0.1.0.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
+its contents into your Witcher 3 folder. `W3Coop\README.txt` inside covers hosting, joining and uninstalling.
+The host needs Java 21 or newer.
+
+How the connection works:
+
+1. `Host co-op.cmd` starts the Witcher Online server and a w3relay host.
+2. The relay host creates a friends-only Steam lobby.
+3. `Join co-op.cmd` finds that lobby and opens a local UDP port, and the game connects to it.
+4. Packets travel over Steam's networking (`ISteamNetworkingMessages`).
+
+The relay runs as Valve's free test app Spacewar (AppID 480), so while it runs Steam shows "Playing Spacewar".
+It loads the game's own `steam_api64.dll`. No Steamworks SDK files are in this repo.
+
+## Building
+
+You need Windows, Visual Studio 2022 with the C++ desktop workload, JDK 21, Python 3.10+ and Git Bash.
+Put the repos side by side:
+
+```
+<root>\witcher3-coop            this repo (any folder name)
+<root>\WitcherOnline            Emillock/WitcherOnline, branch remastered-5.01
+<root>\WitcherNativeBridge      rejuvenate7/WitcherNativeBridge (master supports 5.01)
+<root>\deps\ultimate-asi-loader-9.7.4\dinput8.dll and LICENSE
+                                from Ultimate-ASI-Loader-NoPDB_x64.zip, ThirteenAG/Ultimate-ASI-Loader v9.7.4
+```
+
+Run these from a Developer Command Prompt:
+
+```bat
+cd <root>\WitcherNativeBridge
+msbuild WitcherNativeBridge.sln -p:Configuration=Release -p:Platform=x64
+
+rem The client project's own OutDir points at a GOG install, so override it.
+cd <root>\WitcherOnline\client
+msbuild MultiplayerClient.sln -p:Configuration=Release -p:Platform=x64 -p:OutDir=<root>\WitcherOnline\client\build\Release\
+
+cd <root>\WitcherOnline\server
+mkdir build\classes
+javac -encoding UTF-8 -d build\classes src\*.java
+cd build\classes && jar cfm ..\WitcherServer.jar ..\..\src\META-INF\MANIFEST.MF *.class
+
+cd <root>\witcher3-coop
+relay\build.cmd
+w3test\build.cmd
+python package\build_package.py 0.1.0
+```
+
+The last step writes `<root>\work\dist\W3Coop-0.1.0` and its zip. [config.py](config.py) finds the game
+through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
+
+## Testing
+
+| Command | What it does |
+|---|---|
+| `python relay\selftest.py` | Two relays and a mock Steam, no game. Checks traffic in both directions, a client that arrives late, and that a non-member can't reach the server. |
+| `./compile.sh <tag>` (Git Bash) | Deploys the port and the test bot into the game folder and runs only the game's script compiler. |
+| `python run_test.py see_each_other` | Starts a local server and two games driven by the bot. They must spawn each other. |
+| `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
+| `python deploy.py uninstall` | Removes exactly the files deploy installed (`<root>\work\deploy-manifest.json`), restoring anything it replaced. |
+
+Under the test bot (`w3test.asi`, which runs only when the harness sets `W3T_DOCUMENTS`), each game uses a
+throwaway Documents folder. That folder holds copies of your settings and of your newest save (or `--save SUBSTR`),
+so tests never write your saves or settings. The bot also:
+
+- applies the lowest graphics preset at 640x360 and 30 FPS, with ray tracing off;
+- mutes the game;
+- lets two copies start at once and keeps both running unfocused;
+- skips the intro movies, answers start-up dialogs and loads the save.
+
+Two copies of the game still need a fair amount of GPU memory.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `relay/` | w3relay (host and join), the mock `steam_api64.dll` for one-PC tests, self-test |
+| `package/` | Package builder, `Host co-op.cmd`, `Join co-op.cmd`, player README |
+| `w3test/` | The test bot: ASI (test-mode hooks, env natives) and script mod (scenarios) |
+| `run_test.py`, `w3run.py`, `sandbox.py`, `preset_expand.py`, `deploy.py`, `compile.sh` | Harness |
+| `ws_*_check.py`, `wnb_static_check.py`, `port_edits/`, `exe_strings.py`, `pe_imports.py` | Static checks and scripted edits used during the port |
+| `docs/` | Design notes |
+
+## Credits and licenses
+
+- This repo: MIT, see [LICENSE](LICENSE).
+- Witcher Online: rejuvenate7 and contributors, GPL-3.0. The player package ships the modified source.
+- WitcherNativeBridge: Flawkee and rejuvenate7, MIT.
+- Ultimate ASI Loader: ThirteenAG, MIT.
+- The approach (Steam relay over Spacewar, automated multi-instance tests) follows the
+  [coop-anything](https://github.com/cranebeaker/coop-anything) playbook.
+
+This project is not affiliated with CD PROJEKT RED or Valve. The Witcher 3 is a trademark of CD PROJEKT S.A.

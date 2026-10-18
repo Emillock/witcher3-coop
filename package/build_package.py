@@ -6,12 +6,9 @@ import subprocess
 import sys
 import zipfile
 
-REPOS = r"C:\Users\User\Desktop\repos"
-WO = os.path.join(REPOS, "WitcherOnline")
-TOOLS = os.path.join(REPOS, "witcher3-coop-tools")
-BRIDGE = os.path.join(REPOS, "WitcherNativeBridge")
-UAL = os.path.join(REPOS, "deps", "ultimate-asi-loader-9.7.4")
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+from config import BRIDGE, TOOLS, UAL, WO, WORK  # noqa: E402
 
 # 4.04 Gwent board files that would replace the Remastered Gwent UI, and the hooks that need them
 GWENT_ONLY = {"gwintManager.ws", "gwintGameMenu.ws", "gwentHooks.ws", "blob0.bundle", "metadata.store"}
@@ -45,7 +42,7 @@ def source_zip(repo, out_zip, *paths):
 
 def main():
     version = sys.argv[1]
-    out = os.path.join(REPOS, "work", "dist", f"W3Coop-{version}")
+    out = os.path.join(WORK, "dist", f"W3Coop-{version}")
     if os.path.exists(out):
         shutil.rmtree(out)
     w = os.path.join(WO, "witcher")

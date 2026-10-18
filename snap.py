@@ -4,10 +4,12 @@ import json
 import os
 import sys
 
-ROOTS = [r"C:\Users\User\Documents\The Witcher 3", r"C:\Users\User\AppData\Local\REDEngine",
-         r"C:\Users\User\AppData\Local\CD Projekt Red", r"C:\Users\User\AppData\Local\mod.io",
-         r"C:\Users\User\AppData\Roaming\The Witcher 3", r"C:\Users\User\AppData\Roaming\CD Projekt Red",
-         r"D:\SteamLibrary\steamapps\common\The Witcher 3"]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import GAME, USER_W3_DOCS  # noqa: E402
+
+LOCAL, ROAMING = os.environ["LOCALAPPDATA"], os.environ["APPDATA"]
+ROOTS = [USER_W3_DOCS, os.path.join(LOCAL, "REDEngine"), os.path.join(LOCAL, "CD Projekt Red"), os.path.join(LOCAL, "mod.io"),
+         os.path.join(ROAMING, "The Witcher 3"), os.path.join(ROAMING, "CD Projekt Red"), GAME]
 
 
 def snap():

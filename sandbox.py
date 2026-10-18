@@ -5,11 +5,12 @@ import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import GAME, USER_W3_DOCS  # noqa: E402
 from preset_expand import expand_preset  # noqa: E402
 
-OWNER_W3_DOCS = os.path.join(os.environ["USERPROFILE"], "Documents", "The Witcher 3")
+OWNER_W3_DOCS = USER_W3_DOCS
 SETTINGS_FILES = ("dx12user.settings", "input.settings", "profile.settings", "mods.settings")
-GRAPHICS_XML = r"D:\SteamLibrary\steamapps\common\The Witcher 3\bin\config\r4game\user_config_matrix\pc\graphics.xml"
+GRAPHICS_XML = os.path.join(GAME, "bin", "config", "r4game", "user_config_matrix", "pc", "graphics.xml")
 TEST_RESOLUTION = "640x360"
 
 # On top of the game's own "low" preset: 30 FPS cap, no AA/upscaling/frame generation, no post effects.

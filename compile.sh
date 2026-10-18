@@ -3,17 +3,19 @@
 # compile-only check.
 # Usage: compile.sh <tag> [extra deploy args...]
 set -u
-T=/c/Users/User/Desktop/repos/witcher3-coop-tools
-W='C:\Users\User\Desktop\repos'
+T=$(cd "$(dirname "$0")" && pwd)
 tag=$1; shift
 cd "$T"
+cfg() { python -c "import config; print(config.$1)"; }
+TW=$(cygpath -w "$T"); WO=$(cfg WO); WORK=$(cfg WORK)
+mkdir -p "$(cygpath -u "$WORK")/compile"
 python -I deploy.py install --scripts-only --dlc --no-gwent \
-  --extra "$W\\WitcherOnline\\client\\build\\Release\\WitcherOnlineClient.asi=bin\\x64_dx12\\WitcherOnlineClient.asi" \
-  --extra "$W\\witcher3-coop-tools\\w3test\\modW3Test=mods\\modW3Test" \
-  --extra "$W\\witcher3-coop-tools\\w3test\\build\\w3test.asi=bin\\x64_dx12\\w3test.asi" \
+  --extra "$WO\\client\\build\\Release\\WitcherOnlineClient.asi=bin\\x64_dx12\\WitcherOnlineClient.asi" \
+  --extra "$TW\\w3test\\modW3Test=mods\\modW3Test" \
+  --extra "$TW\\w3test\\build\\w3test.asi=bin\\x64_dx12\\w3test.asi" \
   "$@" | tail -1
-WO_USERNAME=CompileBot WO_SERVER_IP=127.0.0.1 WO_SERVER_PORT=41999 python w3run.py --timeout 240 --tag "$tag" --errors "../work/compile/$tag.txt" --show 0 --sandbox "$W\\work\\sandbox-compile" -- -verifyscriptsandexit 2>&1 | grep -E "ERRORS|exited|killed"
-f="../work/compile/$tag.txt"
+WO_USERNAME=CompileBot WO_SERVER_IP=127.0.0.1 WO_SERVER_PORT=41999 python w3run.py --timeout 240 --tag "$tag" --errors "$WORK\\compile\\$tag.txt" --show 0 --sandbox "$WORK\\sandbox-compile" -- -verifyscriptsandexit 2>&1 | grep -E "ERRORS|exited|killed"
+f="$(cygpath -u "$WORK")/compile/$tag.txt"
 if [ -f "$f" ]; then
   echo "errors: $(grep -c '^Error' "$f")  warnings: $(grep -c '^Warning' "$f")"
   grep "^Error" "$f" | sed -E 's/\(([0-9]+)\)/:\1/' | head -${SHOW:-60}

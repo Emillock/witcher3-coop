@@ -9,8 +9,8 @@ import subprocess
 import sys
 import time
 
-GAME_DIR = r"D:\SteamLibrary\steamapps\common\The Witcher 3"
-EXE = os.path.join(GAME_DIR, "bin", "x64_dx12", "witcher3.exe")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import EXE  # noqa: E402
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 EnumWindowsProc = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)

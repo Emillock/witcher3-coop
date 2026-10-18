@@ -8,9 +8,9 @@ import shutil
 import sys
 import time
 
-GAME = r"D:\SteamLibrary\steamapps\common\The Witcher 3"
-REPO = r"C:\Users\User\Desktop\repos\WitcherOnline"
-WORK = r"C:\Users\User\Desktop\repos\work"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import BRIDGE, GAME, UAL, WO as REPO, WORK  # noqa: E402
+
 MANIFEST = os.path.join(WORK, "deploy-manifest.json")
 BACKUPS = os.path.join(WORK, "backups", "deploy")
 
@@ -23,6 +23,10 @@ GWENT_BUNDLE = (os.path.join("mods", "modWitcherOnline", "content", "blob0.bundl
 def mappings(a):
     if a.no_repo:
         return
+    # the ASI loader and the native bridge: every script deploy imports their natives
+    x64 = os.path.join("bin", "x64_dx12")
+    yield os.path.join(UAL, "dinput8.dll"), os.path.join(x64, "dinput8.dll")
+    yield os.path.join(BRIDGE, "build", "Release", "WitcherNativeBridge.asi"), os.path.join(x64, "WitcherNativeBridge.asi")
     w = os.path.join(REPO, "witcher")
     yield os.path.join(w, "mods", "modWitcherOnline"), os.path.join("mods", "modWitcherOnline")
     yield os.path.join(w, "mods", "modWitcherOnlineCompat"), os.path.join("mods", "modWitcherOnlineCompat")

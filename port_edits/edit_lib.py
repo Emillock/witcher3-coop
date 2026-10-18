@@ -1,7 +1,11 @@
 # Exact-text edits for WitcherScript files that keep each file's newline style.
 import os
+import sys
 
-SCRIPTS = r"C:\Users\User\Desktop\repos\WitcherOnline\witcher\mods\modWitcherOnline\content\scripts"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WO  # noqa: E402
+
+SCRIPTS = os.path.join(WO, "witcher", "mods", "modWitcherOnline", "content", "scripts")
 
 
 def edit(rel, pairs, count_all=False):

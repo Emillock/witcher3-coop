@@ -11,11 +11,12 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config import WO, WORK  # noqa: E402
 from sandbox import make_sandbox  # noqa: E402
 from w3run import EXE, windows_of  # noqa: E402
 
-SERVER_JAR = r"C:\Users\User\Desktop\repos\WitcherOnline\server\build\WitcherServer.jar"
-RUNS = r"C:\Users\User\Desktop\repos\work\runs"
+SERVER_JAR = os.path.join(WO, "server", "build", "WitcherServer.jar")
+RUNS = os.path.join(WORK, "runs")
 GAME_ARGS = ["-windowed", "-width", "640", "-height", "360", "-debugscripts", "-noraytracing"]
 
 
