@@ -11,7 +11,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
 
-SCENARIOS = ["see_each_other", "movement", "shared_enemy", "enemy_attacks", "reactions", "twin_match", "handoff", "quest_sync"]
+SCENARIOS = ["see_each_other", "movement", "shared_enemy", "enemy_attacks", "reactions", "twin_match", "handoff", "quest_sync",
+             "dialog_sync"]
 
 
 def main():

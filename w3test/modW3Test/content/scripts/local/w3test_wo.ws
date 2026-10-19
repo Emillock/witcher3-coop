@@ -71,6 +71,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "dialog_sync")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_DialogLeader(bot, client.getCoopEnemies());
+        }
+        return W3T_DialogMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "quest_sync")
     {
         if(W3T_GetEnv("W3T_ROLE") == "mover")
@@ -817,6 +830,175 @@ function W3T_QuestMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_C
         bot.scenarioCount = 1;
     }
     return bot.scenarioCount == 1;
+}
+
+function W3T_DialogModule() : CR4HudModuleDialog
+{
+    return (CR4HudModuleDialog)((CR4ScriptedHud)theGame.GetHud()).GetHudModule("DialogModule");
+}
+
+// two dialogue choices as a scene would offer them
+function W3T_TestChoices() : array<SSceneChoice>
+{
+    var choices : array<SSceneChoice>;
+    var choice : SSceneChoice;
+
+    choice.description = "W3T choice A";
+    choice.dialogAction = DialogAction_NONE;
+    choices.PushBack(choice);
+    choice.description = "W3T choice B";
+    choices.PushBack(choice);
+    return choices;
+}
+
+// an active quest other than the tracked one
+function W3T_OtherActiveQuest() : CJournalQuest
+{
+    var manager : CWitcherJournalManager;
+    var quests : array<CJournalBase>;
+    var i : int;
+
+    manager = theGame.GetJournalManager();
+    manager.GetActivatedOfType('CJournalQuest', quests);
+    for(i = 0; i < quests.Size(); i += 1)
+    {
+        if((CJournalQuest)quests[i] && manager.GetEntryStatus(quests[i]) == JS_Active && quests[i] != manager.GetTrackedQuest())
+        {
+            return (CJournalQuest)quests[i];
+        }
+    }
+    return NULL;
+}
+
+// dialog_sync, leader: track two other quests in turn, skip twice in a (named) scene, then pick choice B of a
+// two-choice dialogue the member only reaches 6 s later.
+function W3T_DialogLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    var journalQuest : CJournalQuest;
+    var wait : float;
+
+    if(bot.scenarioCount >= 7)
+    {
+        return true;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        if(coop.GetRole() != 1)
+        {
+            return false;
+        }
+        coop.SetSceneForTest("w3t\\test_scene.w2scene");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        return false;
+    }
+
+    wait = 4;
+    if(bot.scenarioCount >= 3 && bot.scenarioCount <= 4)
+    {
+        wait = 1.5;
+    }
+    if(bot.ElapsedS() - bot.scenarioTime < wait)
+    {
+        return false;
+    }
+    bot.scenarioTime = bot.ElapsedS();
+
+    // scenarioCount: 1-2 tracking, 3-4 skips, 5 dialogue pick, 6 waiting for the member, 7 done
+    if(bot.scenarioCount <= 2)
+    {
+        journalQuest = W3T_OtherActiveQuest();
+        if(!journalQuest)
+        {
+            W3T_Log("FAIL fewer than two active quests to track");
+            W3T_Quit(2);
+            return false;
+        }
+        theGame.GetJournalManager().SetTrackedQuest(journalQuest);
+        W3T_Log("DIALOG leader tracks " + NameToString(journalQuest.GetUniqueScriptTag()));
+    }
+    else if(bot.scenarioCount <= 4)
+    {
+        W3T_DialogModule().OnDialogSkipped(1);
+        W3T_Log("DIALOG leader skipped a line");
+    }
+    else if(bot.scenarioCount == 5)
+    {
+        W3T_DialogModule().OnDialogChoicesSet(W3T_TestChoices(), false);
+        W3T_DialogModule().OnDialogOptionAccepted(1);
+        W3T_Log("DIALOG leader picked choice B");
+    }
+    else if(bot.scenarioCount == 6)
+    {
+        if(bot.ElapsedS() - bot.scenarioValue < 20)
+        {
+            bot.scenarioTime -= wait;
+            return false;
+        }
+    }
+    if(bot.scenarioCount == 5)
+    {
+        bot.scenarioValue = bot.ElapsedS();
+    }
+    bot.scenarioCount += 1;
+    return bot.scenarioCount == 7;
+}
+
+// dialog_sync, member: follows the leader's tracking (twice) and skips (twice); reaches the leader's dialogue
+// choices 6 s after the leader picked, and the leader's pick must still be applied here.
+function W3T_DialogMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var tracked : name;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(!bot.scenarioFlag)
+    {
+        coop.SetSceneForTest("w3t\\test_scene.w2scene");
+        bot.scenarioFlag = true;
+    }
+
+    if(theGame.GetJournalManager().GetTrackedQuest())
+    {
+        tracked = theGame.GetJournalManager().GetTrackedQuest().GetUniqueScriptTag();
+    }
+    W3T_Log("DIALOG member trackedApplied=" + coop.trackedApplied + " tracked=" + NameToString(tracked) + " skips=" + coop.skipsApplied
+        + " choicesActive=" + client.hasActiveDialogChoices() + " leaderPicks=" + leader.lastDialogCount + "/" + leader.prevDialogCount
+        + " leaderIndex=" + leader.lastDialogIndex + " trace=" + client.dialogSyncTrace + " phase=" + bot.scenarioCount);
+
+    // scenarioCount: 0 waiting for the leader's pick, 1 lagging behind it, 2 at the choices, 3 pick applied
+    if(bot.scenarioCount == 0 && leader.lastDialogCount > 0)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+    }
+    else if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 6)
+    {
+        W3T_DialogModule().OnDialogChoicesSet(W3T_TestChoices(), false);
+        W3T_Log("DIALOG member reached the choices 6 s after the leader picked");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+    }
+    else if(bot.scenarioCount == 2)
+    {
+        if(!client.hasActiveDialogChoices())
+        {
+            W3T_Log("DIALOG member: the leader's pick was applied " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s later");
+            bot.scenarioCount = 3;
+        }
+        else if(bot.ElapsedS() - bot.scenarioTime > 8)
+        {
+            W3T_Log("FAIL the leader's pick was not applied to the lagging member");
+            W3T_Quit(1);
+            return false;
+        }
+    }
+
+    return bot.scenarioCount == 3 && coop.trackedApplied >= 2 && tracked == coop.lastTrackedApplied && coop.skipsApplied >= 2;
 }
 
 function W3T_ReportExtra(bot : W3T_Bot)
