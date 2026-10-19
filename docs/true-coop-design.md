@@ -196,8 +196,17 @@ True Co-op rule).
 - **Attacks of other enemy types:** `enemy_attacks --monster` passes with a Baron's bandit (4 sword swings
   mirrored, 3 hits landed), a nekker and a cave troll. A wolf mirrored 40 attacks but then chased the Novigrad
   citizens around the test spot, so its second hit on the ghost never came.
+- **Projectiles** (arrows, bolts, spit, boulders, fireballs: everything derived from `W3AdvancedProjectile`).
+  - Capture: the leader wraps the class's four shoot functions. A shared monster's shot is sent with the enemy
+    for 1.5 s: projectile template, start, target, angle, speed and range.
+  - Playback: members create the same projectile at the same spot with the puppet as caster, damage and effect
+    zeroed, and shoot it the same way.
+  - Damage: the hit arrives as a hurt from the leader, and a puppet's own damage is dropped anyway.
+  - `enemy_projectiles` (2026-10-19): Baron's bandit with a bow (2 arrows copied, 1 hit landed on the member),
+    with a crossbow (bolts) and a poison arachas (venom). A tailed endrega only fought in melee.
+  - Limit: shots faster than the snapshots collapse into the newest. The arachas fired 8, and the member saw 2.
 - **Not done:**
-  - what special moves create: projectiles, spells and summons (the animation plays, nothing flies);
+  - spells and summons (the animation plays; area effects and summoned creatures don't);
   - moves that are not behavior-tree tasks (scripted encounter animations);
   - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 
