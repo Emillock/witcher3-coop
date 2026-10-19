@@ -161,7 +161,7 @@ def main():
         a.relay = True
     if a.duration is None:
         # the leader waits for the member to load and join before the fight starts
-        a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks", "handoff") else 60
+        a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync") else 60
 
     run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario
                            + ("-steam" if a.steam_box else "-relay" if a.relay else ""))

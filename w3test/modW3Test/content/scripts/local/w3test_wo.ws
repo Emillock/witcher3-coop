@@ -71,6 +71,40 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "quest_sync")
+    {
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_QuestLeader(bot, client.getCoopEnemies());
+        }
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        return W3T_QuestMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "reactions" || scenario == "twin_match")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(scenario == "reactions" && W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_ReactionsLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        if(scenario == "reactions")
+        {
+            return W3T_ReactionsMember(bot, client, client.getCoopEnemies(), players[0]);
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_TwinLeader(bot, client.getCoopEnemies());
+        }
+        return W3T_TwinMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     // the players are out of each other's sight for part of this one: no ghost needed
     if(scenario == "handoff")
     {
@@ -495,6 +529,294 @@ function W3T_HandoffMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
         bot.scenarioCount = 3;
     }
     return bot.scenarioCount == 3;
+}
+
+// reactions, leader: a drowner next to the member's ghost (as in enemy_attacks). This Geralt hits it twice, then
+// makes it land a bleeding hit on the ghost; passes 5 s later.
+function W3T_ReactionsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var drowner : CNewNPC;
+    var action : W3DamageAction;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    drowner = (CNewNPC)bot.scenarioEntity;
+    if(!drowner)
+    {
+        W3T_Log("FAIL drowner is gone");
+        W3T_Quit(2);
+        return false;
+    }
+
+    // scenarioCount: 1 spawned, 2-3 after this Geralt's hits, 4 after the bleeding hit, 5 done
+    if(bot.scenarioCount < 4 && bot.ElapsedS() - bot.scenarioTime >= 3)
+    {
+        if(bot.scenarioCount < 3)
+        {
+            action = new W3DamageAction in theGame.damageMgr;
+            action.Initialize(thePlayer, drowner, thePlayer, "W3T", EHRT_Light, CPS_Undefined, true, false, false, false);
+            action.AddDamage(theGame.params.DAMAGE_NAME_DIRECT, 0.05 * drowner.GetMaxHealth());
+            theGame.damageMgr.ProcessAction(action);
+            delete action;
+            W3T_Log("REACT leader hit its drowner (" + bot.scenarioCount + ")");
+        }
+        else if(member.ghost)
+        {
+            action = new W3DamageAction in theGame.damageMgr;
+            action.Initialize(drowner, member.ghost, drowner, "W3T", EHRT_Light, CPS_AttackPower, true, false, false, false);
+            action.AddDamage(theGame.params.DAMAGE_NAME_PHYSICAL, 10);
+            action.AddEffectInfo(EET_Bleeding);
+            theGame.damageMgr.ProcessAction(action);
+            delete action;
+            W3T_Log("REACT leader's drowner landed a bleeding hit on the ghost");
+        }
+        bot.scenarioCount += 1;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    if(bot.scenarioCount == 4 && bot.ElapsedS() - bot.scenarioTime >= 5)
+    {
+        bot.scenarioCount = 5;
+    }
+    return bot.scenarioCount == 5;
+}
+
+// reactions, member: the leader's two hits must be replayed on the puppet, and the drowner's bleeding hit must
+// reach this Geralt with its effect.
+function W3T_ReactionsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        return false;
+    }
+
+    W3T_Log("REACT member mirroredHits=" + coop.hitReactionsMirrored + " hitAnims=" + coop.hitAnimsSeen + " hurts=" + coop.hurtsApplied
+        + " hurtEffects=" + coop.hurtEffectsApplied + " bleeding=" + thePlayer.HasBuff(EET_Bleeding) + " puppets=" + coop.PuppetCount());
+
+    if(bot.scenarioCount == 0 && coop.hitReactionsMirrored >= 2 && coop.hurtEffectsApplied >= 1)
+    {
+        W3T_Log("REACT member replayed " + coop.hitReactionsMirrored + " of the leader's hits (" + coop.hitAnimsSeen
+            + " hit animations seen) and got " + coop.hurtEffectsApplied + " effect(s) with the drowner's hits");
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        bot.scenarioCount = 1;
+    }
+    return bot.scenarioCount == 1;
+}
+
+function W3T_TwinSpot(start : Vector) : Vector
+{
+    start.Y += 8;
+    return start;
+}
+
+// twin_match, leader: some seconds after the member joined, spawn a drowner 8 m north of the start; the member
+// has its own drowner there (its world's copy of the same encounter).
+function W3T_TwinLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    var template : CEntityTemplate;
+    var rot : EulerAngles;
+
+    // scenarioCount: 1 start recorded, 2 member joined, 3 drowner spawned, 4 done
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioVec = thePlayer.GetWorldPosition();
+        bot.scenarioCount = 1;
+    }
+    else if(bot.scenarioCount == 1 && coop.GetRole() == 1)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+    }
+    else if(bot.scenarioCount == 2 && bot.ElapsedS() - bot.scenarioTime >= 6)
+    {
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        bot.scenarioEntity = theGame.CreateEntity(template, W3T_TwinSpot(bot.scenarioVec), rot, true, false, false, PM_DontPersist);
+        W3T_Log("TWIN leader spawned its drowner at " + W3T_VecStr(W3T_TwinSpot(bot.scenarioVec)));
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 3;
+    }
+    else if(bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime >= 10)
+    {
+        bot.scenarioCount = 4;
+    }
+    return bot.scenarioCount == 4;
+}
+
+// twin_match, member: after joining, spawn this world's drowner at the same spot (hidden while unmatched); when
+// the leader's appears, this one must become its puppet instead of a second, spawned drowner.
+function W3T_TwinMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var mine : CNewNPC;
+    var entities : array<CGameplayEntity>;
+    var npc : CNewNPC;
+    var rot : EulerAngles;
+    var others, i : int;
+
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioVec = thePlayer.GetWorldPosition();
+        bot.scenarioCount = 1;
+        return false;
+    }
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(bot.scenarioCount == 1)
+    {
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        bot.scenarioEntity = theGame.CreateEntity(template, W3T_TwinSpot(bot.scenarioVec), rot, true, false, false, PM_DontPersist);
+        W3T_Log("TWIN member spawned this world's drowner at " + W3T_VecStr(W3T_TwinSpot(bot.scenarioVec)));
+        bot.scenarioCount = 2;
+        return false;
+    }
+
+    mine = (CNewNPC)bot.scenarioEntity;
+    W3T_Log("TWIN member puppets=" + coop.PuppetCount() + " twins=" + coop.twinsBound + " spawned=" + coop.puppetsSpawned
+        + " suppressed=" + coop.SuppressedCount() + " mine=" + W3T_VecStr(mine.GetWorldPosition()) + " visible=" + mine.GetVisibility());
+
+    for(i = 0; i < coop.PuppetCount() && bot.scenarioCount == 2; i += 1)
+    {
+        if(StrFindFirst(coop.PuppetAt(i).GetReadableName(), "drowner_lvl1") < 0)
+        {
+            continue;
+        }
+        if(coop.PuppetSpawned(i))
+        {
+            W3T_Log("FAIL a second drowner was spawned instead of binding this world's");
+            W3T_Quit(1);
+            return false;
+        }
+        if(coop.PuppetAt(i) == mine)
+        {
+            FindGameplayEntitiesInSphere(entities, mine.GetWorldPosition(), 20.0, 32, '', FLAG_OnlyAliveActors, thePlayer);
+            for(i = 0; i < entities.Size(); i += 1)
+            {
+                npc = (CNewNPC)entities[i];
+                if(npc && npc != mine && StrFindFirst(npc.GetReadableName(), "drowner_lvl1") >= 0)
+                {
+                    others += 1;
+                }
+            }
+            if(others > 0)
+            {
+                W3T_Log("FAIL " + others + " other drowner(s) next to the bound one");
+                W3T_Quit(1);
+                return false;
+            }
+            W3T_Log("TWIN member's own drowner became the leader's puppet; no duplicate");
+            bot.scenarioCount = 3;
+        }
+    }
+    return bot.scenarioCount == 3;
+}
+
+// quest_sync, leader: before anyone joins, activate an inactive objective of an active quest (as a quest would);
+// passes once a member has been in the party for 8 s.
+function W3T_QuestLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    var manager : CWitcherJournalManager;
+    var quests, phases, objectives : array<CJournalBase>;
+    var objective : CJournalBase;
+    var i, j, k : int;
+
+    manager = theGame.GetJournalManager();
+    if(bot.scenarioCount == 0)
+    {
+        manager.GetActivatedOfType('CJournalQuest', quests);
+        for(i = 0; i < quests.Size() && !objective; i += 1)
+        {
+            if(manager.GetEntryStatus(quests[i]) != JS_Active)
+            {
+                continue;
+            }
+            phases.Clear();
+            manager.GetAllChildren(quests[i], phases);
+            for(j = 0; j < phases.Size() && !objective; j += 1)
+            {
+                objectives.Clear();
+                manager.GetAllChildren(phases[j], objectives);
+                for(k = 0; k < objectives.Size() && !objective; k += 1)
+                {
+                    if((CJournalQuestObjective)objectives[k] && manager.GetEntryStatus(objectives[k]) == JS_Inactive
+                        && IsNameValid(objectives[k].GetUniqueScriptTag()))
+                    {
+                        objective = objectives[k];
+                    }
+                }
+            }
+        }
+        if(!objective)
+        {
+            W3T_Log("FAIL no inactive objective in an active quest (" + quests.Size() + " quests)");
+            W3T_Quit(2);
+            return false;
+        }
+        bot.scenarioName = objective.GetUniqueScriptTag();
+        manager.ActivateEntry(objective, JS_Active, true, true);
+        W3T_Log("QUEST leader activated objective " + NameToString(bot.scenarioName) + " status="
+            + coop.JournalStatusOf(bot.scenarioName));
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        return false;
+    }
+
+    W3T_Log("QUEST leader recorded=" + coop.JournalRecorded(bot.scenarioName) + " role=" + coop.GetRole());
+    if(bot.scenarioCount == 1 && !coop.JournalRecorded(bot.scenarioName) && bot.ElapsedS() - bot.scenarioTime > 3)
+    {
+        W3T_Log("FAIL the HUD did not report the objective change");
+        W3T_Quit(1);
+        return false;
+    }
+    if(coop.GetRole() == 1)
+    {
+        if(bot.scenarioCount == 1)
+        {
+            bot.scenarioCount = 2;
+            bot.scenarioTime = bot.ElapsedS();
+        }
+        else if(bot.scenarioCount == 2 && bot.ElapsedS() - bot.scenarioTime >= 8)
+        {
+            bot.scenarioCount = 3;
+        }
+    }
+    return bot.scenarioCount == 3;
+}
+
+// quest_sync, member: join 10 s after starting (after the leader's change) and get the objective from the
+// leader's journal list.
+function W3T_QuestMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        if(bot.ElapsedS() >= 10)
+        {
+            W3T_Log("PARTY join " + leader.username + " (late)");
+            client.joinParty(leader.username);
+        }
+        return false;
+    }
+
+    W3T_Log("QUEST member lists=" + coop.journalMessages + " missing=" + coop.journalMissing + " seen=" + coop.lastJournalSeen
+        + " journalApplied=" + coop.journalApplied + " last=" + NameToString(coop.lastJournalApplied)
+        + " status=" + coop.JournalStatusOf(coop.lastJournalApplied) + " wanted=" + coop.lastJournalAppliedStatus);
+    if(bot.scenarioCount == 0 && coop.journalApplied >= 1
+        && coop.JournalStatusOf(coop.lastJournalApplied) == coop.lastJournalAppliedStatus)
+    {
+        W3T_Log("QUEST member has the leader's objective " + NameToString(coop.lastJournalApplied) + " in its journal");
+        bot.scenarioCount = 1;
+    }
+    return bot.scenarioCount == 1;
 }
 
 function W3T_ReportExtra(bot : W3T_Bot)

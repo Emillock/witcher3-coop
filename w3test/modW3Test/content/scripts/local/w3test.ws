@@ -215,6 +215,7 @@ statemachine class W3T_Bot
     public var scenarioCount : int;
     public var scenarioEntity : CEntity;
     public var scenarioValue : float;
+    public var scenarioName : name;
 
     public function Start()
     {
