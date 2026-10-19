@@ -12,7 +12,7 @@ sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
 
 SCENARIOS = ["see_each_other", "movement", "shared_enemy", "enemy_attacks", "reactions", "twin_match", "handoff", "quest_sync",
-             "dialog_sync", "facts_sync", "puppet_walk", "enemy_moves"]  # puppet_walk also checks what puppet_follow does
+             "dialog_sync", "facts_sync", "puppet_walk", "enemy_moves", "real_encounter"]  # puppet_walk also checks what puppet_follow does
 
 
 def main():

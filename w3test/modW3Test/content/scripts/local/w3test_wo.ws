@@ -100,6 +100,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "real_encounter")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_EncounterLeader(bot, client.getCoopEnemies());
+        }
+        return W3T_EncounterMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "enemy_moves")
     {
         if(ghosts < 1)
@@ -895,6 +908,261 @@ function W3T_TwinMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
             W3T_Log("TWIN member's own drowner became the leader's puppet; no duplicate");
             bot.scenarioCount = 3;
         }
+    }
+    return bot.scenarioCount == 3;
+}
+
+// real_encounter: the nearest active monster nest of this world, from the map pins (both bots load the same save,
+// so they pick the same one); W = 0 if none
+function W3T_NearestNest(out label : string) : Vector
+{
+    var manager : CCommonMapManager;
+    var areas : array<SAreaMapPinInfo>;
+    var pins : array<SEntityMapPinInfo>;
+    var best : Vector;
+    var bestDist, d : float;
+    var worlds : string;
+    var i, j : int;
+
+    manager = theGame.GetCommonMapManager();
+    areas = manager.GetAreaMapPins();
+    bestDist = 100000;
+    for(i = 0; i < areas.Size(); i += 1)
+    {
+        worlds += " " + areas[i].worldPath;
+        if(areas[i].worldPath != theGame.GetWorld().GetDepotPath())
+        {
+            continue;
+        }
+        pins = manager.GetEntityMapPins(areas[i].worldPath);
+        for(j = 0; j < pins.Size(); j += 1)
+        {
+            if(pins[j].entityType != 'MonsterNest' || manager.IsEntityMapPinDisabled(pins[j].entityName))
+            {
+                continue;
+            }
+            d = VecDistance2D(pins[j].entityPosition, thePlayer.GetWorldPosition());
+            if(d < bestDist)
+            {
+                bestDist = d;
+                best = pins[j].entityPosition;
+                best.W = 1;
+                label = NameToString(pins[j].entityName) + ", " + FloatToStringPrec(d, 0) + " m away";
+            }
+        }
+    }
+    if(best.W == 0)
+    {
+        label = "this world " + theGame.GetWorld().GetDepotPath() + "; areas:" + worlds;
+    }
+    return best;
+}
+
+// real_encounter: right after a long teleport the ground's collision may not be loaded and the player falls through;
+// back to the spot whenever it is 25 m below it (the ground beside a nest can be 12 m lower than its pin; a fall
+// through the world drops 30 m a second)
+function W3T_HoldAt(spot : Vector)
+{
+    var pos : Vector;
+
+    pos = thePlayer.GetWorldPosition();
+    if(pos.Z < spot.Z - 25)
+    {
+        W3T_Log("ENCOUNTER fell through the ground at " + W3T_VecStr(pos) + "; back to the nest");
+        thePlayer.Teleport(spot);
+    }
+}
+
+// real_encounter: 6 s after arriving (the navigation mesh has loaded), stand on a walkable spot near the nest
+// (scenarioCount 10 while waiting; scenarioVec: the nest, then that spot); true once standing there
+function W3T_SettleAtNest(bot : W3T_Bot, offset : Vector) : bool
+{
+    var safe : Vector;
+
+    if(bot.scenarioCount != 10)
+    {
+        return true;
+    }
+    if(bot.ElapsedS() - bot.scenarioTime < 6)
+    {
+        return false;
+    }
+    if(!theGame.GetWorld().NavigationFindSafeSpot(bot.scenarioVec + offset, 0.5, 8.0, safe))
+    {
+        safe = bot.scenarioVec + offset + Vector(0, 0, 1);
+    }
+    thePlayer.Teleport(safe);
+    W3T_Log("ENCOUNTER stands at " + W3T_VecStr(safe));
+    bot.scenarioVec = safe;
+    bot.scenarioTime = bot.ElapsedS();
+    bot.scenarioCount = 1;
+    return false;
+}
+
+// real_encounter, leader: once the member joined, both go to the nearest active monster nest, where this world's
+// own encounter spawns. 25 s after its monsters are shared, the leader kills them; passes 10 s later.
+function W3T_EncounterLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    var nest : Vector;
+    var label : string;
+    var i : int;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(coop.GetRole() != 1)
+        {
+            return false;
+        }
+        nest = W3T_NearestNest(label);
+        if(nest.W == 0)
+        {
+            W3T_Log("FAIL no active monster nest in " + label);
+            W3T_Quit(2);
+            return false;
+        }
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        bot.scenarioVec = nest;
+        thePlayer.Teleport(nest + Vector(0, 0, 2));
+        W3T_Log("ENCOUNTER leader goes to nest " + label + " at " + W3T_VecStr(nest));
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 10;
+        return false;
+    }
+    if(!W3T_SettleAtNest(bot, Vector(5, 0, 0)))
+    {
+        return false;
+    }
+    W3T_HoldAt(bot.scenarioVec);
+    W3T_Log("ENCOUNTER leader enemies=" + coop.HostEnemyCount() + " pos=" + W3T_VecStr(thePlayer.GetWorldPosition()));
+    if(bot.scenarioCount == 1)
+    {
+        if(coop.HostEnemyCount() > 0)
+        {
+            for(i = 0; i < coop.HostEnemyCount(); i += 1)
+            {
+                W3T_Log("ENCOUNTER leader monster " + coop.HostEnemyAt(i).GetReadableName() + " at "
+                    + W3T_VecStr(coop.HostEnemyAt(i).GetWorldPosition()));
+            }
+            bot.scenarioTime = bot.ElapsedS();
+            bot.scenarioCount = 2;
+        }
+        else if(bot.ElapsedS() - bot.scenarioTime > 90)
+        {
+            W3T_Log("FAIL no monsters at the nest after 90 s");
+            W3T_Quit(2);
+        }
+    }
+    else if(bot.scenarioCount == 2 && bot.ElapsedS() - bot.scenarioTime >= 25)
+    {
+        W3T_Log("ENCOUNTER leader kills its " + coop.HostEnemyCount() + " monsters");
+        for(i = 0; i < coop.HostEnemyCount(); i += 1)
+        {
+            coop.HostEnemyAt(i).Kill('W3T', true);
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 3;
+    }
+    return bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime >= 10;
+}
+
+// real_encounter, member: goes to the same nest. This world's own encounter spawns there too: within 25 m, every
+// visible hostile must be one of the leader's puppets (bound twins or spawned copies), never a monster of its own
+// fighting beside them; and the puppets die when the leader kills its monsters.
+function W3T_EncounterMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var entities : array<CGameplayEntity>;
+    var npc : CNewNPC;
+    var nest : Vector;
+    var label : string;
+    var loose, alive, i, j : int;
+    var isPuppet : bool;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        nest = W3T_NearestNest(label);
+        if(nest.W == 0)
+        {
+            W3T_Log("FAIL no active monster nest in " + label);
+            W3T_Quit(2);
+            return false;
+        }
+        bot.scenarioVec = nest;
+        thePlayer.Teleport(nest + Vector(0, 0, 2));
+        W3T_Log("ENCOUNTER member goes to nest " + label);
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 10;
+        return false;
+    }
+    if(!W3T_SettleAtNest(bot, Vector(5, 2, 0)))
+    {
+        return false;
+    }
+
+    W3T_HoldAt(bot.scenarioVec);
+    FindGameplayEntitiesInSphere(entities, thePlayer.GetWorldPosition(), 25.0, 64, '', FLAG_OnlyAliveActors, thePlayer);
+    for(i = 0; i < entities.Size(); i += 1)
+    {
+        npc = (CNewNPC)entities[i];
+        if(!npc || GetAttitudeBetween(npc, thePlayer) != AIA_Hostile || !npc.GetVisibility())
+        {
+            continue;
+        }
+        isPuppet = false;
+        for(j = 0; j < coop.PuppetCount(); j += 1)
+        {
+            if(coop.PuppetAt(j) == npc)
+            {
+                isPuppet = true;
+            }
+        }
+        if(!isPuppet)
+        {
+            loose += 1;
+            W3T_Log("ENCOUNTER member's own visible hostile " + npc.GetReadableName() + " at " + W3T_VecStr(npc.GetWorldPosition()));
+        }
+    }
+    for(j = 0; j < coop.PuppetCount(); j += 1)
+    {
+        if(coop.PuppetAlive(j))
+        {
+            alive += 1;
+        }
+    }
+    W3T_Log("ENCOUNTER member puppets=" + coop.PuppetCount() + " alive=" + alive + " twins=" + coop.twinsBound
+        + " spawned=" + coop.puppetsSpawned + " suppressed=" + coop.SuppressedCount() + " loose=" + loose
+        + " killed=" + coop.puppetsKilled + " pos=" + W3T_VecStr(thePlayer.GetWorldPosition()));
+
+    if(bot.scenarioCount == 1 && coop.PuppetCount() > 0)
+    {
+        bot.scenarioCount = 2;
+    }
+    // a moment of overlap while a twin is matched is fine; scenarioValue counts checks in a row with loose ones
+    if(bot.scenarioCount == 2 && loose > 0)
+    {
+        bot.scenarioValue += 1;
+        if(bot.scenarioValue >= 5)
+        {
+            W3T_Log("FAIL " + loose + " of this world's own monsters fight beside the leader's");
+            W3T_Quit(1);
+            return false;
+        }
+    }
+    else
+    {
+        bot.scenarioValue = 0;
+    }
+    if(bot.scenarioCount == 2 && coop.puppetsKilled > 0 && alive == 0)
+    {
+        W3T_Log("ENCOUNTER member: " + coop.puppetsKilled + " puppets died with the leader's monsters (twins "
+            + coop.twinsBound + ", spawned " + coop.puppetsSpawned + ")");
+        bot.scenarioCount = 3;
     }
     return bot.scenarioCount == 3;
 }

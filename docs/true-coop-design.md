@@ -129,6 +129,14 @@ True Co-op rule).
 - **Matching an encounter that exists in both worlds.** Unmatched local hostiles near a member are hidden and
   idle. When the leader's copy of one appears, the member's own monster is found (same template, within 10 m),
   shown again and made the puppet. No duplicate is spawned.
+  - Real encounter (`real_encounter`, 2026-10-19). Both bots teleported to the nearest active monster nest from
+    the map pins: `lw_nest_ep1_poi_31_mp`, 1 km from the save.
+  - Each world's own encounter spawned 5 nekkers (`nekker_lvl5_customize_ep1`). On the member all 5 bound as
+    twins: none spawned, none left visible beside them.
+  - When the leader killed its 5, the 5 puppets died within half a second.
+  - Test setup: after the 1 km teleport, the bots wait 6 s for the navigation mesh, then stand on a walkable spot
+    near the nest. A raw offset from the pin was a cliff edge, and the member kept sliding 30 m down, so puppets
+    were released and rebound each time. They also return to the spot if they fall through the ground.
 - **Movement.** Puppets slide to the leader's positions with the movement adjustor (a 0.15 s slide per frame
   toward the latest 10 Hz snapshot, a teleport beyond 12 m). While sliding they walk and run on their own legs:
   - The member estimates how fast the leader's monster moves from successive snapshots.
@@ -300,6 +308,7 @@ reached the choices.
 | facts_sync | PASS | PASS |
 | puppet_walk | PASS (stride: leader's drowner 1.34 m, puppet 1.57 m) | PASS (1.42 m, 1.54 m) |
 | enemy_moves | PASS (nekker dodge `c_dodge250_2` mirrored) | PASS (the same dodge) |
+| real_encounter | PASS (5 nekkers at a real nest: 5 bound as twins, all died with the leader's) | PASS (3 bound, 2 spawned where the member's world had fewer; all died) |
 
 Rerun after walking puppets and mirrored moves: 12/12 locally and 12/12 over real Steam. Also passing: `server_coop_test.py` (server
 co-op channel, no game) and `relay/selftest.py`. Over Steam, every run joined the host's lobby through the second
@@ -309,6 +318,7 @@ account, and traffic flowed both ways.
 
 - Which damage entry point catches all player damage (swords, signs, bombs, crossbow) on 5.x: the claims use the
   victim's `OnTakeDamage`, which every damage source goes through; only scripted direct-damage hits are tested.
-- Encounter matching is tested with script-spawned twins; real encounters are untested.
+- Encounter matching is tested with script-spawned twins and one real nest (nekkers). Encounters whose spawns
+  differ between the two worlds (random sets, other monster types) are untested.
 - The facts layout is from 5.01; a game patch that changes it turns fact sync off (logged as the reason) until
   the layout is checked again.
