@@ -100,7 +100,7 @@ Animation mirroring for puppets (attack, hit reaction, death) from host behavior
 nearest player; hand-off when the host leaves the area (enemies revert to local AI after 1.5 s, the OOT
 True Co-op rule).
 
-### As built so far (first slice; tests pass)
+### As built (tests pass)
 
 - **Attacks.** On the leader, a `CNewNPC.OnPreAttackEvent` wrap catches a shared monster's hit window:
   - At `AET_DurationStart` it records the animation name (`GetAnimNameFromEventAnimInfo`) under a new attack
@@ -118,16 +118,31 @@ True Co-op rule).
   The leader's world does not simulate monsters far from the leader.
 - **No finishers on puppets**, via `DisableFinishers` (killing blow) and `DisableFinisher` (living target): a
   finisher would kill the puppet outside the leader's say.
-- **Not done:** mirroring hit reactions and other non-attack animations, special attacks that are not attack
-  animations (charges, jumps, spells), buffs from monster hits.
+- **Hit reactions.**
+  - The leader records every hit on a shared monster: who hit it and the hit reaction type. Members replay hits
+    by others, since the hitter's own game already reacted.
+  - The vanilla reaction needs damage dealt, so a member's own hit on a puppet keeps 0.01 damage instead of 0.
+  - The forced idle tree swallows hit reactions, so a hit lifts it for 0.8 s and the monster's own AI plays the
+    reaction. A puppet's own damage on a member is dropped; members are only hurt by the leader's hits.
+- **Effects of monster hits** (bleeding, poison, stagger, knockdown) travel with the hurt as effect types. The
+  member's own immunities and resistances decide whether they take hold.
+- **Matching an encounter that exists in both worlds.** Unmatched local hostiles near a member are hidden and
+  idle. When the leader's copy of one appears, the member's own monster is found (same template, within 10 m),
+  shown again and made the puppet. No duplicate is spawned.
+- **Not done:** special attacks that are not attack animations (charges, jumps, spells, projectiles); hit
+  reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 
 Tests (2026-10-19, 2 clients on one PC):
 - `enemy_attacks`: PASS. The puppet started all 5 attacks, and the member took 1735 damage in 3 hits.
 - `handoff`: PASS. Puppets were released 2.8 s after the member went 120 m away, and mirrored again 2.0 s after
   it came back.
+- `reactions`: PASS. Both of the leader's hits were replayed (one showed a hit animation), and the bleeding hit
+  reached the member with its effect.
+- `twin_match`: PASS. The member's own drowner became the puppet; no duplicate.
 - `shared_enemy`: PASS.
 
-The tests confirm each attack was accepted by the AI. That the animation looks right has to be checked by eye.
+The tests confirm each attack and reaction was accepted by the AI. That the animations look right has to be
+checked by eye.
 
 ## Milestone 3: quest progress
 
@@ -139,10 +154,50 @@ while in the party (decision for the owner). Dialog choices are already synced b
 Exit test: host bot sets a quest fact and advances a journal objective; client bot reads the same fact value
 and objective state; a third bot joining late gets the same snapshot hash.
 
+### As built (journal; tests pass)
+
+- **What can be captured.** `FactsAdd` is a native import, so scripts cannot wrap it, and quest graph fact blocks
+  write to the facts database without any script involved. General fact sync would need an engine-level hook
+  and is not done. The journal is reachable: the native journal reports every quest and objective update to the
+  HUD (`CR4ScriptedHud.OnQuestEvent` / `OnQuestObjectiveEvent`), including the quest system's own.
+- **Journal sync.**
+  - Every game records those updates by unique tag with the latest status.
+  - The leader sends the session's list (up to 48 entries) every second on a `jr` channel. A changing tick makes
+    a member that joins later get the list too; the client passes on unchanged state only once.
+  - Members apply only forward changes: inactive, then active, then succeeded or failed; never backwards, never
+    from one outcome to the other. Objectives are found by tag through the quest hierarchy, because
+    `GetEntryByTag` does not find an objective that is still inactive in this game.
+  - Tags can contain spaces; the client restores `*` to spaces in co-op fields.
+- **Other quest progress in co-op.** Shared monsters die in both worlds, so their death facts are written in
+  both. Witcher Online's party already syncs dialogue choices.
+- **Save policy.** Mirrored journal states are applied to the member's world and kept if the member saves. The
+  member's quest graph may later move the same entries itself; only forward changes are mirrored, so nothing is
+  ever undone.
+
+Test (2026-10-19, 2 clients): `quest_sync` PASS. The leader activated an inactive objective before the member
+joined. The member joined 15 s later and had the objective, at the same status, 2 s after joining.
+
+## Verification (2026-10-19, all milestones)
+
+`run_suite.py` with two game clients on one PC; every scenario is pass/fail by the in-game bots.
+
+| Scenario | Local | Real Steam, two accounts (`--steam-box`) |
+|---|---|---|
+| see_each_other | PASS | PASS |
+| movement | PASS | PASS |
+| shared_enemy | PASS | PASS |
+| enemy_attacks | PASS | PASS |
+| reactions | PASS | PASS |
+| twin_match | PASS | PASS |
+| handoff | PASS | PASS |
+| quest_sync | PASS | PASS |
+
+Also passing: `server_coop_test.py` (server co-op channel, no game) and `relay/selftest.py`. Over Steam, every run
+joined the host's lobby through the second account, and traffic flowed both ways.
+
 ## Open questions
 
-- Which damage entry point catches all player damage (swords, signs, bombs, crossbow) on 5.x: to be found by
-  reading `damageManagerProcessor.ws` and testing each weapon type with the bot.
-- Whether community/encounter spawns can be matched reliably between two worlds, or puppets should always be
-  spawned fresh and local twins hidden.
-- Save policy for mirrored facts.
+- Which damage entry point catches all player damage (swords, signs, bombs, crossbow) on 5.x: the claims use the
+  victim's `OnTakeDamage`, which every damage source goes through; only scripted direct-damage hits are tested.
+- Encounter matching is tested with script-spawned twins; real encounters are untested.
+- General fact sync (engine-level hook of the facts database).

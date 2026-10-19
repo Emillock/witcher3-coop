@@ -12,14 +12,20 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
 
 ## Status: v0.1.0 pre-release
 
-Players see each other in their own worlds. Each player keeps their own save; enemies, quests and loot
-are **not** shared yet. Gwent duels between players are switched off.
+Players see each other in their own worlds, and each keeps their own save. Released (v0.1.0): presence only.
+
+In development (branch `shared-enemies`, not released yet), when players are in a Witcher Online party:
+- **Monsters are shared.** The leader's world owns them; members fight copies that move, attack, react and die
+  as the leader's monsters do. Members' hits count in the leader's world, and the monsters' hits land on members.
+- **Quest progress is shared** through the journal.
+
+Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
 | | |
 |---|---|
-| Tested | Two game copies on one PC see each other and follow each other's movement, both directly and through w3relay. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
-| Not tested yet | Two different PCs over the internet. Chat, emotes, horses, party and dialogue sync on 5.01. |
-| Next | Shared enemies and quest progress, see [docs/true-coop-design.md](docs/true-coop-design.md). |
+| Tested | Two game copies on one PC: presence, movement, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
+| Not tested yet | Two different PCs over the internet. Real encounters (tests spawn monsters by script). Chat, emotes, horses, party and dialogue sync on 5.01. |
+| Known limits | Quest facts outside the journal are not synced (only an engine-level hook could). Special monster moves that are not attack animations (charges, spells, projectiles) are not mirrored. |
 
 ## Playing
 
@@ -82,7 +88,13 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `./compile.sh <tag>` (Git Bash) | Deploys the port and the test bot into the game folder and runs only the game's script compiler. |
 | `python run_test.py see_each_other` | Starts a local server and two games driven by the bot. They must spawn each other. |
 | `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
-| `python run_test.py shared_enemy` | Shared enemies (work in progress, [design](docs/true-coop-design.md)). The second bot joins the first one's party. The first spawns a drowner; the second hits its copy three times. Both must agree on its health, and the copy must die when the first bot kills it. |
+| `python run_test.py shared_enemy` | Shared enemies ([design](docs/true-coop-design.md)). The second bot joins the first one's party. The first spawns a drowner; the second hits its copy three times. Both must agree on its health, and the copy must die when the first bot kills it. |
+| `python run_test.py enemy_attacks` | The leader's drowner attacks the member's ghost: its puppet plays the attacks and the hits land on the member, after the member's own armor. |
+| `python run_test.py reactions` | The leader's hits replay on the member's puppet; a bleeding hit reaches the member with its effect. |
+| `python run_test.py twin_match` | A drowner exists in both worlds: the member's own becomes the puppet, with no duplicate. |
+| `python run_test.py handoff` | The member goes 120 m away (its world runs its own monsters again) and comes back (shared again). |
+| `python run_test.py quest_sync` | The leader advances a quest objective before the member joins; after joining, the member has it in its journal. |
+| `python run_suite.py [--steam-box <box>]` | All the scenarios above in a row, with a summary table. |
 | `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
 | `run_test.py <scenario> --steam-box <box>` | Over real Steam between two accounts on one PC. The host relay uses this PC's Steam; the joiner relay runs in a [Sandboxie-Plus](https://sandboxie-plus.com) box whose Steam is logged in to a second account. |
 | `python arrange_windows.py` | Places all open Witcher 3 windows side by side (the harness does this for its bots). |

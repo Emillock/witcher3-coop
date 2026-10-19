@@ -1,8 +1,18 @@
 WITCHER 3 CO-OP (Witcher Online for The Witcher 3 Remastered)
 =============================================================
 
-See your friends in your world and travel together. Each player keeps their own save:
-enemies, quests and loot are NOT shared, so do quests side by side and make the same choices.
+See your friends in your world and travel together. Each player keeps their own save.
+
+In a party (walk up to a friend's character, press the interact key and pick "Join party"),
+the party leader's world is the one that counts:
+- Monsters are shared: everyone fights the leader's monsters. Your hits count in the leader's
+  world, their attacks reach you (dodge them as usual), and they die for everyone.
+- Quest progress is shared through the journal: objectives the leader reaches show up in your
+  journal too (only forward; nothing you finished is undone). Dialogue choices the leader makes
+  are picked for everyone in the scene.
+- Farther than about 60 m from the leader, your own world's monsters take over again.
+- Loot stays per player. Quest facts outside the journal are not shared.
+To play without shared monsters, turn on "MPGhosts_LocalEnemiesOnly" in the mod's options.
 Gwent duels between players are switched off in this version.
 
 What you need
@@ -50,6 +60,7 @@ Credits and licenses
 Witcher Online by rejuvenate7 and contributors (GPL-3.0), ported to Remastered here.
 WitcherNativeBridge by Flawkee and rejuvenate7 (MIT). Ultimate ASI Loader by ThirteenAG (MIT).
 Licenses and the full source of the modified parts are in W3Coop\licenses and W3Coop\source.
-Status: tested with two game copies on one PC (players see each other and follow each other's
-movement, also through the Steam relay with a stand-in for Steam). Not yet tested between two
-real Steam accounts on different PCs.
+Status: tested with automated bots, two game copies on one PC, also through real Steam between
+two accounts. Covered: seeing each other and movement; shared monsters (hits, attacks, hit
+reactions, deaths, leaving and coming back); journal progress. Not yet tested on two different PCs
+over the internet.
