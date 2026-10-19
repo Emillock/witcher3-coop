@@ -100,6 +100,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "enemy_moves")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_EnemyMovesLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_EnemyMovesMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "dialog_sync")
     {
         if(ghosts < 1)
@@ -376,6 +389,22 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
 }
 
 // a spot on the navmesh about `range` m from `from` with a clear walkable line back to it (W = 0 if none)
+// the monster the leader's scenarios spawn: W3T_MONSTER (run_test.py --monster) or a drowner. Human enemies need a
+// template with real combat AI, e.g. gameplay\community\community_npcs\nml\regular\baron_bandit_strong_sword.w2ent
+// (crowd_npc ones spawned alone stand idle in combat)
+function W3T_MonsterPath(optional fallback : string) : string
+{
+    if(W3T_GetEnv("W3T_MONSTER") != "")
+    {
+        return W3T_GetEnv("W3T_MONSTER");
+    }
+    if(fallback != "")
+    {
+        return fallback;
+    }
+    return "characters\npc_entities\monsters\drowner_lvl1.w2ent";
+}
+
 // a walkable spot 12-14 m from `from`, with a free path to it, as near the middle of the screen as there is one
 // (both bots load the same save, so their cameras look the same way: in view for screenshots); W = 0 if none
 function W3T_SpotInView(from : Vector) : Vector
@@ -428,7 +457,7 @@ function W3T_LookAt(target : Vector)
 
 // enemy_attacks, leader: spawn a drowner next to the member's ghost, neutral to this Geralt so the ghost is its
 // only target. Passes once at least two of its hits on the ghost were sent and acknowledged.
-function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer, optional fallback : string) : bool
 {
     var template : CEntityTemplate;
     var drowner : CNewNPC;
@@ -443,10 +472,10 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         {
             return false;
         }
-        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        template = (CEntityTemplate)LoadResource(W3T_MonsterPath(fallback), true);
         if(!template)
         {
-            W3T_Log("FAIL drowner template not found");
+            W3T_Log("FAIL no template " + W3T_MonsterPath(fallback));
             W3T_Quit(2);
             return false;
         }
@@ -456,7 +485,8 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
         drowner = (CNewNPC)bot.scenarioEntity;
         drowner.SetAttitude(thePlayer, AIA_Neutral);
-        W3T_Log("ENEMY spawned drowner next to " + member.username + "'s ghost at " + W3T_VecStr(pos));
+        drowner.SetAttitude(member.ghost, AIA_Hostile);
+        W3T_Log("ENEMY spawned " + W3T_MonsterPath(fallback) + " next to " + member.username + "'s ghost at " + W3T_VecStr(pos));
         bot.scenarioCount = 1;
         return false;
     }
@@ -486,7 +516,7 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
     }
     W3T_Log("ENEMY leader drowner target=" + targetName + " hp=" + FloatToStringPrec(drowner.GetHealthPercents(), 4)
         + " ghostHits=" + coop.ghostHitsSeen + " hurtsCaptured=" + coop.hurtsCaptured + " pendingHurts=" + coop.PendingHurtCount()
-        + " attacks=" + coop.attacksSeen
+        + " attacks=" + coop.attacksSeen + " moves=" + coop.movesSeen
         + " tracked=" + coop.HostNetIdOf(drowner) + " ghostAttitude=" + drowner.GetAttitude(member.ghost)
         + " ghostDist=" + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), member.ghost.GetWorldPosition()), 2));
 
@@ -516,25 +546,75 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
     W3T_Log("ENEMY member vitality=" + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0) + " hurtsApplied=" + coop.hurtsApplied
         + " dodged=" + coop.hurtsDodged + " damageTaken=" + FloatToStringPrec(coop.hurtDamageTaken, 1) + " puppets=" + coop.PuppetCount()
         + " attacksPlayed=" + coop.attacksPlayed + " attackFailures=" + coop.attackPlayFailures
+        + " movesPlayed=" + coop.movesPlayed + " moveFailures=" + coop.movePlayFailures
         + " lastHurtDelay=" + FloatToStringPrec(coop.lastHurtDelay, 2) + " lastError=" + coop.lastError);
 
-    if(coop.attackPlayFailures > 0)
+    if(coop.attackPlayFailures > 0 || coop.movePlayFailures > 0)
     {
-        W3T_Log("FAIL the puppet could not play the leader's attack: " + coop.lastError);
+        W3T_Log("FAIL the puppet could not play the leader's attack or move: " + coop.lastError);
         W3T_Quit(1);
         return false;
     }
 
-    // the drowner's swings show on its puppet, and its hits land
+    // the monster's swings show on its puppet, and its hits land
     if(bot.scenarioCount == 0 && coop.hurtsApplied >= 2 && coop.hurtDamageTaken > 0 && coop.attacksPlayed >= 1)
     {
         W3T_Log("ENEMY member took " + FloatToStringPrec(coop.hurtDamageTaken, 1) + " damage from " + coop.hurtsApplied
-            + " of the leader's drowner hits; its puppet played " + coop.attacksPlayed + " attacks");
+            + " of the leader's monster's hits; its puppet played " + coop.attacksPlayed + " attacks and "
+            + coop.movesPlayed + " other moves");
         // survive the rest of the run
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         bot.scenarioCount = 1;
     }
     return bot.scenarioCount == 1;
+}
+
+// enemy_moves, leader: the monster of enemy_attacks (a nekker unless W3T_MONSTER: they dodge), told every 2 s that
+// an attack is coming (as the game tells a target), so it dodges; taunts count too. Passes once a move was captured.
+function W3T_EnemyMovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member, "characters\npc_entities\monsters\nekker_lvl1.w2ent");
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    monster = (CNewNPC)bot.scenarioEntity;
+    W3T_LookAt(monster.GetWorldPosition());
+    if(bot.ElapsedS() - bot.scenarioTime >= 2)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+        monster.SignalGameplayEventParamInt('Time2Dodge', (int)EDT_Attack_Light);
+    }
+    W3T_Log("MOVES leader moves=" + coop.movesSeen + " last=" + NameToString(coop.lastMoveAnim) + " attacks=" + coop.attacksSeen + " dodging=" + monster.IsCurrentlyDodging());
+    return coop.movesSeen >= 1;
+}
+
+// enemy_moves, member: the puppet plays the leader's monster's dodges and taunts (at least one, none refused).
+function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() > 0)
+    {
+        W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
+    }
+    W3T_Log("MOVES member movesPlayed=" + coop.movesPlayed + " moveFailures=" + coop.movePlayFailures
+        + " attacksPlayed=" + coop.attacksPlayed + " lastError=" + coop.lastError);
+    if(coop.movePlayFailures > 0)
+    {
+        W3T_Log("FAIL the puppet could not play the leader's move: " + coop.lastError);
+        W3T_Quit(1);
+        return false;
+    }
+    return coop.movesPlayed >= 1;
 }
 
 // handoff, leader: a drowner next to the member's ghost, as in enemy_attacks. Passes after seeing the member
@@ -1163,11 +1243,7 @@ function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemoteP
             W3T_Quit(2);
             return false;
         }
-        path = W3T_GetEnv("W3T_MONSTER");
-        if(path == "")
-        {
-            path = "characters\npc_entities\monsters\drowner_lvl1.w2ent";
-        }
+        path = W3T_MonsterPath();
         template = (CEntityTemplate)LoadResource(path, true);
         if(!template)
         {
@@ -1178,17 +1254,7 @@ function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemoteP
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
         drowner = (CNewNPC)bot.scenarioEntity;
-        // monsters go for the ghost; humans don't, so they go for this (invulnerable) Geralt, as the console's
-        // spawn command makes them hostile
-        if(drowner.IsHuman())
-        {
-            drowner.SetTemporaryAttitudeGroup('hostile_to_player', AGP_Default);
-            drowner.NoticeActor(thePlayer);
-        }
-        else
-        {
-            drowner.SetAttitude(thePlayer, AIA_Neutral);
-        }
+        drowner.SetAttitude(thePlayer, AIA_Neutral);
         drowner.SetAttitude(member.ghost, AIA_Hostile);
         W3T_Log("MOVES leader spawned " + path + " " + FloatToStringPrec(VecDistance(pos, member.ghost.GetWorldPosition()), 1) + " m from the ghost at " + W3T_VecStr(pos));
         bot.scenarioTime = bot.ElapsedS();
@@ -1197,16 +1263,10 @@ function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemoteP
     }
     drowner = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(drowner.GetWorldPosition());
-    // a human that still stands after 5 s (here in Novigrad they don't start fights) is sent running to the ghost
-    // (scenarioValue: sent)
-    if(drowner.IsHuman() && bot.scenarioValue == 0 && bot.ElapsedS() - bot.scenarioTime >= 5 && member.ghost)
-    {
-        bot.scenarioValue = 1;
-        W3T_Log("MOVES leader sends the human to the ghost: "
-            + drowner.ActionMoveToAsync(member.ghost.GetWorldPosition(), MT_Run, 0, 2.0));
-    }
     W3T_Log("MOVES leader monster at " + W3T_VecStr(drowner.GetWorldPosition()) + " stride=" + FloatToStringPrec(coop.hostMaxSwing, 3)
-        + " bone=" + coop.strideBone);
+        + " bone=" + coop.strideBone + " combat=" + drowner.IsInCombat() + " toMe=" + (int)GetAttitudeBetween(drowner, thePlayer)
+        + " toGhost=" + (int)GetAttitudeBetween(drowner, member.ghost) + " target=" + drowner.GetTarget()
+        + " action=" + (int)drowner.GetCurrentActionType() + " state=" + NameToString(drowner.GetCurrentStateName()));
     if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 20)
     {
         bot.scenarioCount = 2;
