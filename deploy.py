@@ -69,7 +69,15 @@ def install_file(src, rel, manifest):
         manifest["backups"][rel] = bak
         print(f"backed up {rel} -> {bak}")
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    shutil.copy2(src, dst)
+    # a game that just exited may hold its files for a few seconds more
+    for attempt in range(10):
+        try:
+            shutil.copy2(src, dst)
+            break
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(1)
     if rel not in manifest["files"]:
         manifest["files"].append(rel)
 
