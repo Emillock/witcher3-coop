@@ -71,6 +71,16 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    // the players are out of each other's sight for part of this one: no ghost needed
+    if(scenario == "handoff")
+    {
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_HandoffLeader(bot, client.getCoopEnemies(), players, client.getGlobalPlayers());
+        }
+        return W3T_HandoffMember(bot, client, client.getCoopEnemies(), players);
+    }
+
     W3T_Log("FAIL unknown scenario " + scenario);
     W3T_Quit(2);
     return false;
@@ -348,6 +358,7 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
     }
     W3T_Log("ENEMY leader drowner target=" + targetName + " hp=" + FloatToStringPrec(drowner.GetHealthPercents(), 4)
         + " ghostHits=" + coop.ghostHitsSeen + " hurtsCaptured=" + coop.hurtsCaptured + " pendingHurts=" + coop.PendingHurtCount()
+        + " attacks=" + coop.attacksSeen
         + " tracked=" + coop.HostNetIdOf(drowner) + " ghostAttitude=" + drowner.GetAttitude(member.ghost)
         + " ghostDist=" + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), member.ghost.GetWorldPosition()), 2));
 
@@ -371,17 +382,119 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
     }
 
     W3T_Log("ENEMY member vitality=" + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0) + " hurtsApplied=" + coop.hurtsApplied
-        + " dodged=" + coop.hurtsDodged + " damageTaken=" + FloatToStringPrec(coop.hurtDamageTaken, 1) + " puppets=" + coop.PuppetCount());
+        + " dodged=" + coop.hurtsDodged + " damageTaken=" + FloatToStringPrec(coop.hurtDamageTaken, 1) + " puppets=" + coop.PuppetCount()
+        + " attacksPlayed=" + coop.attacksPlayed + " attackFailures=" + coop.attackPlayFailures
+        + " lastHurtDelay=" + FloatToStringPrec(coop.lastHurtDelay, 2) + " lastError=" + coop.lastError);
 
-    if(bot.scenarioCount == 0 && coop.hurtsApplied >= 2 && coop.hurtDamageTaken > 0)
+    if(coop.attackPlayFailures > 0)
+    {
+        W3T_Log("FAIL the puppet could not play the leader's attack: " + coop.lastError);
+        W3T_Quit(1);
+        return false;
+    }
+
+    // the drowner's swings show on its puppet, and its hits land
+    if(bot.scenarioCount == 0 && coop.hurtsApplied >= 2 && coop.hurtDamageTaken > 0 && coop.attacksPlayed >= 1)
     {
         W3T_Log("ENEMY member took " + FloatToStringPrec(coop.hurtDamageTaken, 1) + " damage from " + coop.hurtsApplied
-            + " of the leader's drowner hits");
+            + " of the leader's drowner hits; its puppet played " + coop.attacksPlayed + " attacks");
         // survive the rest of the run
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         bot.scenarioCount = 1;
     }
     return bot.scenarioCount == 1;
+}
+
+// handoff, leader: a drowner next to the member's ghost, as in enemy_attacks. Passes after seeing the member
+// go far away (beyond sharing range) and come back; the member's position comes from the global player list,
+// since its ghost despawns while it is away.
+function W3T_HandoffLeader(bot : W3T_Bot, coop : r_CoopEnemies, players : array<r_RemotePlayer>, globals : array<r_RemotePlayer>) : bool
+{
+    var dist : float;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(players.Size() < 1 || !players[0].ghost)
+        {
+            return false;
+        }
+        W3T_EnemyAttacksLeader(bot, coop, players[0]);
+        bot.scenarioVec = players[0].pos;
+        return false;
+    }
+    if(globals.Size() < 1)
+    {
+        return bot.scenarioCount >= 4;
+    }
+
+    // scenarioCount: 1 drowner spawned, 2 member went far, 4 member came back
+    dist = VecDistance(globals[0].pos, bot.scenarioVec);
+    W3T_Log("HANDOFF leader sees the member " + FloatToStringPrec(dist, 1) + " m from the start; leaderEnemies="
+        + coop.HostEnemyCount());
+    if(bot.scenarioCount == 1 && dist > 80)
+    {
+        bot.scenarioCount = 2;
+    }
+    else if(bot.scenarioCount == 2 && dist < 20)
+    {
+        bot.scenarioCount = 4;
+    }
+    return bot.scenarioCount >= 4;
+}
+
+// handoff, member: once the drowner is mirrored, go 120 m away: the puppets must be released within 5 s (this
+// world runs its own monsters there); come back: the drowner must be mirrored again.
+function W3T_HandoffMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, players : array<r_RemotePlayer>) : bool
+{
+    var target : Vector;
+
+    if(!client.getInParty())
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        W3T_Log("PARTY join " + players[0].username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(players[0].username);
+        return false;
+    }
+
+    W3T_Log("HANDOFF member phase=" + bot.scenarioCount + " puppets=" + coop.PuppetCount() + " suppressed=" + coop.SuppressedCount()
+        + " pos=" + W3T_VecStr(thePlayer.GetWorldPosition()));
+
+    // scenarioCount: 0 waiting for the puppet, 1 sent away, 2 released and sent back, 3 mirrored again
+    if(bot.scenarioCount == 0 && coop.PuppetCount() > 0)
+    {
+        bot.scenarioVec = thePlayer.GetWorldPosition();
+        target = bot.scenarioVec;
+        target.X += 120;
+        thePlayer.Teleport(target);
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        W3T_Log("HANDOFF member went 120 m away");
+    }
+    else if(bot.scenarioCount == 1)
+    {
+        if(coop.PuppetCount() == 0 && coop.SuppressedCount() == 0)
+        {
+            W3T_Log("HANDOFF member released the leader's monsters after " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s");
+            thePlayer.Teleport(bot.scenarioVec);
+            bot.scenarioTime = bot.ElapsedS();
+            bot.scenarioCount = 2;
+        }
+        else if(bot.ElapsedS() - bot.scenarioTime > 5)
+        {
+            W3T_Log("FAIL puppets still mirrored 5 s after leaving sharing range");
+            W3T_Quit(1);
+        }
+    }
+    else if(bot.scenarioCount == 2 && coop.PuppetCount() > 0)
+    {
+        W3T_Log("HANDOFF member mirrors the drowner again after " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s");
+        bot.scenarioCount = 3;
+    }
+    return bot.scenarioCount == 3;
 }
 
 function W3T_ReportExtra(bot : W3T_Bot)

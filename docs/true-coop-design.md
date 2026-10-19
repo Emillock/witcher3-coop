@@ -100,6 +100,35 @@ Animation mirroring for puppets (attack, hit reaction, death) from host behavior
 nearest player; hand-off when the host leaves the area (enemies revert to local AI after 1.5 s, the OOT
 True Co-op rule).
 
+### As built so far (first slice; tests pass)
+
+- **Attacks.** On the leader, a `CNewNPC.OnPreAttackEvent` wrap catches a shared monster's hit window:
+  - At `AET_DurationStart` it records the animation name (`GetAnimNameFromEventAnimInfo`) under a new attack
+    number, and the snapshot goes out at once.
+  - At `AET_DurationEnd`, where the hit is processed, it records the animation time of the hit.
+
+  The member's puppet plays that animation through a forced `CAIPlayAnimationSlotAction` at `BTAP_Emergency`, above
+  the idle tree; afterwards it is idle again. A direct `ActionPlaySlotAnimationAsync` is refused while the idle
+  tree owns the puppet's actions.
+- **Hits in time with the swing.** Each hurt carries its attack number and hit time. The member applies it when
+  its puppet's swing reaches that point (0.27-0.34 s after arrival in the test), so the member sees the wind-up
+  and can dodge it. A hurt from an attack the member missed lands at once.
+- **Hand-off by distance.** The leader shares only with members within 60 m; a member farther than that, or in
+  another area, releases its puppets and hidden monsters immediately, and its own world's monsters take over.
+  The leader's world does not simulate monsters far from the leader.
+- **No finishers on puppets**, via `DisableFinishers` (killing blow) and `DisableFinisher` (living target): a
+  finisher would kill the puppet outside the leader's say.
+- **Not done:** mirroring hit reactions and other non-attack animations, special attacks that are not attack
+  animations (charges, jumps, spells), buffs from monster hits.
+
+Tests (2026-10-19, 2 clients on one PC):
+- `enemy_attacks`: PASS. The puppet started all 5 attacks, and the member took 1735 damage in 3 hits.
+- `handoff`: PASS. Puppets were released 2.8 s after the member went 120 m away, and mirrored again 2.0 s after
+  it came back.
+- `shared_enemy`: PASS.
+
+The tests confirm each attack was accepted by the AI. That the animation looks right has to be checked by eye.
+
 ## Milestone 3: quest progress
 
 The Witcher 3 drives quest conditions from the facts database (`FactsAdd`, `FactsQuerySum`,
