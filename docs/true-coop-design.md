@@ -271,9 +271,12 @@ reached the choices.
 | handoff | PASS | PASS |
 | quest_sync | PASS | PASS |
 | dialog_sync | PASS | PASS |
+| facts_sync | PASS | PASS |
+| puppet_walk | PASS (stride: leader's drowner 1.34 m, puppet 1.57 m) | PASS (1.53 m, 1.42 m) |
 
-Also passing: `server_coop_test.py` (server co-op channel, no game) and `relay/selftest.py`. Over Steam, every run
-joined the host's lobby through the second account, and traffic flowed both ways.
+Rerun after walking puppets: 11/11 locally and 11/11 over real Steam. Also passing: `server_coop_test.py` (server
+co-op channel, no game) and `relay/selftest.py`. Over Steam, every run joined the host's lobby through the second
+account, and traffic flowed both ways.
 
 ## Open questions
 
