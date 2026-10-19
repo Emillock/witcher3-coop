@@ -17,7 +17,8 @@ Players see each other in their own worlds, and each keeps their own save. Relea
 In development (branch `shared-enemies`, not released yet), when players are in a Witcher Online party:
 - **Monsters are shared.** The leader's world owns them; members fight copies that move, attack, react and die
   as the leader's monsters do. Members' hits count in the leader's world, and the monsters' hits land on members.
-- **Quest progress is shared** through the journal.
+- **Quest progress is shared** through the journal, and members follow the leader's tracked quest.
+- **Dialogue stays together:** the leader's choices and skips apply to members in the same scene.
 
 Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
@@ -94,6 +95,7 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py twin_match` | A drowner exists in both worlds: the member's own becomes the puppet, with no duplicate. |
 | `python run_test.py handoff` | The member goes 120 m away (its world runs its own monsters again) and comes back (shared again). |
 | `python run_test.py quest_sync` | The leader advances a quest objective before the member joins; after joining, the member has it in its journal. |
+| `python run_test.py dialog_sync` | The member follows the leader's tracked quest and skips, and gets the leader's dialogue pick when it reaches the choices 6 s later. |
 | `python run_suite.py [--steam-box <box>]` | All the scenarios above in a row, with a summary table. |
 | `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
 | `run_test.py <scenario> --steam-box <box>` | Over real Steam between two accounts on one PC. The host relay uses this PC's Steam; the joiner relay runs in a [Sandboxie-Plus](https://sandboxie-plus.com) box whose Steam is logged in to a second account. |

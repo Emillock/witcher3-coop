@@ -177,6 +177,28 @@ and objective state; a third bot joining late gets the same snapshot hash.
 Test (2026-10-19, 2 clients): `quest_sync` PASS. The leader activated an inactive objective before the member
 joined. The member joined 15 s later and had the objective, at the same status, 2 s after joining.
 
+## Party: scenes, dialogue and tracking
+
+Cutscenes and dialogue scenes are not started in sync. Each player's scene plays when their own quest
+reaches it, so players at the same quest point see it at about the same time. Forcing a scene to play in
+another world would bypass that world's quest graph. Within a scene:
+
+- **Choices** (Witcher Online): the leader's pick is selected for followers in the same dialogue within 8 m.
+  The leader sees "waiting for party" until followers reach the choice.
+  - Witcher Online dropped the pick when a follower had not reached the choices yet. It now waits up to 20 s
+    for matching choices.
+  - Its choice matching never matched choices without a play-go chunk, because "None" was compared with "none".
+- **Skips:** the leader's line and cutscene skips (`SSST_Skip`) are replayed by members in the same scene
+  (same scene path). Members' own skips stay local.
+- **Tracked quest:** the leader's tracked quest and highlighted objective go out with the journal list,
+  immediately when they change. Members follow when the leader changes them, for quests active for them;
+  in between, a member can track something else.
+
+Test `dialog_sync` (the bots drive the HUD dialogue module directly, inside a scene name set for the test):
+the leader tracks two quests in turn, skips twice, and picks choice B; the member reaches the same choices 6 s
+later. PASS: both tracking switches followed, both skips replayed, and the pick was applied 2 s after the member
+reached the choices.
+
 ## Verification (2026-10-19, all milestones)
 
 `run_suite.py` with two game clients on one PC; every scenario is pass/fail by the in-game bots.
@@ -191,6 +213,7 @@ joined. The member joined 15 s later and had the objective, at the same status, 
 | twin_match | PASS | PASS |
 | handoff | PASS | PASS |
 | quest_sync | PASS | PASS |
+| dialog_sync | PASS | PASS |
 
 Also passing: `server_coop_test.py` (server co-op channel, no game) and `relay/selftest.py`. Over Steam, every run
 joined the host's lobby through the second account, and traffic flowed both ways.

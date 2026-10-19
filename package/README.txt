@@ -8,8 +8,12 @@ the party leader's world is the one that counts:
 - Monsters are shared: everyone fights the leader's monsters. Your hits count in the leader's
   world, their attacks reach you (dodge them as usual), and they die for everyone.
 - Quest progress is shared through the journal: objectives the leader reaches show up in your
-  journal too (only forward; nothing you finished is undone). Dialogue choices the leader makes
-  are picked for everyone in the scene.
+  journal too (only forward; nothing you finished is undone). The quest the leader tracks becomes
+  your tracked quest when the leader switches it.
+- Cutscenes and dialogues play in each player's own game when their quest gets there; stay near
+  the leader (within 8 m) to share them. The leader's dialogue choices are picked for everyone
+  in the same dialogue (also if you get there a few seconds later), and when the leader skips a
+  line or cutscene, it is skipped for you too.
 - Farther than about 60 m from the leader, your own world's monsters take over again.
 - Loot stays per player. Quest facts outside the journal are not shared.
 To play without shared monsters, turn on "MPGhosts_LocalEnemiesOnly" in the mod's options.
