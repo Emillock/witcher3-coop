@@ -154,17 +154,43 @@ True Co-op rule).
 
   With locomotion off (`puppet_glide`, slide only) the puppets' strides were 0.11 m (drowner; its leader's
   1.42 m) and 0.12 m (nekker; 1.75 m).
-  - Humans are not covered. A bandit spawned by the test in Novigrad never moves: it starts no fight there, and
-    a direct `ActionMoveToAsync` is refused. Witcher Online's player copies are human NPCs driven the same way.
+  - Human enemies work the same way. A Baron's bandit
+    (`gameplay\community\community_npcs\nml\regular\baron_bandit_strong_sword.w2ent`) passes `puppet_walk`:
+    leader's stride 1.25 m, puppet 0.91 m. It circles and sidesteps before closing in, and its puppet follows
+    within 0.36 m. `crowd_npc` templates (bandit, Skellige pirate, Nilfgaardian squire) spawned alone stand idle
+    in combat, so tests need a community template.
   - Leaps show a gap until the next slide catches up: a nekker's 9.8 m leap gave one 9.8 m sample, and the
     next was 0.4 m. The test therefore fails only on a gap above 3.5 m that lasts a second.
   - Tried and dropped: moving puppets through the AI (`CAIMoveToPoint` at `BTAP_Emergency`, as cutscenes do). The
     forced move never moved a puppet, with or without `enterExplorationOnStart`, and the gaps grew to 8 m.
   - `GetRelativeMoveSpeed` and `GetVelocity` read 0 for monster NPCs even while they run, so speeds come from
     positions.
+- **Other moves** are mirrored like attacks: dodges, jump-backs, taunts, fear, parries, shots, and wraith and
+  wyvern moves.
+  - Capture: these behavior-tree tasks share `CBTTaskPlayAnimationEventDecorator`. The leader wraps its
+    `OnAnimEvent`, which carries the animation's name, and sends each new animation (or a restart) as
+    `moveSeq`/`moveAnim` with the enemy. Attack and hit-reaction tasks keep their own paths.
+  - Playback: members play the animation through the same AI slot action as attacks. The puppet stands while it
+    plays.
+  - Moves faster than the 10 Hz snapshots collapse into the newest.
+  - `enemy_moves` tells the leader's monster every 2 s that an attack is coming, as the game tells a target.
+    Moves seen on the leader and played on the puppet (2026-10-19), none refused:
+
+    | Monster | Moves |
+    |---|---|
+    | nekker | `c_dodge250_2`, `c_dodge250_3` |
+    | werewolf | `monster_werewolf_dodge_b01` |
+    | wolf | `wolf_taunt_02` |
+    | cave troll | `monster_cave_troll_taunt_1` |
+    | Baron's bandit | `man_npc_sword_1hand_taunt_7_left`, `..._8_left` |
+
+    A drowner that keeps attacking never dodged.
+- **Attacks of other enemy types:** `enemy_attacks --monster` passes with a Baron's bandit (4 sword swings
+  mirrored, 3 hits landed), a nekker and a cave troll. A wolf mirrored 40 attacks but then chased the Novigrad
+  citizens around the test spot, so its second hit on the ghost never came.
 - **Not done:**
-  - special attacks that are not attack animations (charges, jumps, spells, projectiles): puppets run or slide
-    through them;
+  - what special moves create: projectiles, spells and summons (the animation plays, nothing flies);
+  - moves that are not behavior-tree tasks (scripted encounter animations);
   - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 
 Tests (2026-10-19, 2 clients on one PC):
@@ -272,9 +298,10 @@ reached the choices.
 | quest_sync | PASS | PASS |
 | dialog_sync | PASS | PASS |
 | facts_sync | PASS | PASS |
-| puppet_walk | PASS (stride: leader's drowner 1.34 m, puppet 1.57 m) | PASS (1.53 m, 1.42 m) |
+| puppet_walk | PASS (stride: leader's drowner 1.34 m, puppet 1.57 m) | PASS (1.42 m, 1.54 m) |
+| enemy_moves | PASS (nekker dodge `c_dodge250_2` mirrored) | PASS (the same dodge) |
 
-Rerun after walking puppets: 11/11 locally and 11/11 over real Steam. Also passing: `server_coop_test.py` (server
+Rerun after walking puppets and mirrored moves: 12/12 locally and 12/12 over real Steam. Also passing: `server_coop_test.py` (server
 co-op channel, no game) and `relay/selftest.py`. Over Steam, every run joined the host's lobby through the second
 account, and traffic flowed both ways.
 

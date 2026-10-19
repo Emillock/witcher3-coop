@@ -27,7 +27,7 @@ Gwent duels between players are switched off. Details: [docs/true-coop-design.md
 |---|---|
 | Tested | Two game copies on one PC: presence, movement, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
 | Not tested yet | Two different PCs over the internet. Real encounters (tests spawn monsters by script). Chat, emotes, horses, party and dialogue sync on 5.01. |
-| Known limits | Special monster moves that are not attack animations (charges, spells, projectiles) are not mirrored. Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. |
+| Known limits | Monster copies play their attacks, dodges and taunts, but not what special moves create (projectiles, spells, summons). Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. |
 
 ## Playing
 
@@ -91,7 +91,8 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py see_each_other` | Starts a local server and two games driven by the bot. They must spawn each other. |
 | `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
 | `python run_test.py shared_enemy` | Shared enemies ([design](docs/true-coop-design.md)). The second bot joins the first one's party. The first spawns a drowner; the second hits its copy three times. Both must agree on its health, and the copy must die when the first bot kills it. |
-| `python run_test.py enemy_attacks` | The leader's drowner attacks the member's ghost: its puppet plays the attacks and the hits land on the member, after the member's own armor. |
+| `python run_test.py enemy_attacks [--monster PATH]` | The leader's drowner attacks the member's ghost: its puppet plays the attacks and the hits land on the member, after the member's own armor. |
+| `python run_test.py enemy_moves [--monster PATH]` | The leader's monster (a nekker by default) dodges or taunts; its puppet plays the same move. |
 | `python run_test.py reactions` | The leader's hits replay on the member's puppet; a bleeding hit reaches the member with its effect. |
 | `python run_test.py twin_match` | A drowner exists in both worlds: the member's own becomes the puppet, with no duplicate. |
 | `python run_test.py handoff` | The member goes 120 m away (its world runs its own monsters again) and comes back (shared again). |
