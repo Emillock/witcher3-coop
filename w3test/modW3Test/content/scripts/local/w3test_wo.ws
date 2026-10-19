@@ -42,8 +42,9 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_FactsMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
-    if(scenario == "puppet_follow")
+    if(scenario == "puppet_follow" || scenario == "puppet_walk" || scenario == "puppet_glide")
     {
+        client.getCoopEnemies().SetPuppetLocomotion(scenario != "puppet_glide");
         if(ghosts < 1)
         {
             return false;
@@ -375,6 +376,32 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
 }
 
 // a spot on the navmesh about `range` m from `from` with a clear walkable line back to it (W = 0 if none)
+// a walkable spot 12-14 m from `from`, with a free path to it, as near the middle of the screen as there is one
+// (both bots load the same save, so their cameras look the same way: in view for screenshots); W = 0 if none
+function W3T_SpotInView(from : Vector) : Vector
+{
+    var spot, safe, best : Vector;
+    var x, y, bestX : float;
+    var i, r : int;
+
+    bestX = 2;
+    for(r = 12; r <= 14; r += 2)
+    {
+        for(i = 0; i < 32; i += 1)
+        {
+            spot = from + VecFromHeading(i * 11.25) * r;
+            if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 2.0, safe) && theGame.GetWorld().NavigationLineTest(from, safe, 0.5)
+                && theCamera.WorldVectorToViewRatio(safe, x, y) && AbsF(x) < bestX && AbsF(y) < 0.9)
+            {
+                bestX = AbsF(x);
+                best = safe;
+                best.W = 1;
+            }
+        }
+    }
+    return best;
+}
+
 function W3T_WalkableSpot(from : Vector, range : float) : Vector
 {
     var spot, safe : Vector;
@@ -1109,12 +1136,13 @@ function W3T_FactsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_C
     return FactsQuerySum("w3t_coop_fact_a") == 3 && FactsQuerySum("w3t_coop_fact_b") == 4;
 }
 
-// puppet_follow, leader: a drowner 14 m from the member's ghost (neutral to this Geralt), so it runs to the ghost;
-// passes 20 s later.
+// puppet_follow, leader: a drowner (or W3T_MONSTER) 14 m from the member's ghost (neutral to this Geralt), so it
+// runs to the ghost; passes 20 s later.
 function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var template : CEntityTemplate;
     var drowner : CNewNPC;
+    var path : string;
     var pos : Vector;
     var rot : EulerAngles;
 
@@ -1124,26 +1152,61 @@ function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemoteP
         {
             return false;
         }
-        pos = W3T_WalkableSpot(member.ghost.GetWorldPosition(), 14.0);
+        pos = W3T_SpotInView(member.ghost.GetWorldPosition());
+        if(pos.W == 0)
+        {
+            pos = W3T_WalkableSpot(member.ghost.GetWorldPosition(), 14.0);
+        }
         if(pos.W == 0)
         {
             W3T_Log("FAIL no walkable spot 14 m from the ghost");
             W3T_Quit(2);
             return false;
         }
-        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        path = W3T_GetEnv("W3T_MONSTER");
+        if(path == "")
+        {
+            path = "characters\npc_entities\monsters\drowner_lvl1.w2ent";
+        }
+        template = (CEntityTemplate)LoadResource(path, true);
+        if(!template)
+        {
+            W3T_Log("FAIL no template " + path);
+            W3T_Quit(2);
+            return false;
+        }
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
         drowner = (CNewNPC)bot.scenarioEntity;
-        drowner.SetAttitude(thePlayer, AIA_Neutral);
-        W3T_Log("MOVES leader spawned a drowner 14 m from the ghost at " + W3T_VecStr(pos));
+        // monsters go for the ghost; humans don't, so they go for this (invulnerable) Geralt, as the console's
+        // spawn command makes them hostile
+        if(drowner.IsHuman())
+        {
+            drowner.SetTemporaryAttitudeGroup('hostile_to_player', AGP_Default);
+            drowner.NoticeActor(thePlayer);
+        }
+        else
+        {
+            drowner.SetAttitude(thePlayer, AIA_Neutral);
+        }
+        drowner.SetAttitude(member.ghost, AIA_Hostile);
+        W3T_Log("MOVES leader spawned " + path + " " + FloatToStringPrec(VecDistance(pos, member.ghost.GetWorldPosition()), 1) + " m from the ghost at " + W3T_VecStr(pos));
         bot.scenarioTime = bot.ElapsedS();
         bot.scenarioCount = 1;
         return false;
     }
     drowner = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(drowner.GetWorldPosition());
-    W3T_Log("MOVES leader drowner at " + W3T_VecStr(drowner.GetWorldPosition()));
+    // a human that still stands after 5 s (here in Novigrad they don't start fights) is sent running to the ghost
+    // (scenarioValue: sent)
+    if(drowner.IsHuman() && bot.scenarioValue == 0 && bot.ElapsedS() - bot.scenarioTime >= 5 && member.ghost)
+    {
+        bot.scenarioValue = 1;
+        W3T_Log("MOVES leader sends the human to the ghost: "
+            + drowner.ActionMoveToAsync(member.ghost.GetWorldPosition(), MT_Run, 0, 2.0));
+    }
+    W3T_Log("MOVES leader monster at " + W3T_VecStr(drowner.GetWorldPosition()) + " stride=" + FloatToStringPrec(coop.hostMaxSwing, 3)
+        + " bone=" + coop.strideBone);
     if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 20)
     {
         bot.scenarioCount = 2;
@@ -1151,8 +1214,9 @@ function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemoteP
     return bot.scenarioCount == 2;
 }
 
-// puppet_follow, member: while the leader's drowner runs 14 m to this player's ghost, its puppet stays within
-// 3.5 m of the leader's position (scenarioValue: largest gap seen), and within 1.5 m once it arrived.
+// puppet_follow, member: while the leader's monster runs toward this player's ghost, its puppet never stays more
+// than 3.5 m from the leader's position for 1 s (scenarioValue: largest gap seen), and is within 1.5 m once the
+// monster has run 8 m.
 function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     var puppet : CNewNPC;
@@ -1172,16 +1236,33 @@ function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     puppet = coop.PuppetAt(0);
     W3T_LookAt(puppet.GetWorldPosition());
     gap = VecDistance(puppet.GetWorldPosition(), coop.PuppetTarget(0));
-    bot.scenarioValue = MaxF(bot.scenarioValue, gap);
-    W3T_Log("FOLLOW member puppet at " + W3T_VecStr(puppet.GetWorldPosition()) + " gap=" + FloatToStringPrec(gap, 2)
-        + " maxGap=" + FloatToStringPrec(bot.scenarioValue, 2) + " toMe=" + FloatToStringPrec(VecDistance(puppet.GetWorldPosition(), thePlayer.GetWorldPosition()), 1));
-    if(bot.scenarioValue > 3.5)
+    if(!bot.scenarioFlag)
     {
-        W3T_Log("FAIL the puppet fell " + FloatToStringPrec(bot.scenarioValue, 2) + " m behind the leader's drowner");
+        bot.scenarioFlag = true;
+        bot.scenarioVec = coop.PuppetTarget(0);
+    }
+    bot.scenarioValue = MaxF(bot.scenarioValue, gap);
+    // a leap shows a gap until the next slide catches up; only a lasting one is lost sync (scenarioTime: since when)
+    if(gap <= 3.5)
+    {
+        bot.scenarioCount = 0;
+    }
+    else if(bot.scenarioCount == 0)
+    {
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    W3T_Log("FOLLOW member puppet at " + W3T_VecStr(puppet.GetWorldPosition()) + " gap=" + FloatToStringPrec(gap, 2)
+        + " maxGap=" + FloatToStringPrec(bot.scenarioValue, 2) + " toMe=" + FloatToStringPrec(VecDistance(puppet.GetWorldPosition(), thePlayer.GetWorldPosition()), 1)
+        + " stride=" + FloatToStringPrec(coop.puppetMaxSwing, 3) + " bone=" + coop.strideBone);
+    if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 1.0)
+    {
+        W3T_Log("FAIL the puppet stayed " + FloatToStringPrec(gap, 2) + " m behind the leader's monster for 1 s");
         W3T_Quit(1);
         return false;
     }
-    return VecDistance(puppet.GetWorldPosition(), thePlayer.GetWorldPosition()) < 4.0 && gap < 1.5;
+    // wherever the monster's own AI takes it (some keep their distance from the ghost)
+    return VecDistance2D(coop.PuppetTarget(0), bot.scenarioVec) >= 8 && gap < 1.5;
 }
 
 function W3T_ReportExtra(bot : W3T_Bot)

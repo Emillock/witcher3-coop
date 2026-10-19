@@ -9,6 +9,7 @@ cd "$T"
 cfg() { python -c "import config; print(config.$1)"; }
 TW=$(cygpath -w "$T"); WO=$(cfg WO); WORK=$(cfg WORK)
 mkdir -p "$(cygpath -u "$WORK")/compile"
+rm -f "$(cygpath -u "$WORK")/compile/$tag.txt"  # a report left by an earlier run with this tag
 python -I deploy.py install --scripts-only --dlc --no-gwent \
   --extra "$WO\\client\\build\\Release\\WitcherOnlineClient.asi=bin\\x64_dx12\\WitcherOnlineClient.asi" \
   --extra "$TW\\w3test\\modW3Test=mods\\modW3Test" \

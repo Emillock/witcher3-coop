@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -133,6 +134,34 @@ def wait_in_world(log_path, limit, t0, procs):
         time.sleep(2)
 
 
+def last_stride(log, marker):
+    found = re.findall(re.escape(marker) + r".* stride=([0-9.]+)", log)
+    return float(found[-1]) if found else 0.0
+
+
+def shoot(run_dir, procs, a, stop):
+    # both bots' windows every a.shots seconds, in a thread of its own so the 1 s main loop doesn't limit the rate;
+    # with --shots-from, from that line in the first bot's log on, for --shots-for seconds
+    os.makedirs(os.path.join(run_dir, "shots"), exist_ok=True)
+    first = os.path.join(run_dir, bot_name(0) + ".log")
+    start = None if a.shots_from else time.time()
+    hwnds = {}
+    while not stop.wait(a.shots):
+        if start is None:
+            if os.path.exists(first) and a.shots_from in open(first, encoding="utf-8", errors="replace").read():
+                start = time.time()
+            continue
+        if a.shots_for and time.time() - start > a.shots_for:
+            return
+        stamp = time.strftime("%H%M%S") + f"_{int(time.time() * 100) % 100:02d}"
+        for i, p in enumerate(procs):
+            # finding the window walks every window on the desktop: once, again only if a capture fails
+            hwnd = hwnds.get(i) or game_window(p.pid)
+            hwnds[i] = hwnd
+            if hwnd and not capture_window(hwnd, os.path.join(run_dir, "shots", f"{stamp}_{bot_name(i)}.png"), fast=a.shots < 1):
+                hwnds[i] = None
+
+
 def check(scenario, logs, n):
     # the in-game bot decides pass/fail for its own instance; the harness requires every bot to pass
     reasons = []
@@ -140,6 +169,13 @@ def check(scenario, logs, n):
         if "PASS condition met" not in logs[i]:
             fail = [l for l in logs[i].splitlines() if " FAIL " in l]
             reasons.append(f"{bot_name(i)}: " + (fail[-1].split(" ", 1)[1] if fail else "no pass (did not finish)"))
+    if scenario == "puppet_walk" and not reasons:
+        # walking legs: the copy's foot swings like the leader's monster's (a slide alone swings it ~0.1 m)
+        leader, copy = last_stride(logs[0], "MOVES leader"), last_stride(logs[1], "FOLLOW member")
+        if leader < 0.3 or copy < 0.5 * leader:
+            reasons.append(f"stride: leader's monster {leader:.2f} m, member's copy {copy:.2f} m")
+        else:
+            return True, f"every bot passed '{scenario}'; stride: leader's monster {leader:.2f} m, member's copy {copy:.2f} m"
     return not reasons, "; ".join(reasons) or f"every bot passed '{scenario}'"
 
 
@@ -154,7 +190,10 @@ def main():
     ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
     ap.add_argument("--port", type=int, default=41000)
     ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
+    ap.add_argument("--monster", default="", help="puppet scenarios: the leader's monster template (depot path)")
     ap.add_argument("--shots", type=float, default=0, help="save both bots' windows as PNG every this many seconds once all are in the world")
+    ap.add_argument("--shots-from", default="", help="start the screenshots when this text appears in the first bot's log")
+    ap.add_argument("--shots-for", type=float, default=0, help="stop the screenshots after this many seconds")
     ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
                                         "Sandboxie box, whose Steam is logged in to a second account")
     a = ap.parse_args()
@@ -162,10 +201,11 @@ def main():
         a.relay = True
     if a.duration is None:
         # the leader waits for the member to load and join before the fight starts
-        a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync", "facts_sync", "puppet_follow") else 60
+        a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync", "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide") else 60
 
     run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario
-                           + ("-steam" if a.steam_box else "-relay" if a.relay else ""))
+                           + ("-steam" if a.steam_box else "-relay" if a.relay else "")
+                           + ("-" + re.sub(r"\.w2ent$", "", a.monster.split("\\")[-1]) if a.monster else ""))
     os.makedirs(run_dir)
     print(f"run dir: {run_dir}", flush=True)
 
@@ -193,6 +233,7 @@ def main():
                                       ["join", "--local-port", str(a.port + 100 + i)]))
 
     procs = []
+    shots_stop = threading.Event()
     t0 = time.time()
     try:
         for i in range(a.bots):
@@ -204,7 +245,7 @@ def main():
                        WO_SERVER_PORT=str(a.port + 100 + i if a.relay and i > 0 else a.port),
                        W3T_SCENARIO=a.scenario, W3T_DURATION=str(a.duration), W3T_SAVE=a.save,
                        W3T_PEERS=str(a.bots - 1), W3T_ROLE="mover" if i == 0 else "observer",
-                       W3T_GRACE=str(a.grace),
+                       W3T_GRACE=str(a.grace), W3T_MONSTER=a.monster,
                        W3T_LOG=os.path.join(run_dir, bot_name(i) + ".log"))
             p = subprocess.Popen([EXE] + GAME_ARGS, cwd=os.path.dirname(EXE), env=env)
             procs.append(p)
@@ -216,17 +257,13 @@ def main():
 
         seen = {}
         next_stats = 0
-        next_shot = 0
+        shooter = None
         while time.time() - t0 < a.timeout:
             # side by side, in bot order, so no window covers another
             arrange([p.pid for p in procs])
-            if a.shots > 0 and len(procs) == a.bots and time.time() >= next_shot:
-                next_shot = time.time() + a.shots
-                os.makedirs(os.path.join(run_dir, "shots"), exist_ok=True)
-                for i, p in enumerate(procs):
-                    hwnd = game_window(p.pid)
-                    if hwnd:
-                        capture_window(hwnd, os.path.join(run_dir, "shots", f"{time.strftime('%H%M%S')}_{int(time.time() * 10) % 10}_{bot_name(i)}.png"))
+            if a.shots > 0 and len(procs) == a.bots and not shooter:
+                shooter = threading.Thread(target=shoot, args=(run_dir, procs, a, shots_stop), daemon=True)
+                shooter.start()
             if time.time() >= next_stats:
                 next_stats = time.time() + 15
                 mem = ", ".join(f"{bot_name(i)} {private_mb(p.pid)} MB" for i, p in enumerate(procs) if p.poll() is None)
@@ -263,6 +300,7 @@ def main():
                 break
             time.sleep(1)
     finally:
+        shots_stop.set()
         for i, p in enumerate(procs):
             if p.poll() is None:
                 p.kill()

@@ -129,8 +129,43 @@ True Co-op rule).
 - **Matching an encounter that exists in both worlds.** Unmatched local hostiles near a member are hidden and
   idle. When the leader's copy of one appears, the member's own monster is found (same template, within 10 m),
   shown again and made the puppet. No duplicate is spawned.
-- **Not done:** special attacks that are not attack animations (charges, jumps, spells, projectiles); hit
-  reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
+- **Movement.** Puppets slide to the leader's positions with the movement adjustor (a 0.15 s slide per frame
+  toward the latest 10 Hz snapshot, a teleport beyond 12 m). While sliding they walk and run on their own legs:
+  - The member estimates how fast the leader's monster moves from successive snapshots.
+  - It sets the puppet's gameplay move speed (`SetGameplayRelativeMoveSpeed`) and direction, as Witcher Online
+    does for horses: 1 (walk) up to 2 m/s, 2 (run) up to 4.5 m/s, 3 above.
+  - The speed is 0 when the monster stands, while a mirrored attack plays, and when no snapshot came for 0.5 s.
+  - The monster's behavior graph picks its own walk or run animation. No engine patch was needed.
+
+  Measured as stride: a foot's swing along the facing, relative to the pelvis (or torso) of the same pose, over
+  1.5 s windows while moving. Skeletons without `l_foot`/`r_foot` use the bones nearest four points at foot height
+  around the body. `puppet_walk` (2026-10-19, 2 clients on one PC; leader's monster vs member's puppet, and the
+  largest momentary gap):
+
+  | Monster | Leader's stride | Puppet's stride | Largest gap |
+  |---|---|---|---|
+  | drowner | 1.48 m | 1.42 m | 1.73 m |
+  | wolf | 0.83 m | 0.74 m | 0.75 m |
+  | nekker | 1.76 m | 1.42 m | 1.33 m |
+  | ghoul | 1.48 m | 1.12 m | 0.91 m |
+  | endrega worker | 1.05 m | 1.17 m | 0.52 m |
+  | cave troll | 1.13 m | 1.04 m | 0.46 m |
+  | werewolf | 2.60 m | 2.42 m | 1.17 m |
+
+  With locomotion off (`puppet_glide`, slide only) the puppets' strides were 0.11 m (drowner; its leader's
+  1.42 m) and 0.12 m (nekker; 1.75 m).
+  - Humans are not covered. A bandit spawned by the test in Novigrad never moves: it starts no fight there, and
+    a direct `ActionMoveToAsync` is refused. Witcher Online's player copies are human NPCs driven the same way.
+  - Leaps show a gap until the next slide catches up: a nekker's 9.8 m leap gave one 9.8 m sample, and the
+    next was 0.4 m. The test therefore fails only on a gap above 3.5 m that lasts a second.
+  - Tried and dropped: moving puppets through the AI (`CAIMoveToPoint` at `BTAP_Emergency`, as cutscenes do). The
+    forced move never moved a puppet, with or without `enterExplorationOnStart`, and the gaps grew to 8 m.
+  - `GetRelativeMoveSpeed` and `GetVelocity` read 0 for monster NPCs even while they run, so speeds come from
+    positions.
+- **Not done:**
+  - special attacks that are not attack animations (charges, jumps, spells, projectiles): puppets run or slide
+    through them;
+  - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 
 Tests (2026-10-19, 2 clients on one PC):
 - `enemy_attacks`: PASS. The puppet started all 5 attacks, and the member took 1735 damage in 3 hits.

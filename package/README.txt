@@ -5,8 +5,9 @@ See your friends in your world and travel together. Each player keeps their own 
 
 In a party (walk up to a friend's character, press the interact key and pick "Join party"),
 the party leader's world is the one that counts:
-- Monsters are shared: everyone fights the leader's monsters. Your hits count in the leader's
-  world, their attacks reach you (dodge them as usual), and they die for everyone.
+- Monsters are shared: everyone fights the leader's monsters. They walk, run and attack where the
+  leader sees them. Your hits count in the leader's world, their attacks reach you (dodge them as
+  usual), and they die for everyone.
 - Quest progress is shared through the journal: objectives the leader reaches show up in your
   journal too (only forward; nothing you finished is undone). The quest the leader tracks becomes
   your tracked quest when the leader switches it.
@@ -15,7 +16,8 @@ the party leader's world is the one that counts:
   in the same dialogue (also if you get there a few seconds later), and when the leader skips a
   line or cutscene, it is skipped for you too.
 - Farther than about 60 m from the leader, your own world's monsters take over again.
-- Loot stays per player. Quest facts outside the journal are not shared.
+- The hidden quest facts the leader's game sets during the session are shared too (also only
+  forward), so your quests can follow the leader's progress. Loot stays per player.
 To play without shared monsters, turn on "MPGhosts_LocalEnemiesOnly" in the mod's options.
 Gwent duels between players are switched off in this version.
 
@@ -66,5 +68,6 @@ WitcherNativeBridge by Flawkee and rejuvenate7 (MIT). Ultimate ASI Loader by Thi
 Licenses and the full source of the modified parts are in W3Coop\licenses and W3Coop\source.
 Status: tested with automated bots, two game copies on one PC, also through real Steam between
 two accounts. Covered: seeing each other and movement; shared monsters (hits, attacks, hit
-reactions, deaths, leaving and coming back); journal progress. Not yet tested on two different PCs
-over the internet.
+reactions, deaths, leaving and coming back; their copies walk and run like the leader's monsters);
+journal progress, quest facts and dialogue choices. Not yet tested on two different PCs over the
+internet.

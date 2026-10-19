@@ -121,11 +121,19 @@ gdi32.SelectObject.argtypes = [wt.HDC, wt.HGDIOBJ]
 gdi32.GetDIBits.argtypes = [wt.HDC, wt.HBITMAP, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
 gdi32.DeleteObject.argtypes = [wt.HGDIOBJ]
 gdi32.DeleteDC.argtypes = [wt.HDC]
+gdi32.BitBlt.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wt.HDC, ctypes.c_int,
+                         ctypes.c_int, wt.DWORD]
+user32.ClientToScreen.argtypes = [wt.HWND, ctypes.POINTER(wt.POINT)]
+user32.WindowFromPoint.restype = wt.HWND
+user32.WindowFromPoint.argtypes = [wt.POINT]
+user32.GetAncestor.restype = wt.HWND
+user32.GetAncestor.argtypes = [wt.HWND, wt.UINT]
 
 
-def capture_window(hwnd, path):
+def capture_window(hwnd, path, fast=False):
     """Saves the window's client area as a PNG (PrintWindow with PW_RENDERFULLCONTENT, so DirectX content is
-    included even if another window covers it). Returns False if nothing was captured."""
+    included even if another window covers it). fast: copy it from the screen when nothing covers its center
+    (milliseconds; PrintWindow makes DirectX redraw). Returns False if nothing was captured."""
     import struct
     import zlib
 
@@ -138,7 +146,14 @@ def capture_window(hwnd, path):
     mem = gdi32.CreateCompatibleDC(screen)
     bmp = gdi32.CreateCompatibleBitmap(screen, w, h)
     old = gdi32.SelectObject(mem, bmp)
-    ok = user32.PrintWindow(hwnd, mem, 1 | 2)  # PW_CLIENTONLY | PW_RENDERFULLCONTENT
+    ok = False
+    if fast:
+        at = wt.POINT(0, 0)
+        user32.ClientToScreen(hwnd, ctypes.byref(at))
+        if (user32.GetAncestor(user32.WindowFromPoint(wt.POINT(at.x + w // 2, at.y + h // 2)), 2) or 0) == hwnd:  # GA_ROOT
+            ok = gdi32.BitBlt(mem, 0, 0, w, h, screen, at.x, at.y, 0x00CC0020)  # SRCCOPY
+    if not ok:
+        ok = user32.PrintWindow(hwnd, mem, 1 | 2)  # PW_CLIENTONLY | PW_RENDERFULLCONTENT
     header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
     pixels = ctypes.create_string_buffer(w * h * 4)
     gdi32.GetDIBits(mem, bmp, 0, h, pixels, ctypes.byref(header), 0)
@@ -163,7 +178,7 @@ def capture_window(hwnd, path):
 
     with open(path, "wb") as f:
         f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-                + chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + chunk(b"IEND", b""))
+                + chunk(b"IDAT", zlib.compress(bytes(raw), 1 if fast else 6)) + chunk(b"IEND", b""))
     return True
 
 

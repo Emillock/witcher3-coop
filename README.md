@@ -15,9 +15,10 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
 Players see each other in their own worlds, and each keeps their own save. Released (v0.1.0): presence only.
 
 In development (branch `shared-enemies`, not released yet), when players are in a Witcher Online party:
-- **Monsters are shared.** The leader's world owns them; members fight copies that move, attack, react and die
-  as the leader's monsters do. Members' hits count in the leader's world, and the monsters' hits land on members.
-- **Quest progress is shared** through the journal, and members follow the leader's tracked quest.
+- **Monsters are shared.** The leader's world owns them; members fight copies that walk, run, attack, react and
+  die as the leader's monsters do. Members' hits count in the leader's world, and the monsters' hits land on members.
+- **Quest progress is shared:** the journal and the game's quest facts (read from the engine), and members
+  follow the leader's tracked quest.
 - **Dialogue stays together:** the leader's choices and skips apply to members in the same scene.
 
 Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
@@ -26,7 +27,7 @@ Gwent duels between players are switched off. Details: [docs/true-coop-design.md
 |---|---|
 | Tested | Two game copies on one PC: presence, movement, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
 | Not tested yet | Two different PCs over the internet. Real encounters (tests spawn monsters by script). Chat, emotes, horses, party and dialogue sync on 5.01. |
-| Known limits | Quest facts outside the journal are not synced (only an engine-level hook could). Special monster moves that are not attack animations (charges, spells, projectiles) are not mirrored. |
+| Known limits | Special monster moves that are not attack animations (charges, spells, projectiles) are not mirrored. Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. |
 
 ## Playing
 
@@ -96,6 +97,10 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py handoff` | The member goes 120 m away (its world runs its own monsters again) and comes back (shared again). |
 | `python run_test.py quest_sync` | The leader advances a quest objective before the member joins; after joining, the member has it in its journal. |
 | `python run_test.py dialog_sync` | The member follows the leader's tracked quest and skips, and gets the leader's dialogue pick when it reaches the choices 6 s later. |
+| `python run_test.py facts_sync` | Quest facts the leader's game sets (before and after the member joins) reach the member with the same values. |
+| `python run_test.py puppet_follow` | The leader's drowner runs 14 m; its copy is never more than 3.5 m behind it for a second, and is within 1.5 m of it once it has run 8 m. |
+| `python run_test.py puppet_walk [--monster PATH]` | As `puppet_follow`, and the copy must run on its legs: its foot swings at least half as far as the leader's real monster's (a slide alone swings it about 0.1 m). `--monster` takes another template's depot path. `puppet_glide` is the same run with copies only sliding, as a baseline. |
+| `run_test.py <scenario> --shots S` | Also saves both bots' windows as PNG every S seconds (in the run folder). |
 | `python run_suite.py [--steam-box <box>]` | All the scenarios above in a row, with a summary table. |
 | `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
 | `run_test.py <scenario> --steam-box <box>` | Over real Steam between two accounts on one PC. The host relay uses this PC's Steam; the joiner relay runs in a [Sandboxie-Plus](https://sandboxie-plus.com) box whose Steam is logged in to a second account. |
