@@ -113,6 +113,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EncounterMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "enemy_projectiles")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_ProjectilesLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_ProjectilesMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "enemy_moves")
     {
         if(ghosts < 1)
@@ -628,6 +641,47 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         return false;
     }
     return coop.movesPlayed >= 1;
+}
+
+// enemy_projectiles, leader: the monster of enemy_attacks (a Baron's bandit with a bow unless W3T_MONSTER) shoots at
+// the member's ghost. Passes once two of its projectiles were captured and one hit the ghost.
+function W3T_ProjectilesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_weak_bow.w2ent");
+        return false;
+    }
+    W3T_LookAt(bot.scenarioEntity.GetWorldPosition());
+    W3T_Log("PROJ leader projectiles=" + coop.projectilesSeen + " attacks=" + coop.attacksSeen + " moves=" + coop.movesSeen
+        + " hurts=" + coop.hurtsCaptured);
+    return coop.projectilesSeen >= 2 && coop.hurtsCaptured >= 1;
+}
+
+// enemy_projectiles, member: copies of the leader's monster's projectiles fly from its puppet (at least two, none
+// failed), and a hit lands as a hurt.
+function W3T_ProjectilesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() > 0)
+    {
+        W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
+    }
+    W3T_Log("PROJ member fired=" + coop.projectilesFired + " failures=" + coop.projectileFailures + " hurtsApplied=" + coop.hurtsApplied
+        + " lastError=" + coop.lastError);
+    if(coop.projectileFailures > 0)
+    {
+        W3T_Log("FAIL the leader's projectile could not be fired here: " + coop.lastError);
+        W3T_Quit(1);
+        return false;
+    }
+    return coop.projectilesFired >= 2 && coop.hurtsApplied >= 1;
 }
 
 // handoff, leader: a drowner next to the member's ghost, as in enemy_attacks. Passes after seeing the member
