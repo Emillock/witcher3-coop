@@ -154,12 +154,31 @@ while in the party (decision for the owner). Dialog choices are already synced b
 Exit test: host bot sets a quest fact and advances a journal objective; client bot reads the same fact value
 and objective state; a third bot joining late gets the same snapshot hash.
 
-### As built (journal; tests pass)
+### As built (journal and facts; tests pass)
 
 - **What can be captured.** `FactsAdd` is a native import, so scripts cannot wrap it, and quest graph fact blocks
-  write to the facts database without any script involved. General fact sync would need an engine-level hook
-  and is not done. The journal is reachable: the native journal reports every quest and objective update to the
+  write to the facts database without any script involved. So facts are read from the database itself (below).
+  The journal is reachable from scripts: the native journal reports every quest and objective update to the
   HUD (`CR4ScriptedHud.OnQuestEvent` / `OnQuestObjectiveEvent`), including the quest system's own.
+- **Facts sync.** The client ASI reads the engine's facts database, without hooks, on the game thread when a
+  script asks:
+  - **Finding it.** The facts natives reach the database as `game->systems[1]` (`FactsQuerySum`: `mov rax,[game];
+    cmp [rax+0xFDC0],1; mov rax,[rax+0xFDB8]; mov rsi,[rax+8]`). The client finds that code by a byte pattern and
+    takes the global and both offsets from the matched bytes.
+  - **Layout on 5.01**, found by probing with a known fact, a before/after memory diff and node dumps:
+    - the facts map is at `+0x58`, with the fact count at `+0x64`;
+    - its nodes come from one pool, `[+0x68, +0x80)`, with node size `0x28` at `+0x74` and free slots linked from
+      `+0x78` via `+0x20`;
+    - a node (pack 4) has the key text at `+0x00`, the key size at `+0x08`, the entries at `+0x0C`, the entry
+      count at `+0x14` and the link at `+0x20`;
+    - entries are 24 bytes, with the int value first.
+  - **Safety.** Every read is guarded. If the used slots don't add up to the map's fact count, nothing is reported
+    and sync stays off; a different game build disables it instead of misreading it.
+  - **Sending.** `WO_FactsBaseline()` records every fact's sum when a save is loaded (8,078 facts on the test save,
+    under a millisecond). `WO_FactsPage(40)` returns the facts changed since then, a page per call in turn. The
+    leader sends a page every 0.5 s on `fx`, so a late member gets all pages.
+  - **Applying.** Members raise a fact to the leader's sum with `FactsAdd`, never lower it, so a member who is
+    further along keeps its value. Fact expiry is ignored: all entries are summed.
 - **Journal sync.**
   - Every game records those updates by unique tag with the latest status.
   - The leader sends the session's list (up to 48 entries) every second on a `jr` channel. A changing tick makes
@@ -174,8 +193,11 @@ and objective state; a third bot joining late gets the same snapshot hash.
   member's quest graph may later move the same entries itself; only forward changes are mirrored, so nothing is
   ever undone.
 
-Test (2026-10-19, 2 clients): `quest_sync` PASS. The leader activated an inactive objective before the member
-joined. The member joined 15 s later and had the objective, at the same status, 2 s after joining.
+Tests (2026-10-19, 2 clients):
+- `quest_sync` PASS. The leader activated an inactive objective before the member joined. The member joined 15 s
+  later and had the objective, at the same status, 2 s after joining.
+- `facts_sync` PASS. A fact set before the member joined arrived 1 s after joining, and one set afterwards 1 s
+  after it was set. A fact the leader's game had changed by itself came along too.
 
 ## Party: scenes, dialogue and tracking
 
@@ -223,4 +245,5 @@ joined the host's lobby through the second account, and traffic flowed both ways
 - Which damage entry point catches all player damage (swords, signs, bombs, crossbow) on 5.x: the claims use the
   victim's `OnTakeDamage`, which every damage source goes through; only scripted direct-damage hits are tested.
 - Encounter matching is tested with script-spawned twins; real encounters are untested.
-- General fact sync (engine-level hook of the facts database).
+- The facts layout is from 5.01; a game patch that changes it turns fact sync off (logged as the reason) until
+  the layout is checked again.

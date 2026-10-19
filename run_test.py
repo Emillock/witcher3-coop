@@ -13,7 +13,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import WO, WORK  # noqa: E402
 from sandbox import make_sandbox  # noqa: E402
-from w3run import EXE, arrange, windows_of  # noqa: E402
+from w3run import EXE, arrange, capture_window, game_window, windows_of  # noqa: E402
 
 SERVER_JAR = os.path.join(WO, "server", "build", "WitcherServer.jar")
 RUNS = os.path.join(WORK, "runs")
@@ -154,6 +154,7 @@ def main():
     ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
     ap.add_argument("--port", type=int, default=41000)
     ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
+    ap.add_argument("--shots", type=float, default=0, help="save both bots' windows as PNG every this many seconds once all are in the world")
     ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
                                         "Sandboxie box, whose Steam is logged in to a second account")
     a = ap.parse_args()
@@ -161,7 +162,7 @@ def main():
         a.relay = True
     if a.duration is None:
         # the leader waits for the member to load and join before the fight starts
-        a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync") else 60
+        a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync", "facts_sync", "puppet_follow") else 60
 
     run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario
                            + ("-steam" if a.steam_box else "-relay" if a.relay else ""))
@@ -215,9 +216,17 @@ def main():
 
         seen = {}
         next_stats = 0
+        next_shot = 0
         while time.time() - t0 < a.timeout:
             # side by side, in bot order, so no window covers another
             arrange([p.pid for p in procs])
+            if a.shots > 0 and len(procs) == a.bots and time.time() >= next_shot:
+                next_shot = time.time() + a.shots
+                os.makedirs(os.path.join(run_dir, "shots"), exist_ok=True)
+                for i, p in enumerate(procs):
+                    hwnd = game_window(p.pid)
+                    if hwnd:
+                        capture_window(hwnd, os.path.join(run_dir, "shots", f"{time.strftime('%H%M%S')}_{int(time.time() * 10) % 10}_{bot_name(i)}.png"))
             if time.time() >= next_stats:
                 next_stats = time.time() + 15
                 mem = ", ".join(f"{bot_name(i)} {private_mb(p.pid)} MB" for i, p in enumerate(procs) if p.poll() is None)

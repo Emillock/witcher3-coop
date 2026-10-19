@@ -1,5 +1,6 @@
 // Witcher Online state for the test bot's per-second report, and the scenario pass conditions.
 
+
 function W3T_ScenarioCheck(bot : W3T_Bot) : bool
 {
     var scenario : string = W3T_GetEnv("W3T_SCENARIO");
@@ -18,6 +19,7 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return true;
     }
 
+
     players = client.getPlayers();
     for(i = 0; i < players.Size(); i += 1)
     {
@@ -25,6 +27,32 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         {
             ghosts += 1;
         }
+    }
+
+    if(scenario == "facts_sync")
+    {
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_FactsLeader(bot, client.getCoopEnemies());
+        }
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        return W3T_FactsMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "puppet_follow")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_MovesLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_FollowMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
     if(scenario == "see_each_other")
@@ -346,6 +374,31 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     return bot.scenarioCount >= 5;
 }
 
+// a spot on the navmesh about `range` m from `from` with a clear walkable line back to it (W = 0 if none)
+function W3T_WalkableSpot(from : Vector, range : float) : Vector
+{
+    var spot, safe : Vector;
+    var i : int;
+
+    for(i = 0; i < 16; i += 1)
+    {
+        spot = from + VecFromHeading(i * 22.5) * range;
+        if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 3.0, safe) && theGame.GetWorld().NavigationLineTest(from, safe, 0.5))
+        {
+            safe.W = 1;
+            return safe;
+        }
+    }
+    spot.W = 0;
+    return spot;
+}
+
+// turns the camera toward a spot, for screenshots (run_test.py --shots)
+function W3T_LookAt(target : Vector)
+{
+    theGame.GetGameCamera().GetActivePivotRotationController().SetDesiredHeading(VecHeading(target - thePlayer.GetWorldPosition()));
+}
+
 // enemy_attacks, leader: spawn a drowner next to the member's ghost, neutral to this Geralt so the ghost is its
 // only target. Passes once at least two of its hits on the ghost were sent and acknowledged.
 function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
@@ -389,6 +442,7 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         return false;
     }
 
+    W3T_LookAt(drowner.GetWorldPosition());
     target = drowner.GetTarget();
     targetName = "none";
     if(target == thePlayer)
@@ -428,6 +482,10 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
         return false;
     }
 
+    if(coop.PuppetCount() > 0)
+    {
+        W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
+    }
     W3T_Log("ENEMY member vitality=" + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0) + " hurtsApplied=" + coop.hurtsApplied
         + " dodged=" + coop.hurtsDodged + " damageTaken=" + FloatToStringPrec(coop.hurtDamageTaken, 1) + " puppets=" + coop.PuppetCount()
         + " attacksPlayed=" + coop.attacksPlayed + " attackFailures=" + coop.attackPlayFailures
@@ -999,6 +1057,131 @@ function W3T_DialogMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     }
 
     return bot.scenarioCount == 3 && coop.trackedApplied >= 2 && tracked == coop.lastTrackedApplied && coop.skipsApplied >= 2;
+}
+
+// facts_sync, leader: a fact before the member joins (late-join snapshot) and one after (real time); passes once a
+// member has been in the party for 10 s after the second.
+function W3T_FactsLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    if(bot.scenarioCount == 0)
+    {
+        if(!coop.FactsReady())
+        {
+            return false;
+        }
+        FactsAdd("w3t_coop_fact_a", 3);
+        W3T_Log("FACTS leader set w3t_coop_fact_a=" + FactsQuerySum("w3t_coop_fact_a"));
+        bot.scenarioCount = 1;
+    }
+    else if(bot.scenarioCount == 1 && coop.GetRole() == 1)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+    }
+    else if(bot.scenarioCount == 2 && bot.ElapsedS() - bot.scenarioTime >= 3)
+    {
+        FactsAdd("w3t_coop_fact_b", 4);
+        W3T_Log("FACTS leader set w3t_coop_fact_b=" + FactsQuerySum("w3t_coop_fact_b"));
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 3;
+    }
+    else if(bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime >= 10)
+    {
+        bot.scenarioCount = 4;
+    }
+    return bot.scenarioCount == 4;
+}
+
+// facts_sync, member: join 10 s after starting; both of the leader's facts must arrive with the same sums.
+function W3T_FactsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        if(bot.ElapsedS() >= 10)
+        {
+            W3T_Log("PARTY join " + leader.username + " (late)");
+            client.joinParty(leader.username);
+        }
+        return false;
+    }
+    W3T_Log("FACTS member a=" + FactsQuerySum("w3t_coop_fact_a") + " b=" + FactsQuerySum("w3t_coop_fact_b")
+        + " applied=" + coop.factsApplied + " last=" + coop.lastFactApplied + " ready=" + coop.FactsReady());
+    return FactsQuerySum("w3t_coop_fact_a") == 3 && FactsQuerySum("w3t_coop_fact_b") == 4;
+}
+
+// puppet_follow, leader: a drowner 14 m from the member's ghost (neutral to this Geralt), so it runs to the ghost;
+// passes 20 s later.
+function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var drowner : CNewNPC;
+    var pos : Vector;
+    var rot : EulerAngles;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(coop.GetRole() != 1 || !member.ghost)
+        {
+            return false;
+        }
+        pos = W3T_WalkableSpot(member.ghost.GetWorldPosition(), 14.0);
+        if(pos.W == 0)
+        {
+            W3T_Log("FAIL no walkable spot 14 m from the ghost");
+            W3T_Quit(2);
+            return false;
+        }
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
+        drowner = (CNewNPC)bot.scenarioEntity;
+        drowner.SetAttitude(thePlayer, AIA_Neutral);
+        W3T_Log("MOVES leader spawned a drowner 14 m from the ghost at " + W3T_VecStr(pos));
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        return false;
+    }
+    drowner = (CNewNPC)bot.scenarioEntity;
+    W3T_LookAt(drowner.GetWorldPosition());
+    W3T_Log("MOVES leader drowner at " + W3T_VecStr(drowner.GetWorldPosition()));
+    if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 20)
+    {
+        bot.scenarioCount = 2;
+    }
+    return bot.scenarioCount == 2;
+}
+
+// puppet_follow, member: while the leader's drowner runs 14 m to this player's ghost, its puppet stays within
+// 3.5 m of the leader's position (scenarioValue: largest gap seen), and within 1.5 m once it arrived.
+function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet : CNewNPC;
+    var gap : float;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() < 1)
+    {
+        return false;
+    }
+    puppet = coop.PuppetAt(0);
+    W3T_LookAt(puppet.GetWorldPosition());
+    gap = VecDistance(puppet.GetWorldPosition(), coop.PuppetTarget(0));
+    bot.scenarioValue = MaxF(bot.scenarioValue, gap);
+    W3T_Log("FOLLOW member puppet at " + W3T_VecStr(puppet.GetWorldPosition()) + " gap=" + FloatToStringPrec(gap, 2)
+        + " maxGap=" + FloatToStringPrec(bot.scenarioValue, 2) + " toMe=" + FloatToStringPrec(VecDistance(puppet.GetWorldPosition(), thePlayer.GetWorldPosition()), 1));
+    if(bot.scenarioValue > 3.5)
+    {
+        W3T_Log("FAIL the puppet fell " + FloatToStringPrec(bot.scenarioValue, 2) + " m behind the leader's drowner");
+        W3T_Quit(1);
+        return false;
+    }
+    return VecDistance(puppet.GetWorldPosition(), thePlayer.GetWorldPosition()) < 4.0 && gap < 1.5;
 }
 
 function W3T_ReportExtra(bot : W3T_Bot)
