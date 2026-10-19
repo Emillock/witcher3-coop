@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import EXE  # noqa: E402
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
+# real pixel coordinates for window placement, also with display scaling
+user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 EnumWindowsProc = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
 user32.EnumWindows.argtypes = [EnumWindowsProc, wt.LPARAM]
 user32.EnumChildWindows.argtypes = [wt.HWND, EnumWindowsProc, wt.LPARAM]
@@ -60,6 +62,41 @@ def windows_of(pid):
 
     user32.EnumWindows(EnumWindowsProc(top), 0)
     return found
+
+
+SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE = 0x0001, 0x0004, 0x0010
+user32.GetWindowRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]
+user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wt.UINT]
+
+
+def game_window(pid):
+    """The game's visible main window, if it has one yet."""
+    for hwnd, cls, text, vis, _ in windows_of(pid):
+        if vis and text == "The Witcher 3":
+            return hwnd
+    return None
+
+
+def arrange(pids):
+    """Places the games' windows left to right along the top of the primary screen's work area, without resizing
+    or focusing them; wraps to a new row when the screen is full. Call repeatedly: the game moves its window
+    while it starts."""
+    area = wt.RECT()
+    user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(area), 0)  # SPI_GETWORKAREA
+    x, y, row_height = area.left, area.top, 0
+    for pid in pids:
+        hwnd = game_window(pid)
+        if not hwnd:
+            continue
+        r = wt.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(r))
+        w, h = r.right - r.left, r.bottom - r.top
+        if x > area.left and x + w > area.right:
+            x, y, row_height = area.left, y + row_height, 0
+        if (r.left, r.top) != (x, y):
+            user32.SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
+        x += w
+        row_height = max(row_height, h)
 
 
 def main():

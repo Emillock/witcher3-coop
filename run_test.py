@@ -13,7 +13,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import WO, WORK  # noqa: E402
 from sandbox import make_sandbox  # noqa: E402
-from w3run import EXE, windows_of  # noqa: E402
+from w3run import EXE, arrange, windows_of  # noqa: E402
 
 SERVER_JAR = os.path.join(WO, "server", "build", "WitcherServer.jar")
 RUNS = os.path.join(WORK, "runs")
@@ -68,10 +68,63 @@ def start_relay(run_dir, mock_dir, name, steam_id, args):
                             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
 
 
-def wait_in_world(log_path, limit, t0):
+SANDBOXIE_START = os.environ.get("SANDBOXIE_START", r"C:\Program Files\Sandboxie-Plus\Start.exe")
+
+
+def relay_dir(run_dir, name):
+    """A relay copy with the game's real steam_api64.dll next to it."""
+    d = os.path.join(run_dir, name)
+    os.makedirs(d)
+    shutil.copy2(os.path.join(RELAY_BUILD, "w3relay.exe"), d)
+    shutil.copy2(os.path.join(os.path.dirname(EXE), "steam_api64.dll"), d)
+    return d
+
+
+def wait_log(path, pattern, limit):
+    deadline = time.time() + limit
+    while time.time() < deadline:
+        if os.path.exists(path):
+            m = re.search(pattern, open(path, encoding="utf-8", errors="replace").read())
+            if m:
+                return m
+        time.sleep(1)
+    return None
+
+
+def start_real_host(run_dir, port):
+    """Host relay on this PC's own Steam; returns (process, lobby id or None)."""
+    d = relay_dir(run_dir, "relay-host")
+    proc = subprocess.Popen([os.path.join(d, "w3relay.exe"), "host", "--server-port", str(port), "--no-invite"], cwd=d,
+                            stdout=open(os.path.join(d, "relay.log"), "w"), stderr=subprocess.STDOUT,
+                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+    m = wait_log(os.path.join(d, "relay.log"), r"Lobby ready: (\d+)", 45)
+    return proc, (m.group(1) if m else None)
+
+
+def start_boxed_join(run_dir, box, name, lobby, local_port):
+    """Joiner relay inside a Sandboxie box whose Steam is logged in to a second account. The box may write only
+    under work\\runs, so the relay runs from there and logs to a file."""
+    d = relay_dir(run_dir, name)
+    exe, log = os.path.join(d, "w3relay.exe"), os.path.join(d, "relay.log")
+    with open(os.path.join(d, "run.cmd"), "w") as f:
+        f.write(f'@"{exe}" join --lobby {lobby} --local-port {local_port} > "{log}" 2>&1\n')
+    subprocess.run([SANDBOXIE_START, f"/box:{box}", "cmd.exe", "/c", os.path.join(d, "run.cmd")], check=True)
+    return wait_log(log, r"Joined .*'s game", 60) is not None
+
+
+def stop_boxed_relays(run_dir):
+    """Stops only the relay copies under this run (closing the whole box would also close its Steam)."""
+    pattern = os.path.join(run_dir, "relay-*", "w3relay.exe").replace("/", "\\")
+    subprocess.run(["powershell", "-NoProfile", "-Command",
+                    f"Get-CimInstance Win32_Process -Filter \"Name='w3relay.exe'\" | Where-Object {{ $_.ExecutablePath -like '{pattern}' }}"
+                    " | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"], timeout=60)
+
+
+def wait_in_world(log_path, limit, t0, procs):
     """Waits until a bot's log shows it reached the world (or `limit` seconds)."""
     deadline = time.time() + limit
     while time.time() < deadline:
+        arrange([p.pid for p in procs])
         if os.path.exists(log_path):
             text = open(log_path, encoding="utf-8", errors="replace").read()
             if "BOT start" in text or " QUIT " in text:
@@ -101,12 +154,17 @@ def main():
     ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
     ap.add_argument("--port", type=int, default=41000)
     ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
+    ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
+                                        "Sandboxie box, whose Steam is logged in to a second account")
     a = ap.parse_args()
+    if a.steam_box:
+        a.relay = True
     if a.duration is None:
         # the leader waits for the member to load and join before the fight starts
         a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks") else 60
 
-    run_dir =os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario + ("-relay" if a.relay else ""))
+    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario
+                           + ("-steam" if a.steam_box else "-relay" if a.relay else ""))
     os.makedirs(run_dir)
     print(f"run dir: {run_dir}", flush=True)
 
@@ -116,7 +174,15 @@ def main():
     time.sleep(2)
 
     relays = []
-    if a.relay:
+    if a.steam_box:
+        host, lobby = start_real_host(run_dir, a.port)
+        relays.append(host)
+        if not lobby:
+            print("the host relay did not create a Steam lobby; see relay-host\\relay.log", flush=True)
+        for i in range(1, a.bots):
+            joined = lobby and start_boxed_join(run_dir, a.steam_box, f"relay-{bot_name(i)}", lobby, a.port + 100 + i)
+            print(f"{bot_name(i)}'s relay in box {a.steam_box}: {'joined the lobby' if joined else 'did NOT join'}", flush=True)
+    elif a.relay:
         mock_dir = os.path.join(run_dir, "mocksteam")
         os.makedirs(mock_dir)
         relays.append(start_relay(run_dir, mock_dir, "relay-host", 1001, ["host", "--server-port", str(a.port), "--no-invite"]))
@@ -145,11 +211,13 @@ def main():
             if i + 1 < a.bots:
                 # one loading screen at a time: memory and GPU spikes don't overlap
                 time.sleep(a.stagger)
-                wait_in_world(os.path.join(run_dir, bot_name(i) + ".log"), 240, t0)
+                wait_in_world(os.path.join(run_dir, bot_name(i) + ".log"), 240, t0, procs)
 
         seen = {}
         next_stats = 0
         while time.time() - t0 < a.timeout:
+            # side by side, in bot order, so no window covers another
+            arrange([p.pid for p in procs])
             if time.time() >= next_stats:
                 next_stats = time.time() + 15
                 mem = ", ".join(f"{bot_name(i)} {private_mb(p.pid)} MB" for i, p in enumerate(procs) if p.poll() is None)
@@ -204,6 +272,8 @@ def main():
         for r in relays:
             if r.poll() is None:
                 r.kill()
+        if a.steam_box:
+            stop_boxed_relays(run_dir)
         for name in sorted(os.listdir(run_dir)):
             if name.startswith("relay-"):
                 text = open(os.path.join(run_dir, name, "relay.log"), encoding="utf-8", errors="replace").read()

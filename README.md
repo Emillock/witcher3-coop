@@ -17,8 +17,8 @@ are **not** shared yet. Gwent duels between players are switched off.
 
 | | |
 |---|---|
-| Tested | Two game copies on one PC see each other and follow each other's movement, both directly and through w3relay with a stand-in for Steam. w3relay creates and leaves a lobby on real Steam. |
-| Not tested yet | Two real Steam accounts on different PCs. Chat, emotes, horses, party and dialogue sync on 5.01. |
+| Tested | Two game copies on one PC see each other and follow each other's movement, both directly and through w3relay. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
+| Not tested yet | Two different PCs over the internet. Chat, emotes, horses, party and dialogue sync on 5.01. |
 | Next | Shared enemies and quest progress, see [docs/true-coop-design.md](docs/true-coop-design.md). |
 
 ## Playing
@@ -84,6 +84,8 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
 | `python run_test.py shared_enemy` | Shared enemies (work in progress, [design](docs/true-coop-design.md)). The second bot joins the first one's party. The first spawns a drowner; the second hits its copy three times. Both must agree on its health, and the copy must die when the first bot kills it. |
 | `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
+| `run_test.py <scenario> --steam-box <box>` | Over real Steam between two accounts on one PC. The host relay uses this PC's Steam; the joiner relay runs in a [Sandboxie-Plus](https://sandboxie-plus.com) box whose Steam is logged in to a second account. |
+| `python arrange_windows.py` | Places all open Witcher 3 windows side by side (the harness does this for its bots). |
 | `python deploy.py uninstall` | Removes exactly the files deploy installed (`<root>\work\deploy-manifest.json`), restoring anything it replaced. |
 
 Under the test bot (`w3test.asi`, which runs only when the harness sets `W3T_DOCUMENTS`), each game uses a

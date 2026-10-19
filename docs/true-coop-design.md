@@ -86,6 +86,9 @@ Tests (2026-10-18):
 - `run_test.py enemy_attacks`, 2 clients: PASS. The leader's drowner, neutral to the leader, attacked the
   member's ghost. Five hits were captured and acknowledged, and the member took 560 and 588 damage from the
   first two after its own armor.
+- Over real Steam between two accounts (2026-10-19; the joiner's relay in a Sandboxie box logged in to a second
+  account): `movement` PASS and `shared_enemy` PASS (0.96, 0.92 and 0.88 on both sides; the puppet died with the
+  leader's drowner).
 - Earlier runs failed and found three bugs:
   - the NPC difficulty multiplier was applied to members' hits;
   - the leader only tracked monsters hostile to its own Geralt;
