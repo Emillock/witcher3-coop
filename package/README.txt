@@ -15,7 +15,8 @@ the party leader's world is the one that counts:
   the leader (within 8 m) to share them. The leader's dialogue choices are picked for everyone
   in the same dialogue (also if you get there a few seconds later), and when the leader skips a
   line or cutscene, it is skipped for you too.
-- You see each other's Igni and Aard (the fire and the wave), not only the casting gesture.
+- You see each other's signs, not only the casting gesture: Igni's fire, Aard's wave, Axii,
+  Yrden's trap on the ground and Quen's shield.
 - Farther than about 60 m from the leader, your own world's monsters take over again.
 - The hidden quest facts the leader's game sets during the session are shared too (also only
   forward), so your quests can follow the leader's progress. Loot stays per player.

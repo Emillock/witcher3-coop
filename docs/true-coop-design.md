@@ -127,14 +127,30 @@ True Co-op rule).
 - **Effects of monster hits** (bleeding, poison, stagger, knockdown) travel with the hurt as effect types. The
   member's own immunities and resistances decide whether they take hold.
 - **Other players' signs.** Witcher Online replayed only the casting gesture on a remote player's copy, so nobody
-  saw another player's Igni fire or Aard wave.
-  - Now an Igni or Aard cast also creates the sign's own entity at the copy, only to play its throw effect: no
-    projectile, no damage. It appears 0.4 s in and is removed after 3 s.
+  saw another player's signs.
+  - Now each cast also creates the sign's own entity at the copy, only to play its effects: no projectile, no
+    damage, no slowing trap. It appears 0.4 s in.
+    - Igni: the fire cone. Aard: the wave. Axii: its cast and throw effects. All are removed after 3 s.
+    - Yrden: the trap as the sign draws it (`CreateTrap`). Rune entities sit on a circle with one in the middle,
+      on the ground where it was cast. They fade out after the trap's duration or at the player's next Yrden.
+    - Quen: its cast effect is empty in the game's template. What shows is the lasting shield on the copy
+      (`lastingEffectUpgNone`/`Upg1-3` by the `S_Magic_s13` level).
+      - Each player's snapshot now carries whether their own shield is up (field 73,
+        `HasBuff(EET_BasicQuen)`). The copy keeps its shield until then, also through other casts.
+      - When it goes, the copy plays the sign's hit burst (`quen_lasting_shield_hit`). Vanilla plays the burst
+        only when a hit breaks the shield, not when it runs out; the copy can't tell the two apart.
+      - A player whose game doesn't send field 73 (an older version) loses the copy's shield after 30 s.
+      - A Quen-absorbed hit plays no hit animation, so `lastHit` can't signal the break.
+    - Yrden's range and duration, and Quen's shield level, come from the viewer's own Geralt. The caster's
+      stats aren't sent.
   - A cast now also counts when `W3PlayerWitcher.CastSign` succeeds, not only on the key press (casts started
     another way, like the test bot's, were never sent).
-  - `sign_visuals` checks this through `IsEffectActive` on both sides. Screenshots show the fire and the wave in
-    both windows (2026-10-20).
-  - Quen, Yrden and Axii still show only the gesture.
+  - `sign_visuals` checks all five through `IsEffectActive` and the Yrden rune count (2026-10-20).
+    - The member fights the leader's drowner, because out of combat Axii doesn't go off.
+    - Screenshots show Igni's fire, Aard's wave and Yrden's runes at the copy, as in the caster's own window.
+    - Axii's and Quen's lasting effects are faint at the test's 640x360 shots, in both windows.
+  - The sign type comes from the caster's `GetCurrentlyCastSign()` in its snapshot. Once, a cast while knocked
+    into the water arrived as the previous sign (Quen instead of Igni).
 - **Effects of members' hits** travel the other way (Igni's burning, Aard's knockdown, bombs):
   - The member reads them from its hit after the damage processor added them, and sends them with the claim, or
     alone when the hit did no damage (Aard).

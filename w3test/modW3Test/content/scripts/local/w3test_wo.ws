@@ -5,6 +5,7 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
 {
     var scenario : string = W3T_GetEnv("W3T_SCENARIO");
     var client : r_MultiplayerClient = theGame.r_getMultiplayerClient();
+    var coop : r_CoopEnemies;
     var players : array<r_RemotePlayer>;
     var ghosts : int;
     var i : int;
@@ -123,13 +124,12 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         {
             return false;
         }
+        coop = client.getCoopEnemies();
         if(W3T_GetEnv("W3T_ROLE") == "mover")
         {
-            W3T_LookAt(players[0].ghost.GetWorldPosition());
-            W3T_Log("SIGNFX leader played=" + client.getCoopEnemies().signVisualsPlayed + " active=" + client.getCoopEnemies().signVisualsActive);
-            return client.getCoopEnemies().signVisualsActive >= 2;
+            return W3T_SignVisualsLeader(bot, coop, players[0]);
         }
-        return W3T_SignVisualsMember(bot);
+        return W3T_SignVisualsMember(bot, client, coop, players[0]);
     }
 
     if(scenario == "member_combat")
@@ -827,16 +827,69 @@ function W3T_SignCheck(bot : W3T_Bot) : bool
     return bot.ElapsedS() - bot.scenarioTime > 40;
 }
 
-// sign_visuals, member: casts Igni and Aard in turn every 3 s, into the camera's view (scenarioCount: casts); its own
-// sign entity must play the sign's throw effect (seen: scenarioValue bit 1 Igni, bit 2 Aard). The leader passes once
-// two of this player's casts showed their visual at its copy.
-function W3T_SignVisualsMember(bot : W3T_Bot) : bool
+// sign_visuals, leader: a drowner for the member to fight (out of combat its Axii doesn't go off), immortal so the signs
+// don't kill it. Stays 4-8 m from the member's copy, looking at it (for screenshots). Passes once each of the member's
+// signs showed its visual there (Quen: its shield), Yrden's runes lay, and a Quen shield went down with its burst when
+// the drowner broke the member's.
+function W3T_SignVisualsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
+    var ghostPos, spot, away : Vector;
+    var rot : EulerAngles;
+    var dist : float;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(bot.scenarioCount == 1)
+        {
+            ((CNewNPC)bot.scenarioEntity).SetImmortalityMode(AIM_Immortal, AIC_Default);
+        }
+        return false;
+    }
+    ghostPos = member.ghost.GetWorldPosition();
+    dist = VecDistance(thePlayer.GetWorldPosition(), ghostPos);
+    if(dist < 4 || dist > 8)
+    {
+        away = VecFromHeading(member.ghost.GetHeading() + 180);
+        if(dist > 0.5)
+        {
+            away = VecNormalize(thePlayer.GetWorldPosition() - ghostPos);
+        }
+        if(theGame.GetWorld().NavigationFindSafeSpot(ghostPos + away * 6.0, 0.5, 2.0, spot))
+        {
+            rot.Yaw = VecHeading(ghostPos - spot);
+            thePlayer.TeleportWithRotation(spot, rot);
+        }
+    }
+    // a little beside the copy: looking straight at it, this Geralt stands in the way
+    W3T_LookAt(ghostPos + VecFromHeading(VecHeading(ghostPos - thePlayer.GetWorldPosition()) + 90) * 2.0);
+    W3T_Log("SIGNFX leader played=" + coop.signVisualsPlayed + " active=" + coop.signVisualsActive + " aard="
+        + coop.SignVisualsOf(ST_Aard) + " yrden=" + coop.SignVisualsOf(ST_Yrden) + " igni=" + coop.SignVisualsOf(ST_Igni)
+        + " quen=" + coop.SignVisualsOf(ST_Quen) + " axii=" + coop.SignVisualsOf(ST_Axii) + " quenShield=" + coop.quenShieldsShown
+        + " quenHit=" + coop.quenHitsShown + " yrdenRunes=" + coop.yrdenRunesShown + " last=" + coop.lastSignVisual + " ghostDist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), ghostPos), 1));
+    return coop.SignVisualsOf(ST_Aard) > 0 && coop.SignVisualsOf(ST_Yrden) > 0 && coop.SignVisualsOf(ST_Igni) > 0
+        && coop.SignVisualsOf(ST_Axii) > 0 && coop.SignVisualsOf(ST_Quen) > 0 && coop.yrdenRunesShown > 0 && coop.quenHitsShown > 0;
+}
+
+// sign_visuals, member: joins the party and casts all five signs in turn every 3 s at the leader's drowner, in combat
+// with it (scenarioCount: casts); its own Igni and Aard must play their throw effects (seen: scenarioValue bit 1 Igni,
+// bit 2 Aard). The leader passes once each sign showed its visual at this player's copy, Quen's shield too.
+function W3T_SignVisualsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet : CNewNPC;
     var rot : EulerAngles;
     var igni : W3IgniEntity;
     var aard : W3AardEntity;
     var seen : int;
 
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        bot.scenarioVec = thePlayer.GetWorldPosition();
+        return false;
+    }
     igni = (W3IgniEntity)GetWitcherPlayer().GetSignEntity(ST_Igni);
     aard = (W3AardEntity)GetWitcherPlayer().GetSignEntity(ST_Aard);
     seen = (int)bot.scenarioValue;
@@ -855,22 +908,30 @@ function W3T_SignVisualsMember(bot : W3T_Bot) : bool
     {
         bot.scenarioTime = bot.ElapsedS();
         rot.Yaw = theCamera.GetCameraHeading();
-        thePlayer.TeleportWithRotation(thePlayer.GetWorldPosition(), rot);
-        if(bot.scenarioCount % 2 == 0)
+        if(coop.PuppetCount() > 0)
         {
-            GetWitcherPlayer().SetEquippedSign(ST_Igni);
+            puppet = coop.PuppetAt(0);
+            rot.Yaw = VecHeading(puppet.GetWorldPosition() - bot.scenarioVec);
+            W3T_LookAt(puppet.GetWorldPosition());
+            thePlayer.GoToCombatIfNeeded(puppet);
         }
-        else
+        // back on the spot it joined at: the drowner's hits push it around (off the quay, out of the leader's view)
+        thePlayer.TeleportWithRotation(bot.scenarioVec, rot);
+        switch(bot.scenarioCount % 5)
         {
-            GetWitcherPlayer().SetEquippedSign(ST_Aard);
+            case 0: GetWitcherPlayer().SetEquippedSign(ST_Igni); break;
+            case 1: GetWitcherPlayer().SetEquippedSign(ST_Aard); break;
+            case 2: GetWitcherPlayer().SetEquippedSign(ST_Axii); break;
+            case 3: GetWitcherPlayer().SetEquippedSign(ST_Yrden); break;
+            default: GetWitcherPlayer().SetEquippedSign(ST_Quen); break;
         }
         thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
         thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
         bot.scenarioCount += 1;
     }
     W3T_Log("SIGNFX member casts=" + bot.scenarioCount + " ownIgni=" + ((seen & 1) != 0) + " ownAard=" + ((seen & 2) != 0)
-        + " lastSign=" + FloatToStringPrec(theGame.r_getMultiplayerClient().getLastSignTime(), 1));
-    return seen == 3;
+        + " lastSign=" + FloatToStringPrec(client.getLastSignTime(), 1) + " puppets=" + coop.PuppetCount() + " inCombat=" + thePlayer.IsInCombat());
+    return seen == 3 && bot.scenarioCount >= 10;
 }
 
 // member_combat, leader: the drowner of enemy_attacks, immortal so it takes every kind of hit. Passes once members'
