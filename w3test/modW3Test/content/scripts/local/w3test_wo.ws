@@ -481,9 +481,11 @@ function W3T_LookAt(target : Vector)
     theGame.GetGameCamera().GetActivePivotRotationController().SetDesiredHeading(VecHeading(target - thePlayer.GetWorldPosition()));
 }
 
-// enemy_attacks, leader: spawn a drowner next to the member's ghost, neutral to this Geralt so the ghost is its
-// only target. Passes once at least two of its hits on the ghost were sent and acknowledged.
-function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer, optional fallback : string) : bool
+// enemy_attacks, leader: spawn a drowner next to the member's ghost (12-14 m away if `far`: archers close by fight
+// in melee), neutral to this Geralt so the ghost is its only target. Passes once at least two of its hits on the
+// ghost were sent and acknowledged.
+function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer, optional fallback : string,
+    optional far : bool) : bool
 {
     var template : CEntityTemplate;
     var drowner : CNewNPC;
@@ -506,12 +508,20 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
             return false;
         }
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
-        pos = member.ghost.GetWorldPosition() + VecFromHeading(member.ghost.GetHeading()) * 3.0;
+        if(far)
+        {
+            pos = W3T_SpotInView(member.ghost.GetWorldPosition());
+        }
+        if(pos.W == 0)
+        {
+            pos = member.ghost.GetWorldPosition() + VecFromHeading(member.ghost.GetHeading()) * 3.0;
+        }
         rot = member.ghost.GetWorldRotation();
         bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
         drowner = (CNewNPC)bot.scenarioEntity;
         drowner.SetAttitude(thePlayer, AIA_Neutral);
         drowner.SetAttitude(member.ghost, AIA_Hostile);
+        drowner.NoticeActor(member.ghost);  // humans 12 m away don't notice it by themselves
         W3T_Log("ENEMY spawned " + W3T_MonsterPath(fallback) + " next to " + member.username + "'s ghost at " + W3T_VecStr(pos));
         bot.scenarioCount = 1;
         return false;
@@ -649,7 +659,7 @@ function W3T_ProjectilesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
 {
     if(bot.scenarioCount == 0)
     {
-        W3T_EnemyAttacksLeader(bot, coop, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_weak_bow.w2ent");
+        W3T_EnemyAttacksLeader(bot, coop, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_weak_bow.w2ent", true);
         return false;
     }
     W3T_LookAt(bot.scenarioEntity.GetWorldPosition());
