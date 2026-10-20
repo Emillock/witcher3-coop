@@ -117,6 +117,21 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EncounterMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "sign_visuals")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            W3T_LookAt(players[0].ghost.GetWorldPosition());
+            W3T_Log("SIGNFX leader played=" + client.getCoopEnemies().signVisualsPlayed + " active=" + client.getCoopEnemies().signVisualsActive);
+            return client.getCoopEnemies().signVisualsActive >= 2;
+        }
+        return W3T_SignVisualsMember(bot);
+    }
+
     if(scenario == "member_combat")
     {
         if(ghosts < 1)
@@ -777,6 +792,52 @@ function W3T_SignCheck(bot : W3T_Bot) : bool
         + (drowner.HasBuff(EET_Stagger) || drowner.HasBuff(EET_LongStagger)) + " dist="
         + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), thePlayer.GetWorldPosition()), 1));
     return bot.ElapsedS() - bot.scenarioTime > 40;
+}
+
+// sign_visuals, member: casts Igni and Aard in turn every 3 s, into the camera's view (scenarioCount: casts); its own
+// sign entity must play the sign's throw effect (seen: scenarioValue bit 1 Igni, bit 2 Aard). The leader passes once
+// two of this player's casts showed their visual at its copy.
+function W3T_SignVisualsMember(bot : W3T_Bot) : bool
+{
+    var rot : EulerAngles;
+    var igni : W3IgniEntity;
+    var aard : W3AardEntity;
+    var seen : int;
+
+    igni = (W3IgniEntity)GetWitcherPlayer().GetSignEntity(ST_Igni);
+    aard = (W3AardEntity)GetWitcherPlayer().GetSignEntity(ST_Aard);
+    seen = (int)bot.scenarioValue;
+    if(igni && igni.effects.Size() > 0 && (igni.IsEffectActive(igni.effects[0].throwEffect, true)
+        || (igni.effects.Size() > 1 && igni.IsEffectActive(igni.effects[1].throwEffect, true))))
+    {
+        seen = seen | 1;
+    }
+    if(aard && aard.effects.Size() > 0 && aard.IsEffectActive(aard.effects[0].baseCommonThrowEffect, true))
+    {
+        seen = seen | 2;
+    }
+    bot.scenarioValue = seen;
+
+    if(bot.ElapsedS() - bot.scenarioTime >= 3)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+        rot.Yaw = theCamera.GetCameraHeading();
+        thePlayer.TeleportWithRotation(thePlayer.GetWorldPosition(), rot);
+        if(bot.scenarioCount % 2 == 0)
+        {
+            GetWitcherPlayer().SetEquippedSign(ST_Igni);
+        }
+        else
+        {
+            GetWitcherPlayer().SetEquippedSign(ST_Aard);
+        }
+        thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
+        thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
+        bot.scenarioCount += 1;
+    }
+    W3T_Log("SIGNFX member casts=" + bot.scenarioCount + " ownIgni=" + ((seen & 1) != 0) + " ownAard=" + ((seen & 2) != 0)
+        + " lastSign=" + FloatToStringPrec(theGame.r_getMultiplayerClient().getLastSignTime(), 1));
+    return seen == 3;
 }
 
 // member_combat, leader: the drowner of enemy_attacks, immortal so it takes every kind of hit. Passes once members'
