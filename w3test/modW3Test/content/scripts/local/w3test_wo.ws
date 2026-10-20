@@ -829,16 +829,19 @@ function W3T_SignCheck(bot : W3T_Bot) : bool
 
 // sign_visuals, leader: a drowner for the member to fight (out of combat its Axii doesn't go off), immortal so the signs
 // don't kill it. Stays 4-8 m from the member's copy, looking at it (for screenshots). Passes once each of the member's
-// signs showed its visual there (Quen: its shield), Yrden's runes lay, and a Quen shield went down with its burst when
-// the drowner broke the member's.
+// signs showed its visual there (Quen: its shield) and Yrden's runes lay, the member's Yrden range and duration arrived,
+// and its Quen's hit burst was copied when the drowner hit the member's shield. With W3T_OLD_SIGNS=1 the member's
+// snapshot fields 73-79 are ignored, as from an older version: the visuals must still show, from this game's stats.
 function W3T_SignVisualsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var ghostPos, spot, away : Vector;
     var rot : EulerAngles;
-    var dist : float;
+    var dist, shieldLeft : float;
 
     if(bot.scenarioCount == 0)
     {
+        // W3T_OLD_SIGNS=1: as if the member ran a version without snapshot fields 73-79 (the fallback)
+        coop.assumeOldSigns = W3T_GetEnv("W3T_OLD_SIGNS") == "1";
         W3T_EnemyAttacksLeader(bot, coop, member);
         if(bot.scenarioCount == 1)
         {
@@ -847,6 +850,11 @@ function W3T_SignVisualsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
         return false;
     }
     ghostPos = member.ghost.GetWorldPosition();
+    shieldLeft = -1;
+    if(IsNameValid(member.quenShield))
+    {
+        shieldLeft = member.quenShieldUntil - theGame.GetEngineTimeAsSeconds();
+    }
     dist = VecDistance(thePlayer.GetWorldPosition(), ghostPos);
     if(dist < 4 || dist > 8)
     {
@@ -866,9 +874,20 @@ function W3T_SignVisualsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
     W3T_Log("SIGNFX leader played=" + coop.signVisualsPlayed + " active=" + coop.signVisualsActive + " aard="
         + coop.SignVisualsOf(ST_Aard) + " yrden=" + coop.SignVisualsOf(ST_Yrden) + " igni=" + coop.SignVisualsOf(ST_Igni)
         + " quen=" + coop.SignVisualsOf(ST_Quen) + " axii=" + coop.SignVisualsOf(ST_Axii) + " quenShield=" + coop.quenShieldsShown
-        + " quenHit=" + coop.quenHitsShown + " yrdenRunes=" + coop.yrdenRunesShown + " last=" + coop.lastSignVisual + " ghostDist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), ghostPos), 1));
-    return coop.SignVisualsOf(ST_Aard) > 0 && coop.SignVisualsOf(ST_Yrden) > 0 && coop.SignVisualsOf(ST_Igni) > 0
-        && coop.SignVisualsOf(ST_Axii) > 0 && coop.SignVisualsOf(ST_Quen) > 0 && coop.yrdenRunesShown > 0 && coop.quenHitsShown > 0;
+        + " quenHit=" + coop.quenHitsShown + " yrdenRunes=" + coop.yrdenRunesShown + " last=" + coop.lastSignVisual
+        + " signFx=" + member.signFx + " theirYrden=" + FloatToStringPrec(member.castYrdenRange, 2) + "/"
+        + FloatToStringPrec(member.castYrdenDuration, 2) + " theirQuenLevel=" + member.castQuenLevel + " quenUp=" + member.quenUp
+        + " shieldLeft=" + FloatToStringPrec(shieldLeft, 1) + " ghostDist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), ghostPos), 1));
+    if(!(coop.SignVisualsOf(ST_Aard) > 0 && coop.SignVisualsOf(ST_Yrden) > 0 && coop.SignVisualsOf(ST_Igni) > 0
+        && coop.SignVisualsOf(ST_Axii) > 0 && coop.SignVisualsOf(ST_Quen) > 0 && coop.yrdenRunesShown > 0))
+    {
+        return false;
+    }
+    if(coop.assumeOldSigns)
+    {
+        return !member.signFx;
+    }
+    return coop.quenHitsShown > 0 && member.signFx && member.castYrdenRange > 0 && member.castYrdenDuration > 0;
 }
 
 // sign_visuals, member: joins the party and casts all five signs in turn every 3 s at the leader's drowner, in combat
@@ -878,6 +897,8 @@ function W3T_SignVisualsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
 {
     var puppet : CNewNPC;
     var rot : EulerAngles;
+    var yrden : W3YrdenEntity;
+    var ownYrden : string;
     var igni : W3IgniEntity;
     var aard : W3AardEntity;
     var seen : int;
@@ -929,8 +950,16 @@ function W3T_SignVisualsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
         thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
         bot.scenarioCount += 1;
     }
+    yrden = (W3YrdenEntity)GetWitcherPlayer().GetSignEntity(ST_Yrden);
+    ownYrden = "none";
+    if(yrden)
+    {
+        ownYrden = FloatToStringPrec(yrden.WO_TrapRange(), 2) + "/" + FloatToStringPrec(yrden.WO_TrapDuration(), 2);
+    }
     W3T_Log("SIGNFX member casts=" + bot.scenarioCount + " ownIgni=" + ((seen & 1) != 0) + " ownAard=" + ((seen & 2) != 0)
-        + " lastSign=" + FloatToStringPrec(client.getLastSignTime(), 1) + " puppets=" + coop.PuppetCount() + " inCombat=" + thePlayer.IsInCombat());
+        + " lastSign=" + FloatToStringPrec(client.getLastSignTime(), 1) + " cast=" + client.getCastSignType() + " ownYrden=" + ownYrden
+        + " quenUp=" + thePlayer.HasBuff(EET_BasicQuen) + " quenBursts=" + client.getQuenBurstSeq() + " puppets=" + coop.PuppetCount()
+        + " inCombat=" + thePlayer.IsInCombat());
     return seen == 3 && bot.scenarioCount >= 10;
 }
 

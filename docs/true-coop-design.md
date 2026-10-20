@@ -132,25 +132,33 @@ True Co-op rule).
     damage, no slowing trap. It appears 0.4 s in.
     - Igni: the fire cone. Aard: the wave. Axii: its cast and throw effects. All are removed after 3 s.
     - Yrden: the trap as the sign draws it (`CreateTrap`). Rune entities sit on a circle with one in the middle,
-      on the ground where it was cast. They fade out after the trap's duration or at the player's next Yrden.
+      on the ground where it was cast, at the caster's range. They fade out after the caster's trap duration or at
+      their next Yrden.
     - Quen: its cast effect is empty in the game's template. What shows is the lasting shield on the copy
-      (`lastingEffectUpgNone`/`Upg1-3` by the `S_Magic_s13` level).
-      - Each player's snapshot now carries whether their own shield is up (field 73,
-        `HasBuff(EET_BasicQuen)`). The copy keeps its shield until then, also through other casts.
-      - When it goes, the copy plays the sign's hit burst (`quen_lasting_shield_hit`). Vanilla plays the burst
-        only when a hit breaks the shield, not when it runs out; the copy can't tell the two apart.
-      - A player whose game doesn't send field 73 (an older version) loses the copy's shield after 30 s.
-      - A Quen-absorbed hit plays no hit animation, so `lastHit` can't signal the break.
-    - Yrden's range and duration, and Quen's shield level, come from the viewer's own Geralt. The caster's
-      stats aren't sent.
-  - A cast now also counts when `W3PlayerWitcher.CastSign` succeeds, not only on the key press (casts started
-    another way, like the test bot's, were never sent).
+      (`lastingEffectUpgNone`/`Upg1-3` by the caster's `S_Magic_s13` level). It is up exactly while the caster's
+      own shield is.
+    - Whenever the caster's Quen plays its hit burst (`quen_lasting_shield_hit`: a hit on the shield, or the hit
+      that breaks it) or the exploding shield's impulse (`lasting_shield_impulse`), the copy plays it too. A shield
+      that runs out fades without a burst, as in vanilla.
+  - Each player's snapshot carries what the copies need (fields 73-79):
+    - 73: their Quen shield is up (`HasBuff(EET_BasicQuen)`). A Quen-absorbed hit plays no hit animation, so
+      `lastHit` can't stand in for it.
+    - 74: the sign of the last cast, recorded when the cast succeeded. `GetCurrentlyCastSign()` at snapshot time
+      can differ: once, a cast while knocked into the water arrived as the previous sign.
+    - 75-76: the last Yrden's range (with the Gryphon set's scale) and trap duration, read from the sign entity
+      after `GetSignStats` (added getters, the fields are protected).
+    - 77: the last Quen's shield level.
+    - 78-79: how often their Quen's hit burst and impulse started. The sender polls its own effects every 50 ms.
+  - From a game without these fields (an older version), the copy falls back to this game's own Geralt: Yrden's
+    range and duration, Quen's level, and the shield goes down after this game's own Quen duration.
+  - A cast is marked when `W3PlayerWitcher.CastSign` succeeds. Key presses (`OnCastSign`, `AltCastSign`) are no
+    longer marked: they reach `CastSign` a few frames later through the combat action buffer, so each cast was
+    sent twice, the first time before its sign was known. Casts started another way, like the test bot's, were
+    never sent.
   - `sign_visuals` checks all five through `IsEffectActive` and the Yrden rune count (2026-10-20).
     - The member fights the leader's drowner, because out of combat Axii doesn't go off.
     - Screenshots show Igni's fire, Aard's wave and Yrden's runes at the copy, as in the caster's own window.
     - Axii's and Quen's lasting effects are faint at the test's 640x360 shots, in both windows.
-  - The sign type comes from the caster's `GetCurrentlyCastSign()` in its snapshot. Once, a cast while knocked
-    into the water arrived as the previous sign (Quen instead of Igni).
 - **Effects of members' hits** travel the other way (Igni's burning, Aard's knockdown, bombs):
   - The member reads them from its hit after the damage processor added them, and sends them with the claim, or
     alone when the hit did no damage (Aard).
