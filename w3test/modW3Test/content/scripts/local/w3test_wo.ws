@@ -18,6 +18,10 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
     {
         return true;
     }
+    if(scenario == "sign_check")
+    {
+        return W3T_SignCheck(bot);
+    }
 
 
     players = client.getPlayers();
@@ -111,6 +115,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_EncounterLeader(bot, client.getCoopEnemies());
         }
         return W3T_EncounterMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "member_combat")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_CombatLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
     if(scenario == "enemy_projectiles")
@@ -651,6 +668,221 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         return false;
     }
     return coop.movesPlayed >= 1;
+}
+
+// sign_check (one bot, no co-op): Igni and Aard on a plain drowner 3 m ahead, every 2 s; logs whether they burn
+// or knock it down, and which effect abilities the sign skills contain. Passes after 40 s.
+function W3T_SignCheck(bot : W3T_Bot) : bool
+{
+    var template : CEntityTemplate;
+    var drowner : CNewNPC;
+    var rot : EulerAngles;
+    var abilities : array<name>;
+    var pos : Vector;
+    var i : int;
+    var line : string;
+    var node : SCustomNode;
+    var j : int;
+    var nameOk, stringOk, stringOk2 : bool;
+    var nameVal : name;
+    var stringVal, stringVal2 : string;
+
+    if(bot.scenarioCount == 0)
+    {
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        pos = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0;
+        bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
+        ((CNewNPC)bot.scenarioEntity).SetImmortalityMode(AIM_Immortal, AIC_Default);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        theGame.GetDefinitionsManager().GetContainedAbilities(thePlayer.GetSkillAbilityName(S_Magic_1), abilities);
+        line = "aard contains:";
+        for(i = 0; i < abilities.Size(); i += 1)
+        {
+            line += " " + NameToString(abilities[i]) + "/" + IsEffectNameValid(abilities[i]);
+        }
+        abilities.Clear();
+        theGame.GetDefinitionsManager().GetContainedAbilities(thePlayer.GetSkillAbilityName(S_Magic_2), abilities);
+        line += "; igni contains:";
+        for(i = 0; i < abilities.Size(); i += 1)
+        {
+            line += " " + NameToString(abilities[i]) + "/" + IsEffectNameValid(abilities[i]);
+        }
+        W3T_Log("SIGN " + line);
+        node = theGame.GetDefinitionsManager().GetCustomDefinition('effects');
+        W3T_Log("SIGN effectMgr ready=" + theGame.IsEffectManagerInitialized() + " xmlEffects=" + node.subNodes.Size()
+            + " valid BurningEffect=" + IsEffectNameValid('BurningEffect') + " KnockdownEffect=" + IsEffectNameValid('KnockdownEffect')
+            + " KnockdownTypeApplicator=" + IsEffectNameValid('KnockdownTypeApplicator') + " PoisonEffect=" + IsEffectNameValid('PoisonEffect'));
+        // what the first effect definitions look like (5.01 may name the attribute differently)
+        for(i = 0; i < 3 && i < node.subNodes.Size(); i += 1)
+        {
+            line = "SIGN def " + i + " node=" + NameToString(node.subNodes[i].nodeName) + " attrs:";
+            for(j = 0; j < node.subNodes[i].attributes.Size(); j += 1)
+            {
+                line += " " + NameToString(node.subNodes[i].attributes[j].attributeName) + "=" + NameToString(node.subNodes[i].values[j]);
+            }
+            W3T_Log(line);
+        }
+        if(node.subNodes.Size() > 0)
+        {
+            nameOk = theGame.GetDefinitionsManager().GetCustomNodeAttributeValueName(node.subNodes[0], 'name_name', nameVal);
+            stringOk = theGame.GetDefinitionsManager().GetCustomNodeAttributeValueString(node.subNodes[0], 'name_name', stringVal);
+            stringOk2 = theGame.GetDefinitionsManager().GetCustomNodeAttributeValueString(node.subNodes[0], 'name', stringVal2);
+            W3T_Log("SIGN def 0 as name: " + nameOk + " '" + NameToString(nameVal) + "'; as string: " + stringOk + " '" + stringVal
+                + "'; 'name' as string: " + stringOk2 + " '" + stringVal2 + "'; valid=" + IsEffectNameValid(nameVal));
+            line = "SIGN all effects:";
+            for(i = 0; i < node.subNodes.Size(); i += 1)
+            {
+                theGame.GetDefinitionsManager().GetCustomNodeAttributeValueName(node.subNodes[i], 'name_name', nameVal);
+                line += " " + NameToString(nameVal);
+            }
+            W3T_Log(line);
+        }
+        if(W3T_GetEnv("W3T_REINIT_EFFECTS") == "1")
+        {
+            theGame.effectMgr.Initialize();
+            W3T_Log("SIGN after re-init: BurningEffect=" + IsEffectNameValid('BurningEffect') + " KnockdownTypeApplicator="
+                + IsEffectNameValid('KnockdownTypeApplicator'));
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        return false;
+    }
+    drowner = (CNewNPC)bot.scenarioEntity;
+    if(bot.scenarioCount == 1)
+    {
+        // results: 0 undefined, 1 deny, 2 override, 3 pass, 4 cumulate
+        W3T_Log("SIGN direct: burning on drowner=" + (int)drowner.AddEffectDefault(EET_Burning, thePlayer, "W3T") + " has="
+            + drowner.HasBuff(EET_Burning) + " immune=" + drowner.IsImmuneToBuff(EET_Burning) + "; stagger on drowner="
+            + (int)drowner.AddEffectDefault(EET_Stagger, thePlayer, "W3T") + " has=" + drowner.HasBuff(EET_Stagger)
+            + "; bleeding on player=" + (int)thePlayer.AddEffectDefault(EET_Bleeding, drowner, "W3T") + " has=" + thePlayer.HasBuff(EET_Bleeding)
+            + "; potion Cat on player=" + (int)thePlayer.AddEffectDefault(EET_Cat, thePlayer, "W3T") + " has=" + thePlayer.HasBuff(EET_Cat));
+    }
+    W3T_LookAt(drowner.GetWorldPosition());
+    rot.Yaw = VecHeading(drowner.GetWorldPosition() - thePlayer.GetWorldPosition());
+    thePlayer.TeleportWithRotation(thePlayer.GetWorldPosition(), rot);
+    thePlayer.GoToCombatIfNeeded(drowner);
+    if(bot.scenarioCount % 2 == 1)
+    {
+        GetWitcherPlayer().SetEquippedSign(ST_Igni);
+    }
+    else
+    {
+        GetWitcherPlayer().SetEquippedSign(ST_Aard);
+    }
+    thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
+    thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
+    bot.scenarioCount += 1;
+    W3T_Log("SIGN cast=" + bot.scenarioCount + " hp=" + FloatToStringPrec(drowner.GetHealthPercents(), 3) + " burning=" + drowner.HasBuff(EET_Burning)
+        + " knockdown=" + (drowner.HasBuff(EET_Knockdown) || drowner.HasBuff(EET_HeavyKnockdown)) + " stagger="
+        + (drowner.HasBuff(EET_Stagger) || drowner.HasBuff(EET_LongStagger)) + " dist="
+        + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), thePlayer.GetWorldPosition()), 1));
+    return bot.ElapsedS() - bot.scenarioTime > 40;
+}
+
+// member_combat, leader: the drowner of enemy_attacks, immortal so it takes every kind of hit. Passes once members'
+// hits did damage and their effects were added to its hits (whether they take hold is logged: in the test games no
+// effect does, members' or not; see sign_check).
+function W3T_CombatLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(bot.scenarioCount == 1)
+        {
+            ((CNewNPC)bot.scenarioEntity).SetImmortalityMode(AIM_Immortal, AIC_Default);
+        }
+        return false;
+    }
+    monster = (CNewNPC)bot.scenarioEntity;
+    W3T_LookAt(monster.GetWorldPosition());
+    if(monster.HasBuff(EET_Burning))
+    {
+        bot.scenarioFlag = true;
+    }
+    W3T_Log("COMBAT leader hitsApplied=" + coop.hitsApplied + " effects=" + coop.hitEffectsApplied + " held=" + coop.hitEffectsHeld + " hp="
+        + FloatToStringPrec(monster.GetHealthPercents(), 3) + " burning=" + monster.HasBuff(EET_Burning)
+        + " knockedDown=" + (monster.HasBuff(EET_Knockdown) || monster.HasBuff(EET_HeavyKnockdown))
+        + " stagger=" + monster.HasBuff(EET_Stagger) + " everBurned=" + bot.scenarioFlag);
+    return coop.hitsApplied >= 3 && coop.hitEffectsApplied >= 2;
+}
+
+// member_combat, member: walks up to the puppet and fights it as a player: three sword swings, Igni, Aard, then a fire
+// hit and a knockdown carried by this player's damage actions (on 5.01 the player's signs carry no effects: their
+// skills' effect names are missing from the game's effect list), over and over (scenarioCount: steps done). Passes
+// once its sword and its signs sent hits and effects went out.
+function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet : CNewNPC;
+    var spot : Vector;
+    var rot : EulerAngles;
+    var step : int;
+    var action : W3DamageAction;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() < 1)
+    {
+        return false;
+    }
+    puppet = coop.PuppetAt(0);
+    if(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()) > 2.5)
+    {
+        spot = puppet.GetWorldPosition() + VecNormalize(thePlayer.GetWorldPosition() - puppet.GetWorldPosition()) * 1.8;
+        rot.Yaw = VecHeading(puppet.GetWorldPosition() - spot);
+        thePlayer.TeleportWithRotation(spot, rot);
+    }
+    W3T_LookAt(puppet.GetWorldPosition());
+    thePlayer.GoToCombatIfNeeded(puppet);
+
+    step = bot.scenarioCount % 7;
+    if(step < 3)
+    {
+        thePlayer.SetupCombatAction(EBAT_LightAttack, BS_Pressed);
+    }
+    else if(step >= 5)
+    {
+        action = new W3DamageAction in theGame.damageMgr;
+        action.Initialize(thePlayer, puppet, thePlayer, "W3TestHit", EHRT_Light, CPS_SpellPower, false, false, true, false);
+        if(step == 5)
+        {
+            action.AddDamage(theGame.params.DAMAGE_NAME_FIRE, 50);
+            action.AddEffectInfo(EET_Burning);
+        }
+        else
+        {
+            action.SetProcessBuffsIfNoDamage(true);
+            action.AddEffectInfo(EET_KnockdownTypeApplicator);
+        }
+        theGame.damageMgr.ProcessAction(action);
+        delete action;
+    }
+    else
+    {
+        if(step == 3)
+        {
+            GetWitcherPlayer().SetEquippedSign(ST_Igni);
+        }
+        else
+        {
+            GetWitcherPlayer().SetEquippedSign(ST_Aard);
+        }
+        thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
+        thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
+    }
+    bot.scenarioCount += 1;
+
+    W3T_Log("COMBAT member step=" + step + " hitsSent=" + coop.hitsSent + " melee=" + coop.meleeHitsSent + " sign="
+        + coop.signHitsSent + " effects=" + coop.hitEffectsSent + " puppetBurning=" + puppet.HasBuff(EET_Burning) + " puppetDown="
+        + (puppet.HasBuff(EET_Knockdown) || puppet.HasBuff(EET_HeavyKnockdown) || puppet.HasBuff(EET_Stagger) || puppet.HasBuff(EET_LongStagger)) + " dist="
+        + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));
+    return coop.meleeHitsSent >= 3 && coop.signHitsSent >= 1 && coop.hitEffectsSent >= 2;
 }
 
 // enemy_projectiles, leader: the monster of enemy_attacks (a Baron's bandit with a bow unless W3T_MONSTER) shoots at
