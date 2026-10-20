@@ -459,6 +459,31 @@ namespace
 		WNB_ReturnInt(frame, result, static_cast<int>(GetTickCount64() & 0x7FFFFFFF));
 	}
 
+	// import function W3T_ReadFile(path : string) : string;
+	// a small UTF-8 text file (the harness's control file for sessions of several scenarios); empty if missing
+	void W3T_ReadFile(void *, void *frame, void *result)
+	{
+		const std::wstring path = ReadWideString(frame);
+		std::wstring value;
+		HANDLE file = path.empty() ? INVALID_HANDLE_VALUE
+		                           : CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		                                         nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file != INVALID_HANDLE_VALUE)
+		{
+			char bytes[4096];
+			DWORD read = 0;
+			if (ReadFile(file, bytes, sizeof(bytes), &read, nullptr) && read > 0)
+			{
+				const int chars = MultiByteToWideChar(CP_UTF8, 0, bytes, static_cast<int>(read), nullptr, 0);
+				value.assign(static_cast<size_t>(chars > 0 ? chars : 0), L'\0');
+				if (chars > 0)
+					MultiByteToWideChar(CP_UTF8, 0, bytes, static_cast<int>(read), value.data(), chars);
+			}
+			CloseHandle(file);
+		}
+		WNB_ReturnString(frame, result, value.c_str(), static_cast<uint32_t>(value.size()));
+	}
+
 	// import function W3T_Quit(code : int);
 	void W3T_Quit(void *, void *frame, void *)
 	{
@@ -474,7 +499,8 @@ namespace
 		{
 			const char *name;
 			WNB_NativeImplementation implementation;
-		} natives[] = {{"W3T_GetEnv", &W3T_GetEnv}, {"W3T_Log", &W3T_Log}, {"W3T_TimeMs", &W3T_TimeMs}, {"W3T_Quit", &W3T_Quit}};
+		} natives[] = {{"W3T_GetEnv", &W3T_GetEnv}, {"W3T_Log", &W3T_Log}, {"W3T_TimeMs", &W3T_TimeMs}, {"W3T_ReadFile", &W3T_ReadFile},
+		               {"W3T_Quit", &W3T_Quit}};
 
 		for (const auto &native : natives)
 		{

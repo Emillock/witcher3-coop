@@ -94,7 +94,7 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py enemy_attacks [--monster PATH]` | The leader's drowner attacks the member's ghost: its puppet plays the attacks and the hits land on the member, after the member's own armor. |
 | `python run_test.py real_encounter` | Both bots go to the nearest active monster nest (from the map pins). The member's own encounter monsters there must become copies of the leader's, never fight beside them, and die when the leader kills its monsters. |
 | `python run_test.py member_combat` | The member fights the leader's (immortal) drowner's copy with real sword swings, Igni and Aard: the leader applies the hits and the effects they carry. |
-| `python run_test.py sign_visuals` | The member fights the leader's drowner and casts all five signs: its own Igni and Aard play their effects, and the leader shows each sign at the member's character (Igni's fire, Aard's wave, Axii, Yrden's trap, Quen's shield). |
+| `python run_test.py sign_visuals` | The member fights the leader's drowner and casts all five signs: its own Igni and Aard play their effects, and the leader shows each sign at the member's character (Igni's fire, Aard's wave, Axii, Yrden's trap, Quen's shield), with the member's own Yrden range and duration and its Quen's hit bursts. `W3T_OLD_SIGNS=1` ignores the sign fields of the member's snapshots, as from an older version. |
 | `python run_test.py sign_check --bots 1` | One game, no co-op needed: the game's effect definitions and what Igni/Aard do to a drowner (a diagnostic; in the test games no status effect takes hold). |
 | `python run_test.py enemy_projectiles [--monster PATH]` | The leader's archer (a Baron's bandit with a bow by default) shoots at the member's ghost: copies of its arrows fly on the member's side, and a hit lands on the member. |
 | `python run_test.py enemy_moves [--monster PATH]` | The leader's monster (a nekker by default) dodges or taunts; its puppet plays the same move. |
@@ -107,7 +107,9 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py puppet_follow` | The leader's drowner runs 14 m; its copy is never more than 3.5 m behind it for a second, and is within 1.5 m of it once it has run 8 m. |
 | `python run_test.py puppet_walk [--monster PATH]` | As `puppet_follow`, and the copy must run on its legs: its foot swings at least half as far as the leader's real monster's (a slide alone swings it about 0.1 m). `--monster` takes another template's depot path. `puppet_glide` is the same run with copies only sliding, as a baseline. |
 | `run_test.py <scenario> --shots S` | Also saves both bots' windows as PNG every S seconds (in the run folder). |
-| `python run_suite.py [--steam-box <box>]` | All the scenarios above in a row, with a summary table. |
+| `run_test.py a,b,c` | A session: several scenarios in one pair of games, which load only once. After each scenario the bots clean up (its monsters die and go, counters reset, back to the start) when the harness says so (a control file), and each scenario gets its own `RESULT` line. |
+| `run_test.py showcase --size 960x540 --record 240 --record-from "SHOWCASE start"` (with `W3T_TICK=0.25`) | A representative co-op session to film: the bots meet, form a party, run together and fight two waves side by side with swords and all five signs. `--record` films both windows side by side with ffmpeg (`video.mp4` in the run folder); `--size` sets the window and render resolution. |
+| `python run_suite.py [--steam-box <box> [--all]] [--no-session]` | The scenarios above with a summary table. Those that can share a game run as one session; quest_sync, dialog_sync, facts_sync and real_encounter get fresh games. Over Steam only 4 scenarios run by default (only the transport differs): movement, shared_enemy, member_combat, sign_visuals. |
 | `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
 | `run_test.py <scenario> --steam-box <box>` | Over real Steam between two accounts on one PC. The host relay uses this PC's Steam; the joiner relay runs in a [Sandboxie-Plus](https://sandboxie-plus.com) box whose Steam is logged in to a second account. |
 | `python arrange_windows.py` | Places all open Witcher 3 windows side by side (the harness does this for its bots). |
@@ -117,12 +119,13 @@ Under the test bot (`w3test.asi`, which runs only when the harness sets `W3T_DOC
 throwaway Documents folder. That folder holds copies of your settings and of your newest save (or `--save SUBSTR`),
 so tests never write your saves or settings. The bot also:
 
-- applies the lowest graphics preset at 640x360 and 30 FPS, with ray tracing off;
+- applies the lowest graphics preset at 640x360 (or `--size`) and 30 FPS, with ray tracing off;
 - mutes the game;
 - lets two copies start at once and keeps both running unfocused;
 - skips the intro movies, answers start-up dialogs and loads the save.
 
-Two copies of the game still need a fair amount of GPU memory.
+Both games load at once (`--serial` loads one after the other, as before). Two copies of the game still need a fair
+amount of GPU memory: about 10.6 GB of 12 GB here, loading at once or not.
 
 ## Layout
 

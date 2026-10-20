@@ -1,14 +1,52 @@
 // In-game test bot. Does nothing unless the W3T_SCENARIO environment variable is set.
 // Env: W3T_SCENARIO (name), W3T_SAVE (part of a save filename; newest save if empty), W3T_DURATION (seconds in game).
+// A session runs several scenarios in one game: W3T_SCENARIOS (comma-separated) and W3T_CONTROL, a file in which the
+// harness writes "go N" (start scenario N) or "end".
 
 import function W3T_GetEnv(key : string) : string;
 import function W3T_Log(line : string);
 import function W3T_TimeMs() : int;
+import function W3T_ReadFile(path : string) : string;
 import function W3T_Quit(code : int);
 
 function W3T_Active() : bool
 {
     return W3T_GetEnv("W3T_SCENARIO") != "";
+}
+
+function W3T_Split(text : string, separator : string) : array<string>
+{
+    var parts : array<string>;
+    var left, right : string;
+
+    while(text != "")
+    {
+        if(!StrSplitFirst(text, separator, left, right))
+        {
+            parts.PushBack(text);
+            break;
+        }
+        parts.PushBack(left);
+        text = right;
+    }
+    return parts;
+}
+
+// the harness's word in a session: N for "go N", -2 for "end", -1 for nothing yet
+function W3T_SessionGo() : int
+{
+    var words : array<string>;
+
+    words = W3T_Split(StrReplaceAll(StrReplaceAll(W3T_ReadFile(W3T_GetEnv("W3T_CONTROL")), "\r", ""), "\n", ""), " ");
+    if(words.Size() >= 1 && words[0] == "end")
+    {
+        return -2;
+    }
+    if(words.Size() >= 2 && words[0] == "go")
+    {
+        return StringToInt(words[1], -1);
+    }
+    return -1;
 }
 
 function W3T_VecStr(v : Vector) : string
@@ -214,14 +252,57 @@ statemachine class W3T_Bot
     public var scenarioTime : float;
     public var scenarioCount : int;
     public var scenarioEntity : CEntity;
+    public var scenarioEntities : array<CEntity>;
+    public var scenarioStep : int;       // a fighting bot's moves
+    public var scenarioActAt : float;    // when it last moved
+    public var scenarioSeenAt : float;   // when it last saw an enemy
     public var scenarioValue : float;
     public var scenarioName : name;
+
+    public var scenario : string;        // the one running (empty in a session until the harness says go)
+    public var scenarioIndex : int;      // its place in the session
+    public var settleUntil : float;      // after a switch: let the last scenario's monsters go first
+    public var begun : bool;             // the session's scenario has started after settling
+    public var home : Vector;            // where the save put the player; each session scenario starts there
+    public var homeSet : bool;
 
     public function Start()
     {
         startMs = W3T_TimeMs();
+        scenarioIndex = -1;
+        if(W3T_GetEnv("W3T_SCENARIOS") == "")
+        {
+            scenario = W3T_GetEnv("W3T_SCENARIO");
+            scenarioIndex = 0;
+            begun = true;
+        }
         W3T_Log("BOT start scenario=" + W3T_GetEnv("W3T_SCENARIO"));
         GotoState('W3T_Running');
+    }
+
+    // a session's next scenario: the last one's leftovers go, the free-form state starts over
+    public function NextScenario(index : int, next : string)
+    {
+        if(scenario != "")
+        {
+            W3T_EndScenario(this);
+        }
+        scenarioVec = Vector(0, 0, 0);
+        scenarioFlag = false;
+        scenarioTime = 0;
+        scenarioCount = 0;
+        scenarioEntity = NULL;
+        scenarioEntities.Clear();
+        scenarioStep = 0;
+        scenarioActAt = 0;
+        scenarioSeenAt = 0;
+        scenarioValue = 0;
+        scenarioName = '';
+        scenarioIndex = index;
+        scenario = next;
+        settleUntil = ElapsedS() + 5;
+        begun = false;
+        W3T_Log("SCENARIO " + next + " start");
     }
 
     public function ElapsedS() : float
@@ -267,52 +348,90 @@ state W3T_Running in W3T_Bot
     }
 
     // Passes once the scenario condition holds for 3 reports in a row, then stays W3T_GRACE seconds so peers
-    // can observe this instance too. Fails after W3T_DURATION seconds without a pass.
+    // can observe this instance too. Fails after W3T_DURATION seconds without a pass. In a session the harness
+    // decides when to go on (and when a scenario failed); this game only reports.
     entry function RunLoop()
     {
         var duration : float;
         var grace : float;
         var passedAt : float;
+        var startedAt : float;
         var streak : int;
+        var session : array<string>;
+        var go : int;
 
         duration = StringToFloat(W3T_GetEnv("W3T_DURATION"), 240.0);
         grace = StringToFloat(W3T_GetEnv("W3T_GRACE"), 20.0);
+        session = W3T_Split(W3T_GetEnv("W3T_SCENARIOS"), ",");
         passedAt = -1;
 
         while(true)
         {
             parent.Report();
 
+            // the player is at 0,0,0 until the save has placed it, some seconds after the bot starts
+            if(!parent.homeSet && VecLengthSquared(thePlayer.GetWorldPosition()) > 1)
+            {
+                parent.home = thePlayer.GetWorldPosition();
+                parent.homeSet = true;
+            }
+
+            if(session.Size() > 0)
+            {
+                go = W3T_SessionGo();
+                if(go == -2)
+                {
+                    W3T_Log("BOT session done after " + parent.reports + " reports");
+                    W3T_Quit(0);
+                }
+                if(go >= 0 && go < session.Size() && go != parent.scenarioIndex)
+                {
+                    parent.NextScenario(go, session[go]);
+                    startedAt = parent.ElapsedS();
+                    passedAt = -1;
+                    streak = 0;
+                }
+            }
+
             // keep stepping after a pass too: some scenarios act for their peers (e.g. the mover)
-            if(W3T_ScenarioCheck(parent))
+            if(parent.scenario != "" && parent.ElapsedS() >= parent.settleUntil)
             {
-                streak += 1;
-            }
-            else
-            {
-                streak = 0;
+                if(!parent.begun)
+                {
+                    W3T_BeginScenario(parent);
+                    parent.begun = true;
+                }
+                if(W3T_ScenarioCheck(parent))
+                {
+                    streak += 1;
+                }
+                else
+                {
+                    streak = 0;
+                }
+
+                if(passedAt < 0)
+                {
+                    if(streak >= 3)
+                    {
+                        passedAt = parent.ElapsedS();
+                        W3T_Log("PASS condition met at t=" + FloatToStringPrec(passedAt, 1) + " scenario=" + parent.scenario);
+                    }
+                    else if(session.Size() == 0 && parent.ElapsedS() - startedAt > duration)
+                    {
+                        W3T_Log("FAIL condition not met within " + FloatToStringPrec(duration, 0) + " s");
+                        W3T_Quit(1);
+                    }
+                }
+                else if(session.Size() == 0 && parent.ElapsedS() - passedAt > grace)
+                {
+                    W3T_Log("BOT done after " + parent.reports + " reports");
+                    W3T_Quit(0);
+                }
             }
 
-            if(passedAt < 0)
-            {
-                if(streak >= 3)
-                {
-                    passedAt = parent.ElapsedS();
-                    W3T_Log("PASS condition met at t=" + FloatToStringPrec(passedAt, 1));
-                }
-                else if(parent.ElapsedS() > duration)
-                {
-                    W3T_Log("FAIL condition not met within " + FloatToStringPrec(duration, 0) + " s");
-                    W3T_Quit(1);
-                }
-            }
-            else if(parent.ElapsedS() - passedAt > grace)
-            {
-                W3T_Log("BOT done after " + parent.reports + " reports");
-                W3T_Quit(0);
-            }
-
-            Sleep(1.0);
+            // W3T_TICK: shorter steps for scenarios that act, like the showcase's fights
+            Sleep(StringToFloat(W3T_GetEnv("W3T_TICK"), 1.0));
         }
     }
 }

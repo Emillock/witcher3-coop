@@ -29,6 +29,8 @@ def test_preset():
     preset = expand_preset(GRAPHICS_XML, "0")
     for group, pairs in TEST_EXTRAS.items():
         preset.setdefault(group, {}).update(pairs)
+    # run_test.py --size
+    preset["Viewport"]["Resolution"] = f'"{os.environ.get("W3T_RESOLUTION", TEST_RESOLUTION)}"'
     return preset
 
 

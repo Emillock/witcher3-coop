@@ -1,6 +1,8 @@
 # Multi-instance test harness: local Witcher Online server + N game clients driven by the w3test bot.
 # Prints RESULT: PASS/FAIL. Only kills processes it started.
-# Usage: run_test.py <scenario> [--bots 2] [--duration 60] [--stagger 15] [--timeout 420] [--save SUBSTR]
+# Usage: run_test.py <scenario>[,<scenario>...] [--bots 2] [--duration 60] [--stagger 5] [--timeout 420] [--save SUBSTR]
+# Several scenarios separated by commas run as one session: the games load once and the bots go from one scenario to
+# the next when the harness says so (control file), cleaning up in between.
 import argparse
 import ctypes
 import os
@@ -14,11 +16,27 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import WO, WORK  # noqa: E402
 from sandbox import make_sandbox  # noqa: E402
-from w3run import EXE, arrange, capture_window, game_window, windows_of  # noqa: E402
+from w3run import EXE, arrange, capture_window, game_window, user32, windows_of, wt  # noqa: E402
 
 SERVER_JAR = os.path.join(WO, "server", "build", "WitcherServer.jar")
 RUNS = os.path.join(WORK, "runs")
 GAME_ARGS = os.environ.get("W3T_GAME_ARGS", "-windowed -width 640 -height 360 -debugscripts -noraytracing").split()
+
+
+# scenarios where the leader waits for the member to load and join before acting
+LONG_SCENARIOS = ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync",
+                  "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide", "enemy_moves", "real_encounter",
+                  "enemy_projectiles", "member_combat", "sign_visuals", "showcase")
+
+
+def default_duration(scenario):
+    return 300 if scenario in LONG_SCENARIOS else 60
+
+
+def segment(log, scenario):
+    # a session's log from where `scenario` started
+    i = log.find(f"SCENARIO {scenario} start")
+    return log[i:] if i >= 0 else log
 
 
 def bot_name(i):
@@ -162,6 +180,45 @@ def shoot(run_dir, procs, a, stop):
                 hwnds[i] = None
 
 
+def record(run_dir, procs, a, stop):
+    # ffmpeg (gdigrab) films both bots' windows side by side at 30 FPS, from --record-from in the first bot's log on,
+    # for --record seconds. The windows stay on top meanwhile: gdigrab films the screen, not the windows.
+    first = os.path.join(run_dir, bot_name(0) + ".log")
+    while not (os.path.exists(first) and a.record_from in open(first, encoding="utf-8", errors="replace").read()):
+        if stop.wait(0.5):
+            return
+    hwnds = [game_window(p.pid) for p in procs]
+    inputs = []
+    for hwnd in hwnds:
+        r = wt.RECT()
+        user32.GetClientRect(hwnd, ctypes.byref(r))
+        at = wt.POINT(0, 0)
+        user32.ClientToScreen(hwnd, ctypes.byref(at))
+        size = f"{(r.right - r.left) // 2 * 2}x{(r.bottom - r.top) // 2 * 2}"  # even, for yuv420p
+        inputs += ["-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-offset_x", str(at.x), "-offset_y", str(at.y),
+                   "-video_size", size, "-i", "desktop"]
+        user32.SetWindowPos(hwnd, wt.HWND(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # TOPMOST; NOSIZE|NOMOVE|NOACTIVATE
+    out = os.path.join(run_dir, "video.mp4")
+    stack = ["-filter_complex", f"hstack=inputs={len(hwnds)}"] if len(hwnds) > 1 else []
+    log = open(os.path.join(run_dir, "ffmpeg.log"), "w")
+    ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "warning"] + inputs + stack
+                          + ["-t", str(a.record), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", out],
+                          stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT)
+    print(f"recording {out}", flush=True)
+    while ff.poll() is None:
+        if stop.wait(0.5):
+            ff.communicate(b"q", timeout=60)  # lets ffmpeg finish the file
+            break
+    for hwnd in hwnds:
+        user32.SetWindowPos(hwnd, wt.HWND(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # NOTOPMOST
+    print(f"recorded {out} (ffmpeg rc={ff.returncode})", flush=True)
+
+
+def read_log(run_dir, i):
+    path = os.path.join(run_dir, bot_name(i) + ".log")
+    return open(path, encoding="utf-8", errors="replace").read() if os.path.exists(path) else ""
+
+
 def check(scenario, logs, n):
     # the in-game bot decides pass/fail for its own instance; the harness requires every bot to pass
     reasons = []
@@ -184,7 +241,9 @@ def main():
     ap.add_argument("scenario")
     ap.add_argument("--bots", type=int, default=2)
     ap.add_argument("--duration", type=int, help="in-game seconds before a bot fails (default 60; enemy scenarios 300)")
-    ap.add_argument("--stagger", type=int, default=15)
+    ap.add_argument("--stagger", type=int, default=5, help="seconds between starting the bots")
+    ap.add_argument("--serial", action="store_true", help="start each bot only once the one before is in the world "
+                                                          "(one loading screen at a time; slower)")
     ap.add_argument("--timeout", type=int, default=420)
     ap.add_argument("--save", default="")
     ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
@@ -194,16 +253,25 @@ def main():
     ap.add_argument("--shots", type=float, default=0, help="save both bots' windows as PNG every this many seconds once all are in the world")
     ap.add_argument("--shots-from", default="", help="start the screenshots when this text appears in the first bot's log")
     ap.add_argument("--shots-for", type=float, default=0, help="stop the screenshots after this many seconds")
+    ap.add_argument("--size", default="", help="window and render resolution, e.g. 960x540 (default 640x360)")
+    ap.add_argument("--record", type=float, default=0, help="film both bots' windows side by side for this many seconds")
+    ap.add_argument("--record-from", default="", help="start filming when this text appears in the first bot's log")
     ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
                                         "Sandboxie box, whose Steam is logged in to a second account")
     a = ap.parse_args()
     if a.steam_box:
         a.relay = True
+    game_args = list(GAME_ARGS)
+    if a.size:
+        os.environ["W3T_RESOLUTION"] = a.size  # sandbox.py writes it into the settings
+        for flag, value in zip(("-width", "-height"), a.size.split("x")):
+            if flag in game_args:
+                game_args[game_args.index(flag) + 1] = value
+    session = a.scenario.split(",") if "," in a.scenario else []
     if a.duration is None:
-        # the leader waits for the member to load and join before the fight starts
-        a.duration = 300 if a.scenario in ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync", "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide", "enemy_moves", "real_encounter", "enemy_projectiles", "member_combat", "sign_visuals") else 60
+        a.duration = default_duration(a.scenario)
 
-    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + a.scenario
+    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + (f"session{len(session)}" if session else a.scenario)
                            + ("-steam" if a.steam_box else "-relay" if a.relay else "")
                            + ("-" + re.sub(r"\.w2ent$", "", a.monster.split("\\")[-1]) if a.monster else ""))
     os.makedirs(run_dir)
@@ -234,6 +302,12 @@ def main():
 
     procs = []
     shots_stop = threading.Event()
+    recorder = None
+    control = os.path.join(run_dir, "control.txt")
+    if session:
+        open(control, "w").write("go 0")
+    results = []  # a session's (scenario, ok, why)
+    go_at = time.time()
     t0 = time.time()
     try:
         for i in range(a.bots):
@@ -247,13 +321,16 @@ def main():
                        W3T_PEERS=str(a.bots - 1), W3T_ROLE="mover" if i == 0 else "observer",
                        W3T_GRACE=str(a.grace), W3T_MONSTER=a.monster,
                        W3T_LOG=os.path.join(run_dir, bot_name(i) + ".log"))
-            p = subprocess.Popen([EXE] + GAME_ARGS, cwd=os.path.dirname(EXE), env=env)
+            if session:
+                # the harness times each scenario; the bots never give up by themselves
+                env.update(W3T_SCENARIO="session", W3T_SCENARIOS=",".join(session), W3T_CONTROL=control, W3T_DURATION="100000")
+            p = subprocess.Popen([EXE] + game_args, cwd=os.path.dirname(EXE), env=env)
             procs.append(p)
             print(f"[{time.time() - t0:6.1f}s] started {bot_name(i)} pid={p.pid}", flush=True)
             if i + 1 < a.bots:
-                # one loading screen at a time: memory and GPU spikes don't overlap
                 time.sleep(a.stagger)
-                wait_in_world(os.path.join(run_dir, bot_name(i) + ".log"), 240, t0, procs)
+                if a.serial:
+                    wait_in_world(os.path.join(run_dir, bot_name(i) + ".log"), 240, t0, procs)
 
         seen = {}
         next_stats = 0
@@ -264,12 +341,29 @@ def main():
             if a.shots > 0 and len(procs) == a.bots and not shooter:
                 shooter = threading.Thread(target=shoot, args=(run_dir, procs, a, shots_stop), daemon=True)
                 shooter.start()
+            if a.record > 0 and len(procs) == a.bots and not recorder:
+                recorder = threading.Thread(target=record, args=(run_dir, procs, a, shots_stop))
+                recorder.start()
             if time.time() >= next_stats:
                 next_stats = time.time() + 15
                 mem = ", ".join(f"{bot_name(i)} {private_mb(p.pid)} MB" for i, p in enumerate(procs) if p.poll() is None)
                 print(f"[{time.time() - t0:6.1f}s] stats: {mem}; GPU {gpu_used_mb()}", flush=True)
+            if session and len(procs) == a.bots and len(results) < len(session):
+                # the scenario under way: on to the next once every bot passed it, or it took too long
+                name = session[len(results)]
+                limit = default_duration(name) + (150 if not results else 30)  # the first one waits for the loading
+                logs = {i: segment(read_log(run_dir, i), name) for i in range(a.bots)}
+                passed = all(re.search(rf"PASS condition met at t=\S+ scenario={re.escape(name)}(\s|$)", logs[i]) for i in logs)
+                if passed or time.time() - go_at > limit:
+                    ok, why = check(name, logs, a.bots)
+                    if not passed:
+                        ok, why = False, f"not passed within {limit} s: {why}"
+                    results.append((name, ok, why))
+                    print(f"[{time.time() - t0:6.1f}s] RESULT {name}: {'PASS' if ok else 'FAIL'} ({why}) [{time.time() - go_at:.0f}s]", flush=True)
+                    go_at = time.time()
+                    open(control, "w").write(f"go {len(results)}" if len(results) < len(session) else "end")
             # bots stay in the world after passing (peers may still need them); end once all have passed
-            if len(procs) == a.bots and all(
+            if not session and len(procs) == a.bots and all(
                     "PASS condition met" in open(os.path.join(run_dir, bot_name(i) + ".log"), encoding="utf-8", errors="replace").read()
                     for i in range(a.bots) if os.path.exists(os.path.join(run_dir, bot_name(i) + ".log"))) \
                     and all(os.path.exists(os.path.join(run_dir, bot_name(i) + ".log")) for i in range(a.bots)):
@@ -301,6 +395,8 @@ def main():
             time.sleep(1)
     finally:
         shots_stop.set()
+        if recorder:
+            recorder.join(90)
         for i, p in enumerate(procs):
             if p.poll() is None:
                 p.kill()
@@ -328,11 +424,17 @@ def main():
 
     logs = {}
     for i in range(a.bots):
-        path = os.path.join(run_dir, bot_name(i) + ".log")
-        logs[i] = open(path, encoding="utf-8", errors="replace").read() if os.path.exists(path) else ""
+        logs[i] = read_log(run_dir, i)
         last_wo = [l for l in logs[i].splitlines() if " WO " in l][-1:]
         print(f"--- {bot_name(i)}: {len(logs[i].splitlines())} log lines; last WO line: {last_wo}")
-    ok, why = check(a.scenario, logs, a.bots)
+    if session:
+        for name in session[len(results):]:
+            results.append((name, False, "not run (the session ended first)"))
+            print(f"RESULT {name}: FAIL (not run (the session ended first)) [0s]")
+        passed = sum(ok for _, ok, _ in results)
+        ok, why = passed == len(session), f"{passed}/{len(session)} scenarios passed"
+    else:
+        ok, why = check(a.scenario, logs, a.bots)
     print(f"RESULT: {'PASS' if ok else 'FAIL'} ({why})")
     return 0 if ok else 1
 

@@ -1,9 +1,55 @@
 // Witcher Online state for the test bot's per-second report, and the scenario pass conditions.
 
 
+// a session's scenario is over. Each scenario then starts as in fresh games: what it spawned dies and goes, the member
+// leaves the party (it joins again as the next scenario has it), mortal with full health and no buffs, diagnostics
+// from zero, back at the start.
+function W3T_EndScenario(bot : W3T_Bot)
+{
+    var i : int;
+    var client : r_MultiplayerClient;
+    var coop : r_CoopEnemies;
+
+    W3T_EndEntity(bot.scenarioEntity);
+    for(i = 0; i < bot.scenarioEntities.Size(); i += 1)
+    {
+        W3T_EndEntity(bot.scenarioEntities[i]);
+    }
+    client = theGame.r_getMultiplayerClient();
+    if(client.getInParty())
+    {
+        client.leaveParty();
+    }
+    thePlayer.SetImmortalityMode(AIM_None, AIC_Cheat, true);
+    thePlayer.RemoveAllNonAutoBuffs();
+    thePlayer.ForceSetStat(BCS_Vitality, thePlayer.GetStatMax(BCS_Vitality));
+    coop = client.getCoopEnemies();
+    coop.ResetDiagnostics();
+    if(bot.homeSet)
+    {
+        thePlayer.Teleport(bot.home);
+    }
+    W3T_Log("SCENARIO " + bot.scenario + " cleaned up");
+}
+
+// gone at once: killed, its death animation would still reach the next scenario (as a monster's move)
+function W3T_EndEntity(entity : CEntity)
+{
+    if(entity)
+    {
+        entity.Destroy();
+    }
+}
+
+// a session's scenario starts once the last one's leftovers had time to go: counting starts from here
+function W3T_BeginScenario(bot : W3T_Bot)
+{
+    theGame.r_getMultiplayerClient().getCoopEnemies().ResetDiagnostics();
+}
+
 function W3T_ScenarioCheck(bot : W3T_Bot) : bool
 {
-    var scenario : string = W3T_GetEnv("W3T_SCENARIO");
+    var scenario : string = bot.scenario;
     var client : r_MultiplayerClient = theGame.r_getMultiplayerClient();
     var coop : r_CoopEnemies;
     var players : array<r_RemotePlayer>;
@@ -59,6 +105,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_MovesLeader(bot, client.getCoopEnemies(), players[0]);
         }
         return W3T_FollowMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "showcase")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_ShowcaseLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_ShowcaseMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
     if(scenario == "see_each_other")
@@ -640,8 +699,10 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
     return bot.scenarioCount == 1;
 }
 
-// enemy_moves, leader: the monster of enemy_attacks (a nekker unless W3T_MONSTER: they dodge), told every 2 s that
-// an attack is coming (as the game tells a target), so it dodges; taunts count too. Passes once a move was captured.
+// enemy_moves, leader: the monster of enemy_attacks (a nekker unless W3T_MONSTER: they dodge), told every second that
+// an attack is coming (as the game tells a target), light and heavy in turn, so it dodges; taunts count too. Passes once
+// a move was captured. Its dodge task takes the warning only within 0.1 s and not mid-attack: a nekker that attacks
+// nonstop can miss many.
 function W3T_EnemyMovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var monster : CNewNPC;
@@ -654,10 +715,18 @@ function W3T_EnemyMovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     }
     monster = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(monster.GetWorldPosition());
-    if(bot.ElapsedS() - bot.scenarioTime >= 2)
+    if(bot.ElapsedS() - bot.scenarioTime >= 1)
     {
         bot.scenarioTime = bot.ElapsedS();
-        monster.SignalGameplayEventParamInt('Time2Dodge', (int)EDT_Attack_Light);
+        bot.scenarioStep += 1;
+        if(bot.scenarioStep % 2 == 0)
+        {
+            monster.SignalGameplayEventParamInt('Time2Dodge', (int)EDT_Attack_Light);
+        }
+        else
+        {
+            monster.SignalGameplayEventParamInt('Time2Dodge', (int)EDT_Attack_Heavy);
+        }
     }
     W3T_Log("MOVES leader moves=" + coop.movesSeen + " last=" + NameToString(coop.lastMoveAnim) + " attacks=" + coop.attacksSeen + " dodging=" + monster.IsCurrentlyDodging());
     return coop.movesSeen >= 1;
