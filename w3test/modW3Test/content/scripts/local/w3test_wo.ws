@@ -688,6 +688,13 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
     return coop.movesPlayed >= 1;
 }
 
+// sign_check: an actor's effect manager, to build an effect the way it does and see why it is denied
+@addMethod(CActor)
+function W3T_EffectManager() : W3EffectManager
+{
+    return effectManager;
+}
+
 // sign_check (one bot, no co-op): Igni and Aard on a plain drowner 3 m ahead, every 2 s; logs whether they burn
 // or knock it down, and which effect abilities the sign skills contain. Passes after 40 s.
 function W3T_SignCheck(bot : W3T_Bot) : bool
@@ -702,6 +709,7 @@ function W3T_SignCheck(bot : W3T_Bot) : bool
     var node : SCustomNode;
     var j : int;
     var nameOk, stringOk, stringOk2 : bool;
+    var effect : CBaseGameplayEffect;
     var nameVal : name;
     var stringVal, stringVal2 : string;
 
@@ -774,6 +782,28 @@ function W3T_SignCheck(bot : W3T_Bot) : bool
             + (int)drowner.AddEffectDefault(EET_Stagger, thePlayer, "W3T") + " has=" + drowner.HasBuff(EET_Stagger)
             + "; bleeding on player=" + (int)thePlayer.AddEffectDefault(EET_Bleeding, drowner, "W3T") + " has=" + thePlayer.HasBuff(EET_Bleeding)
             + "; potion Cat on player=" + (int)thePlayer.AddEffectDefault(EET_Cat, thePlayer, "W3T") + " has=" + thePlayer.HasBuff(EET_Cat));
+        // what InternalAddEffect checks before it denies: the effect object, its duration and resistance
+        effect = theGame.effectMgr.MakeNewEffect(EET_Burning, thePlayer, drowner, drowner.W3T_EffectManager(), 0, "W3T");
+        if(effect)
+        {
+            W3T_Log("SIGN made burning: duration=" + FloatToStringPrec(effect.GetDurationLeft(), 2) + " resist="
+                + FloatToStringPrec(effect.GetBuffResist(), 2) + " alive=" + drowner.IsAlive());
+        }
+        else
+        {
+            W3T_Log("SIGN made burning: none");
+        }
+        // the base effects.xml also defines the effects' abilities (durations); are they loaded?
+        W3T_Log("SIGN abilities defined: BurningEffect=" + theGame.GetDefinitionsManager().IsAbilityDefined('BurningEffect')
+            + " KnockdownEffect=" + theGame.GetDefinitionsManager().IsAbilityDefined('KnockdownEffect')
+            + " BleedingEffect=" + theGame.GetDefinitionsManager().IsAbilityDefined('BleedingEffect')
+            + " Mutagen01Effect=" + theGame.GetDefinitionsManager().IsAbilityDefined('Mutagen01Effect')
+            + " WeakenEffect=" + theGame.GetDefinitionsManager().IsAbilityDefined('WeakenEffect'));
+        effect = theGame.effectMgr.MakeNewEffect(EET_Cat, thePlayer, thePlayer, thePlayer.W3T_EffectManager(), 0, "W3T");
+        if(effect)
+        {
+            W3T_Log("SIGN made Cat: duration=" + FloatToStringPrec(effect.GetDurationLeft(), 2));
+        }
     }
     W3T_LookAt(drowner.GetWorldPosition());
     rot.Yaw = VecHeading(drowner.GetWorldPosition() - thePlayer.GetWorldPosition());

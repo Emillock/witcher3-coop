@@ -356,7 +356,16 @@ account, and traffic flowed both ways.
     `KnockdownTypeApplicator`, ...) that `gameplay\abilities\effects.xml` declares;
   - so the player's signs carry no effects there, and monster hits never make a member bleed.
 
-  Whether a normally started game behaves the same is unknown; the test games run with a copied Documents folder.
+  Cause, as far as it goes (`sign_check`):
+  - Hearts of Stone ships `dlc\ep1\data\gameplay\abilities\effects.xml`, with the same relative path as the base
+    `gameplay\abilities\effects.xml`.
+  - In the test games the base file is replaced by it entirely. Its abilities are undefined (`BurningEffect`,
+    `KnockdownEffect`, `BleedingEffect`), and its 82 effect entries are missing from the effect list, while the
+    expansion's are present.
+  - So every core effect is created with duration 0 and denied.
+  - The same happens with only the test bot installed (no Witcher Online) and without `-debugscripts`.
+
+  Whether a game started normally (through Steam, with the real Documents folder) behaves the same is unknown.
   Effect forwarding is built and its messages are tested, but no forwarded effect has been seen taking hold.
 - Encounter matching is tested with script-spawned twins and one real nest (nekkers). Encounters whose spawns
   differ between the two worlds (random sets, other monster types) are untested.

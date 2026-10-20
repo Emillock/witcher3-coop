@@ -18,7 +18,7 @@ from w3run import EXE, arrange, capture_window, game_window, windows_of  # noqa:
 
 SERVER_JAR = os.path.join(WO, "server", "build", "WitcherServer.jar")
 RUNS = os.path.join(WORK, "runs")
-GAME_ARGS = ["-windowed", "-width", "640", "-height", "360", "-debugscripts", "-noraytracing"]
+GAME_ARGS = os.environ.get("W3T_GAME_ARGS", "-windowed -width 640 -height 360 -debugscripts -noraytracing").split()
 
 
 def bot_name(i):
