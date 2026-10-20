@@ -126,6 +126,15 @@ True Co-op rule).
     reaction. A puppet's own damage on a member is dropped; members are only hurt by the leader's hits.
 - **Effects of monster hits** (bleeding, poison, stagger, knockdown) travel with the hurt as effect types. The
   member's own immunities and resistances decide whether they take hold.
+- **Other players' signs.** Witcher Online replayed only the casting gesture on a remote player's copy, so nobody
+  saw another player's Igni fire or Aard wave.
+  - Now an Igni or Aard cast also creates the sign's own entity at the copy, only to play its throw effect: no
+    projectile, no damage. It appears 0.4 s in and is removed after 3 s.
+  - A cast now also counts when `W3PlayerWitcher.CastSign` succeeds, not only on the key press (casts started
+    another way, like the test bot's, were never sent).
+  - `sign_visuals` checks this through `IsEffectActive` on both sides. Screenshots show the fire and the wave in
+    both windows (2026-10-20).
+  - Quen, Yrden and Axii still show only the gesture.
 - **Effects of members' hits** travel the other way (Igni's burning, Aard's knockdown, bombs):
   - The member reads them from its hit after the damage processor added them, and sends them with the claim, or
     alone when the hit did no damage (Aard).
@@ -328,8 +337,11 @@ reached the choices.
 | real_encounter | PASS (5 nekkers at a real nest: 5 bound as twins, all died with the leader's) | PASS (3 bound, 2 spawned where the member's world had fewer; all died) |
 | enemy_projectiles | PASS (bow bandit: 2 arrows copied, hits landed) | PASS |
 | member_combat | PASS (real sword swings, Igni, Aard; forwarded effects added) | PASS |
+| sign_visuals | PASS (Igni fire and Aard wave active on both sides) | PASS |
 
-Latest full runs (2026-10-20, after effect forwarding): 15/15 locally and 15/15 over real Steam. Also passing: `server_coop_test.py` (server
+Latest runs (2026-10-20, after sign visuals): 16/16 over real Steam. Locally, 15 of 16 passed in the full run;
+enemy_moves failed once (its nekker never paused attacking to dodge) and passed twice after a test fix. The 4
+scenarios that share that spawn code were rerun and passed. Also passing: `server_coop_test.py` (server
 co-op channel, no game) and `relay/selftest.py`. Over Steam, every run joined the host's lobby through the second
 account, and traffic flowed both ways.
 

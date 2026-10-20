@@ -94,6 +94,7 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py enemy_attacks [--monster PATH]` | The leader's drowner attacks the member's ghost: its puppet plays the attacks and the hits land on the member, after the member's own armor. |
 | `python run_test.py real_encounter` | Both bots go to the nearest active monster nest (from the map pins). The member's own encounter monsters there must become copies of the leader's, never fight beside them, and die when the leader kills its monsters. |
 | `python run_test.py member_combat` | The member fights the leader's (immortal) drowner's copy with real sword swings, Igni and Aard: the leader applies the hits and the effects they carry. |
+| `python run_test.py sign_visuals` | The member casts Igni and Aard: its own signs play their effects, and the leader shows the fire and the wave at the member's character. |
 | `python run_test.py sign_check --bots 1` | One game, no co-op needed: the game's effect definitions and what Igni/Aard do to a drowner (a diagnostic; in the test games no status effect takes hold). |
 | `python run_test.py enemy_projectiles [--monster PATH]` | The leader's archer (a Baron's bandit with a bow by default) shoots at the member's ghost: copies of its arrows fly on the member's side, and a hit lands on the member. |
 | `python run_test.py enemy_moves [--monster PATH]` | The leader's monster (a nekker by default) dodges or taunts; its puppet plays the same move. |
