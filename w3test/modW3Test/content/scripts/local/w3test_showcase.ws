@@ -88,6 +88,25 @@ function W3T_ShowcaseLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remo
                 + " enemies=" + coop.HostEnemyCount() + " member=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(),
                 member.ghost.GetWorldPosition()), 1));
         }
+        // one that keeps out of reach (an archer on a slope) would stall the wave: after 10 s it falls
+        if(target && VecDistance(thePlayer.GetWorldPosition(), target.GetWorldPosition()) > 6)
+        {
+            if(bot.scenarioFarSince == 0)
+            {
+                bot.scenarioFarSince = bot.ElapsedS();
+            }
+            else if(bot.ElapsedS() - bot.scenarioFarSince > 10)
+            {
+                W3T_Log("SHOWCASE " + target.GetReadableName() + " keeps out of reach; it falls");
+                target.Kill('W3T_Showcase', true);
+                bot.scenarioFarSince = 0;
+                return false;
+            }
+        }
+        else
+        {
+            bot.scenarioFarSince = 0;
+        }
         if(target && phase > 60)
         {
             W3T_Log("SHOWCASE wave took too long; the rest falls");
@@ -109,7 +128,13 @@ function W3T_ShowcaseLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remo
         W3T_Log("SHOWCASE wave cleared");
         if(bot.scenarioCount == 4)
         {
-            spot = W3T_SpotInView(thePlayer.GetWorldPosition());
+            // back to the clearing where they arrived (the chase scatters them; around a nest it's mostly thick forest)
+            spot = bot.scenarioVec;
+            spot.W = 1;
+            if(VecDistance2D(thePlayer.GetWorldPosition(), spot) < 5)
+            {
+                spot = W3T_SpotInView(thePlayer.GetWorldPosition());
+            }
             if(spot.W != 0)
             {
                 bot.scenarioVec = spot;
@@ -132,7 +157,7 @@ function W3T_ShowcaseLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remo
             W3T_ShowcaseSpawn(bot, member, "characters\npc_entities\monsters\drowner_lvl1.w2ent", spot + Vector(2, 0, 0), false);
             W3T_ShowcaseSpawn(bot, member, "characters\npc_entities\monsters\drowner_lvl1.w2ent", spot + Vector(-2, 1, 0), false);
             W3T_ShowcaseSpawn(bot, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_weak_bow.w2ent",
-                W3T_ShowcaseFar(thePlayer.GetWorldPosition()), true);
+                spot + VecFromHeading(thePlayer.GetHeading()) * 3.0 + Vector(4, 0, 0), true);
             W3T_Log("SHOWCASE second wave");
             W3T_ShowcaseNext(bot);
         }
@@ -339,19 +364,6 @@ function W3T_ShowcaseSpawn(bot : W3T_Bot, member : r_RemotePlayer, path : string
         npc.NoticeActor(member.ghost);
     }
     W3T_Log("SHOWCASE spawned " + path + " at " + W3T_VecStr(spot));
-}
-
-// the archer's spot: 12-14 m away, in view
-function W3T_ShowcaseFar(from : Vector) : Vector
-{
-    var spot : Vector;
-
-    spot = W3T_SpotInView(from);
-    if(spot.W == 0)
-    {
-        spot = from + VecFromHeading(theCamera.GetCameraHeading()) * 12.0;
-    }
-    return spot;
 }
 
 function W3T_ShowcaseNearest(list : array<CActor>) : CActor

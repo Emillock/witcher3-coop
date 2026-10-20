@@ -256,6 +256,7 @@ statemachine class W3T_Bot
     public var scenarioStep : int;       // a fighting bot's moves
     public var scenarioActAt : float;    // when it last moved
     public var scenarioSeenAt : float;   // when it last saw an enemy
+    public var scenarioFarSince : float; // since when its target has been out of reach
     public var scenarioValue : float;
     public var scenarioName : name;
 
@@ -296,6 +297,7 @@ statemachine class W3T_Bot
         scenarioStep = 0;
         scenarioActAt = 0;
         scenarioSeenAt = 0;
+        scenarioFarSince = 0;
         scenarioValue = 0;
         scenarioName = '';
         scenarioIndex = index;
