@@ -126,6 +126,14 @@ True Co-op rule).
     reaction. A puppet's own damage on a member is dropped; members are only hurt by the leader's hits.
 - **Effects of monster hits** (bleeding, poison, stagger, knockdown) travel with the hurt as effect types. The
   member's own immunities and resistances decide whether they take hold.
+- **Effects of members' hits** travel the other way (Igni's burning, Aard's knockdown, bombs):
+  - The member reads them from its hit after the damage processor added them, and sends them with the claim, or
+    alone when the hit did no damage (Aard).
+  - The leader adds them to its applied hit, processed even without damage, so the monster's own resistances
+    decide.
+  - Damage over time stays in the member's world: its effect ticks with the member's skills and the ticks are
+    claimed. On the leader, damage over time from a ghost is always dropped.
+  - See Open questions: in the test games no status effect takes hold, so only the messages are verified.
 - **Matching an encounter that exists in both worlds.** Unmatched local hostiles near a member are hidden and
   idle. When the leader's copy of one appears, the member's own monster is found (same template, within 10 m),
   shown again and made the puppet. No duplicate is spawned.
@@ -319,18 +327,25 @@ reached the choices.
 | enemy_moves | PASS (nekker dodge `c_dodge250_2` mirrored) | PASS (the same dodge) |
 | real_encounter | PASS (5 nekkers at a real nest: 5 bound as twins, all died with the leader's) | PASS (3 bound, 2 spawned where the member's world had fewer; all died) |
 | enemy_projectiles | PASS (bow bandit: 2 arrows copied, hits landed) | PASS |
+| member_combat | PASS (real sword swings, Igni, Aard; forwarded effects added) | PASS |
 
-Latest run (2026-10-20, after projectiles): 14/14 over real Steam. Locally the same day all 14 passed:
-- 13 in the full run;
-- enemy_projectiles after its archer was moved 12-14 m away (close by it fought in melee only);
-- the 4 scenarios sharing that spawn code, rerun. Also passing: `server_coop_test.py` (server
+Latest full runs (2026-10-20, after effect forwarding): 15/15 locally and 15/15 over real Steam. Also passing: `server_coop_test.py` (server
 co-op channel, no game) and `relay/selftest.py`. Over Steam, every run joined the host's lobby through the second
 account, and traffic flowed both ways.
 
 ## Open questions
 
-- Which damage entry point catches all player damage (swords, signs, bombs, crossbow) on 5.x: the claims use the
-  victim's `OnTakeDamage`, which every damage source goes through; only scripted direct-damage hits are tested.
+- Members' damage. Real sword swings and Igni/Aard casts on a puppet are claimed and applied (`member_combat`,
+  2026-10-20). Bombs and the crossbow go through the same `OnTakeDamage` path but are untested.
+- Status effects in the test games. No status effect takes hold at all:
+  - `AddEffectDefault` returns "deny" for burning, stagger, bleeding and even a potion, also without Witcher
+    Online (`sign_check`);
+  - the game's `effects` definition list holds 72 entries, without the core ones (`BurningEffect`,
+    `KnockdownTypeApplicator`, ...) that `gameplay\abilities\effects.xml` declares;
+  - so the player's signs carry no effects there, and monster hits never make a member bleed.
+
+  Whether a normally started game behaves the same is unknown; the test games run with a copied Documents folder.
+  Effect forwarding is built and its messages are tested, but no forwarded effect has been seen taking hold.
 - Encounter matching is tested with script-spawned twins and one real nest (nekkers). Encounters whose spawns
   differ between the two worlds (random sets, other monster types) are untested.
 - The facts layout is from 5.01; a game patch that changes it turns fact sync off (logged as the reason) until
