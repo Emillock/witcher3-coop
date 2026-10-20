@@ -553,7 +553,10 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         drowner = (CNewNPC)bot.scenarioEntity;
         drowner.SetAttitude(thePlayer, AIA_Neutral);
         drowner.SetAttitude(member.ghost, AIA_Hostile);
-        drowner.NoticeActor(member.ghost);  // humans 12 m away don't notice it by themselves
+        if(far)
+        {
+            drowner.NoticeActor(member.ghost);  // humans 12 m away don't notice it by themselves
+        }
         W3T_Log("ENEMY spawned " + W3T_MonsterPath(fallback) + " next to " + member.username + "'s ghost at " + W3T_VecStr(pos));
         bot.scenarioCount = 1;
         return false;
