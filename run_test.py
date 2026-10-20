@@ -16,7 +16,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import WO, WORK  # noqa: E402
 from sandbox import make_sandbox  # noqa: E402
-from w3run import EXE, arrange, capture_window, game_window, user32, windows_of, wt  # noqa: E402
+from w3run import BITMAPINFOHEADER, EXE, arrange, capture_window, game_window, gdi32, user32, windows_of, wt  # noqa: E402
 
 SERVER_JAR = os.path.join(WO, "server", "build", "WitcherServer.jar")
 RUNS = os.path.join(WORK, "runs")
@@ -180,38 +180,63 @@ def shoot(run_dir, procs, a, stop):
                 hwnds[i] = None
 
 
-def record(run_dir, procs, a, stop):
-    # ffmpeg (gdigrab) films both bots' windows side by side at 30 FPS, from --record-from in the first bot's log on,
-    # for --record seconds. The windows stay on top meanwhile: gdigrab films the screen, not the windows.
+def record(run_dir, procs, a, stop, fps=30):
+    # films both bots' windows side by side, from --record-from in the first bot's log on, for --record seconds. Frames
+    # are copied from the screen as the screenshots are (BitBlt without CAPTUREBLT; ffmpeg's gdigrab adds it, which
+    # slowed both games to 5% speed) and piped to ffmpeg, which only encodes. A late copy repeats the last frame, so the
+    # video keeps real time. The windows stay on top meanwhile.
     first = os.path.join(run_dir, bot_name(0) + ".log")
     while not (os.path.exists(first) and a.record_from in open(first, encoding="utf-8", errors="replace").read()):
         if stop.wait(0.5):
             return
     hwnds = [game_window(p.pid) for p in procs]
-    inputs = []
+    rects = []
     for hwnd in hwnds:
         r = wt.RECT()
         user32.GetClientRect(hwnd, ctypes.byref(r))
         at = wt.POINT(0, 0)
         user32.ClientToScreen(hwnd, ctypes.byref(at))
-        size = f"{(r.right - r.left) // 2 * 2}x{(r.bottom - r.top) // 2 * 2}"  # even, for yuv420p
-        inputs += ["-f", "gdigrab", "-framerate", "30", "-draw_mouse", "0", "-offset_x", str(at.x), "-offset_y", str(at.y),
-                   "-video_size", size, "-i", "desktop"]
+        rects.append((at.x, at.y, (r.right - r.left) // 2 * 2, (r.bottom - r.top) // 2 * 2))  # even, for yuv420p
         user32.SetWindowPos(hwnd, wt.HWND(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # TOPMOST; NOSIZE|NOMOVE|NOACTIVATE
+    width, height = sum(r[2] for r in rects), max(r[3] for r in rects)
+    screen = user32.GetDC(None)
+    mem = gdi32.CreateCompatibleDC(screen)
+    bmp = gdi32.CreateCompatibleBitmap(screen, width, height)
+    old = gdi32.SelectObject(mem, bmp)
+    header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), width, -height, 1, 32, 0, 0, 0, 0, 0, 0)
+    pixels = ctypes.create_string_buffer(width * height * 4)
     out = os.path.join(run_dir, "video.mp4")
-    stack = ["-filter_complex", f"hstack=inputs={len(hwnds)}"] if len(hwnds) > 1 else []
     log = open(os.path.join(run_dir, "ffmpeg.log"), "w")
-    ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "warning"] + inputs + stack
-                          + ["-t", str(a.record), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", out],
+    ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "warning", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{width}x{height}",
+                           "-r", str(fps), "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", out],
                           stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT)
     print(f"recording {out}", flush=True)
-    while ff.poll() is None:
-        if stop.wait(0.5):
-            ff.communicate(b"q", timeout=60)  # lets ffmpeg finish the file
-            break
-    for hwnd in hwnds:
-        user32.SetWindowPos(hwnd, wt.HWND(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # NOTOPMOST
-    print(f"recorded {out} (ffmpeg rc={ff.returncode})", flush=True)
+    t0, frames, copies = time.time(), 0, 0
+    try:
+        while time.time() - t0 < a.record:
+            x = 0
+            for sx, sy, w, h in rects:
+                gdi32.BitBlt(mem, x, 0, w, h, screen, sx, sy, 0x00CC0020)  # SRCCOPY
+                x += w
+            gdi32.GetDIBits(mem, bmp, 0, height, pixels, ctypes.byref(header), 0)
+            copies += 1
+            frame = pixels.raw
+            while frames < int((time.time() - t0) * fps) + 1:
+                ff.stdin.write(frame)
+                frames += 1
+            if stop.wait(max(0.0, t0 + frames / fps - time.time())):
+                break
+    finally:
+        gdi32.SelectObject(mem, old)
+        gdi32.DeleteObject(bmp)
+        gdi32.DeleteDC(mem)
+        user32.ReleaseDC(None, screen)
+        ff.stdin.close()
+        ff.wait(120)
+        for hwnd in hwnds:
+            user32.SetWindowPos(hwnd, wt.HWND(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # NOTOPMOST
+    print(f"recorded {out}: {frames} frames, {copies} copied ({copies / max(1e-3, time.time() - t0):.1f}/s), "
+          f"ffmpeg rc={ff.returncode}", flush=True)
 
 
 def read_log(run_dir, i):

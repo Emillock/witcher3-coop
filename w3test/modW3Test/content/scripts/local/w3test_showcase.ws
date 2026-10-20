@@ -1,103 +1,160 @@
-// showcase: a representative co-op session to film, e.g. run_test.py showcase --size 960x540 --record 240
-// --record-from "SHOWCASE start" (with W3T_TICK=0.25). The leader and the member meet, the member joins the party, they
-// run together, then fight the leader's monsters side by side: two drowners and a nekker, then two bandits, one with a
-// bow. Both swing their swords and cast all five signs; the monsters go for both. Phases in scenarioCount (leader).
+// showcase: a representative co-op session to film, e.g. run_test.py showcase --size 960x540 --record 300
+// --record-from "SHOWCASE start" (with W3T_TICK=0.25). The member joins the leader's party in Novigrad; the leader sets
+// the time to noon (members follow the leader's time) and both go to the nearest monster nest. Filming starts there:
+// they fight the nest's own monsters side by side (the same encounter in both worlds, shared), run on together, then
+// fight two drowners and a bandit archer the leader brings in. Both swing their swords and cast all five signs; the
+// monsters go for both. The leader's monsters are brought down to 12% health so the waves end in kills within a minute
+// (their copies follow, health is synced). Phases in scenarioCount.
 
 function W3T_ShowcaseLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var target : CActor;
-    var ahead : Vector;
+    var label : string;
+    var spot : Vector;
     var phase : float;
 
     thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
     phase = bot.ElapsedS() - bot.scenarioTime;
+    if(bot.scenarioCount >= 2)
+    {
+        W3T_HoldAt(bot.scenarioVec);
+    }
     if(bot.scenarioCount == 0)
     {
-        // the member's copy is here: filming starts
-        W3T_Log("SHOWCASE start");
+        // once the party stands: noon, and off to the nest
+        if(coop.GetRole() != 1)
+        {
+            return false;
+        }
+        bot.scenarioVec = W3T_NearestNest(label);
+        if(bot.scenarioVec.W == 0)
+        {
+            W3T_Log("SHOWCASE no monster nest in " + label);
+            W3T_Quit(2);
+            return false;
+        }
+        theGame.SetGameTime(GameTimeCreate(GameTimeDays(theGame.GetGameTime()) + 1, 12, 0, 0), true);
+        RequestWeatherChangeTo('WT_Clear', 0, false);
+        thePlayer.Teleport(bot.scenarioVec + Vector(0, 0, 2));
+        W3T_Log("SHOWCASE party up; going to nest " + label + " at " + W3T_VecStr(bot.scenarioVec));
         W3T_ShowcaseNext(bot);
         return false;
     }
     if(bot.scenarioCount == 1)
     {
-        // greet until the party stands (the member joins after 3 s)
-        W3T_LookAt(member.ghost.GetWorldPosition());
-        if(coop.GetRole() == 1 && phase > 5)
+        // the navigation mesh needs some seconds after a long teleport
+        if(phase >= 6)
         {
-            bot.scenarioVec = W3T_SpotInView(thePlayer.GetWorldPosition());
-            if(bot.scenarioVec.W == 0)
+            if(!theGame.GetWorld().NavigationFindSafeSpot(bot.scenarioVec + Vector(8, 0, 0), 0.5, 8.0, spot))
             {
-                bot.scenarioVec = thePlayer.GetWorldPosition() + VecFromHeading(theCamera.GetCameraHeading()) * 10.0;
+                spot = bot.scenarioVec + Vector(8, 0, 1);
             }
-            W3T_Log("SHOWCASE party up; running to " + W3T_VecStr(bot.scenarioVec));
-            thePlayer.ActionMoveToAsync(bot.scenarioVec, MT_Run);
+            thePlayer.Teleport(spot);
+            bot.scenarioVec = spot;
             W3T_ShowcaseNext(bot);
         }
         return false;
     }
     if(bot.scenarioCount == 2)
     {
-        // run together; the first wave comes once both are there
-        W3T_LookAt(bot.scenarioVec);
-        if(VecDistance2D(thePlayer.GetWorldPosition(), bot.scenarioVec) < 2.0 || phase > 12)
+        // filming starts once the member stands here too
+        W3T_LookAt(member.ghost.GetWorldPosition());
+        if(VecDistance(thePlayer.GetWorldPosition(), member.ghost.GetWorldPosition()) < 30 || phase > 40)
         {
-            if(VecDistance(thePlayer.GetWorldPosition(), member.ghost.GetWorldPosition()) < 6.0 || phase > 20)
-            {
-                ahead = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 11.0;
-                W3T_ShowcaseSpawn(bot, member, "characters\npc_entities\monsters\drowner_lvl1.w2ent", ahead + Vector(2, 0, 0), false);
-                W3T_ShowcaseSpawn(bot, member, "characters\npc_entities\monsters\drowner_lvl1.w2ent", ahead + Vector(-2, 1, 0), false);
-                W3T_ShowcaseSpawn(bot, member, "characters\npc_entities\monsters\nekker_lvl1.w2ent", ahead + Vector(0, -2, 0), false);
-                W3T_Log("SHOWCASE wave 1");
-                W3T_ShowcaseNext(bot);
-            }
+            W3T_Log("SHOWCASE start");
+            W3T_ShowcaseNext(bot);
         }
         return false;
     }
-    if(bot.scenarioCount == 3 || bot.scenarioCount == 4)
+    if(bot.scenarioCount == 3)
     {
-        target = W3T_ShowcaseNearest(bot.scenarioEntities);
-        if(target && phase > 75)
+        W3T_LookAt(member.ghost.GetWorldPosition());
+        if(phase > 3)
         {
-            // a fight that drags on: the rest falls, for both
-            W3T_Log("SHOWCASE wave took too long; killing the rest");
-            W3T_ShowcaseKillAll(bot);
+            W3T_ShowcaseNext(bot);
+        }
+        return false;
+    }
+    if(bot.scenarioCount == 4 || bot.scenarioCount == 6)
+    {
+        // a wave: the nest's own monsters, then the ones brought in
+        W3T_ShowcaseWeaken(bot, coop);
+        target = W3T_ShowcaseHostTarget(coop);
+        if(target && bot.ElapsedS() - bot.scenarioValue >= 2)
+        {
+            bot.scenarioValue = bot.ElapsedS();
+            W3T_Log("SHOWCASE fighting " + target.GetReadableName() + " hp=" + FloatToStringPrec(target.GetHealthPercents(), 2)
+                + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), target.GetWorldPosition()), 1)
+                + " enemies=" + coop.HostEnemyCount() + " member=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(),
+                member.ghost.GetWorldPosition()), 1));
+        }
+        if(target && phase > 60)
+        {
+            W3T_Log("SHOWCASE wave took too long; the rest falls");
+            W3T_ShowcaseKillAll(coop);
             target = NULL;
         }
         if(target)
         {
+            bot.scenarioSeenAt = bot.ElapsedS();
             W3T_ShowcaseFight(bot, target);
             return false;
         }
-        if(bot.scenarioCount == 4)
+        if(bot.scenarioSeenAt == 0 && phase < 15)
         {
-            W3T_Log("SHOWCASE wave 2 cleared");
-            W3T_ShowcaseNext(bot);
+            // the nest's monsters may take a moment to show up
+            W3T_LookAt(member.ghost.GetWorldPosition());
             return false;
         }
-        W3T_Log("SHOWCASE wave 1 cleared; wave 2");
-        ahead = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 8.0;
-        W3T_ShowcaseSpawn(bot, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_strong_sword.w2ent", ahead, true);
-        W3T_ShowcaseSpawn(bot, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_weak_bow.w2ent",
-            W3T_ShowcaseFar(thePlayer.GetWorldPosition()), true);
+        W3T_Log("SHOWCASE wave cleared");
+        if(bot.scenarioCount == 4)
+        {
+            spot = W3T_SpotInView(thePlayer.GetWorldPosition());
+            if(spot.W != 0)
+            {
+                bot.scenarioVec = spot;
+                thePlayer.ActionMoveToAsync(spot, MT_Run);
+                W3T_Log("SHOWCASE running on to " + W3T_VecStr(spot));
+            }
+        }
+        bot.scenarioSeenAt = 0;
         W3T_ShowcaseNext(bot);
+        return false;
+    }
+    if(bot.scenarioCount == 5)
+    {
+        // run on together; the next wave comes once both are there
+        W3T_LookAt(bot.scenarioVec);
+        if((VecDistance2D(thePlayer.GetWorldPosition(), bot.scenarioVec) < 2.5 || phase > 12)
+            && (VecDistance(thePlayer.GetWorldPosition(), member.ghost.GetWorldPosition()) < 8 || phase > 20))
+        {
+            spot = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 6.0;
+            W3T_ShowcaseSpawn(bot, member, "characters\npc_entities\monsters\drowner_lvl1.w2ent", spot + Vector(2, 0, 0), false);
+            W3T_ShowcaseSpawn(bot, member, "characters\npc_entities\monsters\drowner_lvl1.w2ent", spot + Vector(-2, 1, 0), false);
+            W3T_ShowcaseSpawn(bot, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_weak_bow.w2ent",
+                W3T_ShowcaseFar(thePlayer.GetWorldPosition()), true);
+            W3T_Log("SHOWCASE second wave");
+            W3T_ShowcaseNext(bot);
+        }
         return false;
     }
     // together again
     W3T_LookAt(member.ghost.GetWorldPosition());
-    if(phase > 6 && bot.scenarioCount == 5)
+    if(bot.scenarioCount == 7 && phase > 6)
     {
         W3T_Log("SHOWCASE done");
-        bot.scenarioCount = 6;
+        W3T_ShowcaseNext(bot);
     }
-    return bot.scenarioCount == 6;
+    return bot.scenarioCount == 8;
 }
 
-// joins the party 3 s after seeing the leader, fights the copies of the leader's monsters next to them, otherwise
-// runs after the leader. Done once both waves (5 monsters) fell and nothing came for 8 s.
+// joins the party 3 s after seeing the leader, goes to the same nest, fights the copies of the leader's monsters near
+// the leader (both in one shot), otherwise runs after the leader. Done after two waves and 10 s without enemies.
 function W3T_ShowcaseMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     var target : CActor;
-    var ghostPos : Vector;
+    var ghostPos, spot : Vector;
+    var label : string;
 
     thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
     ghostPos = leader.ghost.GetWorldPosition();
@@ -116,9 +173,42 @@ function W3T_ShowcaseMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : 
         }
         return false;
     }
-    target = W3T_ShowcasePuppet(coop);
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioVec = W3T_NearestNest(label);
+        if(bot.scenarioVec.W == 0)
+        {
+            return false;
+        }
+        thePlayer.Teleport(bot.scenarioVec + Vector(0, 0, 2));
+        W3T_Log("SHOWCASE member going to nest " + label);
+        W3T_ShowcaseNext(bot);
+        return false;
+    }
+    if(bot.scenarioCount == 1)
+    {
+        if(bot.ElapsedS() - bot.scenarioTime >= 6)
+        {
+            if(!theGame.GetWorld().NavigationFindSafeSpot(bot.scenarioVec + Vector(6, 3, 0), 0.5, 8.0, spot))
+            {
+                spot = bot.scenarioVec + Vector(6, 3, 1);
+            }
+            thePlayer.Teleport(spot);
+            bot.scenarioVec = spot;
+            W3T_ShowcaseNext(bot);
+        }
+        return false;
+    }
+    W3T_HoldAt(bot.scenarioVec);
+
+    target = W3T_ShowcasePuppet(coop, ghostPos);
     if(target)
     {
+        if(bot.ElapsedS() - bot.scenarioSeenAt > 5)
+        {
+            bot.scenarioValue += 1;
+            W3T_Log("SHOWCASE member wave " + FloatToStringPrec(bot.scenarioValue, 0));
+        }
         bot.scenarioSeenAt = bot.ElapsedS();
         W3T_ShowcaseFight(bot, target);
         return false;
@@ -129,8 +219,24 @@ function W3T_ShowcaseMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : 
         thePlayer.ActionMoveToAsync(ghostPos + VecFromHeading(leader.ghost.GetHeading() + 90) * 2.5, MT_Run);
         bot.scenarioActAt = bot.ElapsedS();
     }
-    W3T_Log("SHOWCASE member killed=" + coop.puppetsKilled + " hitsSent=" + coop.hitsSent);
-    return coop.puppetsKilled >= 5 && bot.ElapsedS() - bot.scenarioSeenAt > 8;
+    return bot.scenarioValue >= 2 && bot.ElapsedS() - bot.scenarioSeenAt > 10;
+}
+
+// each of the leader's monsters once, as it shows up: 12% health
+function W3T_ShowcaseWeaken(bot : W3T_Bot, coop : r_CoopEnemies)
+{
+    var i : int;
+    var npc : CNewNPC;
+
+    for(i = 0; i < coop.HostEnemyCount(); i += 1)
+    {
+        npc = coop.HostEnemyAt(i);
+        if(npc && npc.IsAlive() && !bot.scenarioEntities.Contains(npc))
+        {
+            npc.SetHealthPerc(0.12);
+            bot.scenarioEntities.PushBack(npc);
+        }
+    }
 }
 
 function W3T_ShowcaseNext(bot : W3T_Bot)
@@ -232,7 +338,6 @@ function W3T_ShowcaseSpawn(bot : W3T_Bot, member : r_RemotePlayer, path : string
         npc.NoticeActor(thePlayer);
         npc.NoticeActor(member.ghost);
     }
-    bot.scenarioEntities.PushBack(npc);
     W3T_Log("SHOWCASE spawned " + path + " at " + W3T_VecStr(spot));
 }
 
@@ -249,52 +354,71 @@ function W3T_ShowcaseFar(from : Vector) : Vector
     return spot;
 }
 
-function W3T_ShowcaseNearest(list : array<CEntity>) : CActor
+function W3T_ShowcaseNearest(list : array<CActor>) : CActor
 {
     var i : int;
-    var actor, best : CActor;
+    var best : CActor;
     var dist, bestDist : float;
 
     bestDist = 1000;
     for(i = 0; i < list.Size(); i += 1)
     {
-        actor = (CActor)list[i];
-        if(actor && actor.IsAlive())
+        if(list[i] && list[i].IsAlive())
         {
-            dist = VecDistance(thePlayer.GetWorldPosition(), actor.GetWorldPosition());
+            dist = VecDistance(thePlayer.GetWorldPosition(), list[i].GetWorldPosition());
             if(dist < bestDist)
             {
                 bestDist = dist;
-                best = actor;
+                best = list[i];
             }
         }
     }
     return best;
 }
 
-function W3T_ShowcasePuppet(coop : r_CoopEnemies) : CActor
+// the leader's monsters near it (the co-op layer's list: the nest's own and the ones spawned)
+function W3T_ShowcaseHostTarget(coop : r_CoopEnemies) : CActor
 {
-    var puppets : array<CEntity>;
+    var enemies : array<CActor>;
+    var i : int;
+
+    for(i = 0; i < coop.HostEnemyCount(); i += 1)
+    {
+        enemies.PushBack(coop.HostEnemyAt(i));
+    }
+    return W3T_ShowcaseNearest(enemies);
+}
+
+// the nearest copy within 12 m of the leader, else the nearest at all
+function W3T_ShowcasePuppet(coop : r_CoopEnemies, leaderPos : Vector) : CActor
+{
+    var puppets, near : array<CActor>;
     var i : int;
 
     for(i = 0; i < coop.PuppetCount(); i += 1)
     {
         puppets.PushBack(coop.PuppetAt(i));
+        if(VecDistance(coop.PuppetAt(i).GetWorldPosition(), leaderPos) < 12)
+        {
+            near.PushBack(coop.PuppetAt(i));
+        }
+    }
+    if(W3T_ShowcaseNearest(near))
+    {
+        return W3T_ShowcaseNearest(near);
     }
     return W3T_ShowcaseNearest(puppets);
 }
 
-function W3T_ShowcaseKillAll(bot : W3T_Bot)
+function W3T_ShowcaseKillAll(coop : r_CoopEnemies)
 {
     var i : int;
-    var actor : CActor;
 
-    for(i = 0; i < bot.scenarioEntities.Size(); i += 1)
+    for(i = 0; i < coop.HostEnemyCount(); i += 1)
     {
-        actor = (CActor)bot.scenarioEntities[i];
-        if(actor && actor.IsAlive())
+        if(coop.HostEnemyAt(i).IsAlive())
         {
-            actor.Kill('W3T_Showcase', true);
+            coop.HostEnemyAt(i).Kill('W3T_Showcase', true);
         }
     }
 }
