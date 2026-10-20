@@ -1,0 +1,4 @@
+[submodule "WitcherOnline"]
+	path = WitcherOnline
+	url = https://github.com/Emillock/WitcherOnline.git
+	branch = shared-enemies

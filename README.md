@@ -4,7 +4,9 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
 [Witcher Online](https://github.com/rejuvenate7/WitcherOnline) ported to the Remastered build.
 
 - The port of Witcher Online itself is in the fork
-  [Emillock/WitcherOnline, branch `remastered-5.01`](https://github.com/Emillock/WitcherOnline/tree/remastered-5.01).
+  [Emillock/WitcherOnline](https://github.com/Emillock/WitcherOnline): branch `remastered-5.01` (released) and
+  `shared-enemies` (true co-op, in development). It is included here as the submodule `WitcherOnline`, pinned to
+  the `shared-enemies` commit these tools were tested with. Clone with `git clone --recurse-submodules`.
 - This repo holds what goes around it:
   - **w3relay**: carries the game's traffic over Steam, so nobody opens ports or shares an IP address.
   - The **player package** builder.
@@ -52,7 +54,8 @@ Put the repos side by side:
 
 ```
 <root>\witcher3-coop            this repo (any folder name)
-<root>\WitcherOnline            Emillock/WitcherOnline, branch remastered-5.01
+<root>\WitcherOnline            Emillock/WitcherOnline, branch remastered-5.01 (or shared-enemies); without it,
+                                the tools use this repo's WitcherOnline submodule (git submodule update --init)
 <root>\WitcherNativeBridge      rejuvenate7/WitcherNativeBridge (master supports 5.01)
 <root>\deps\ultimate-asi-loader-9.7.4\dinput8.dll and LICENSE
                                 from Ultimate-ASI-Loader-NoPDB_x64.zip, ThirteenAG/Ultimate-ASI-Loader v9.7.4
@@ -131,6 +134,7 @@ amount of GPU memory: about 10.6 GB of 12 GB here, loading at once or not.
 
 | Path | Contents |
 |---|---|
+| `WitcherOnline/` | Submodule: the mod (the Emillock/WitcherOnline fork, GPL-3.0), pinned to the tested `shared-enemies` commit |
 | `relay/` | w3relay (host and join), the mock `steam_api64.dll` for one-PC tests, self-test |
 | `package/` | Package builder, `Host co-op.cmd`, `Join co-op.cmd`, player README |
 | `w3test/` | The test bot: ASI (test-mode hooks, env natives) and script mod (scenarios) |

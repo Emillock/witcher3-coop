@@ -1,6 +1,7 @@
 # Paths shared by the tools. Repos are expected side by side:
 #   <root>\<this repo>  <root>\WitcherOnline (port branch)  <root>\WitcherNativeBridge
 #   <root>\deps\ultimate-asi-loader-9.7.4  <root>\work (runs, backups, manifest; created on demand)
+# Without <root>\WitcherOnline, the mod is this repo's WitcherOnline submodule.
 # Override with W3_GAME_DIR, W3C_ROOT, W3C_WORK.
 import ctypes
 import os
@@ -11,6 +12,8 @@ import winreg
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.environ.get("W3C_ROOT") or os.path.dirname(TOOLS))
 WO = os.path.join(ROOT, "WitcherOnline")
+if not os.path.isdir(WO):
+    WO = os.path.join(TOOLS, "WitcherOnline")
 BRIDGE = os.path.join(ROOT, "WitcherNativeBridge")
 UAL = os.path.join(ROOT, "deps", "ultimate-asi-loader-9.7.4")
 WORK = os.path.normpath(os.environ.get("W3C_WORK") or os.path.join(ROOT, "work"))
