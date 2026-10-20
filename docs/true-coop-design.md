@@ -318,8 +318,12 @@ reached the choices.
 | puppet_walk | PASS (stride: leader's drowner 1.34 m, puppet 1.57 m) | PASS (1.42 m, 1.54 m) |
 | enemy_moves | PASS (nekker dodge `c_dodge250_2` mirrored) | PASS (the same dodge) |
 | real_encounter | PASS (5 nekkers at a real nest: 5 bound as twins, all died with the leader's) | PASS (3 bound, 2 spawned where the member's world had fewer; all died) |
+| enemy_projectiles | PASS (bow bandit: 2 arrows copied, hits landed) | PASS |
 
-Rerun after walking puppets and mirrored moves: 12/12 locally and 12/12 over real Steam. Also passing: `server_coop_test.py` (server
+Latest run (2026-10-20, after projectiles): 14/14 over real Steam. Locally the same day all 14 passed:
+- 13 in the full run;
+- enemy_projectiles after its archer was moved 12-14 m away (close by it fought in melee only);
+- the 4 scenarios sharing that spawn code, rerun. Also passing: `server_coop_test.py` (server
 co-op channel, no game) and `relay/selftest.py`. Over Steam, every run joined the host's lobby through the second
 account, and traffic flowed both ways.
 
