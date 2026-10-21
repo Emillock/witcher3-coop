@@ -4,36 +4,37 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
 [Witcher Online](https://github.com/rejuvenate7/WitcherOnline) ported to the Remastered build.
 
 - The port of Witcher Online itself is in the fork
-  [Emillock/WitcherOnline](https://github.com/Emillock/WitcherOnline): branch `remastered-5.01` (released) and
-  `shared-enemies` (true co-op, in development). It is included here as the submodule `WitcherOnline`, pinned to
-  the `shared-enemies` commit these tools were tested with. Clone with `git clone --recurse-submodules`.
+  [Emillock/WitcherOnline](https://github.com/Emillock/WitcherOnline): branch `remastered-5.01` (v0.1.0,
+  presence only) and `shared-enemies` (true co-op, v0.2.0 and later; tag `v0.2.0`). It is included here as the
+  submodule `WitcherOnline`, pinned to the `shared-enemies` commit these tools were tested with. Clone with
+  `git clone --recurse-submodules`.
 - This repo holds what goes around it:
   - **w3relay**: carries the game's traffic over Steam, so nobody opens ports or shares an IP address.
   - The **player package** builder.
   - The **test harness** that runs two game copies on one PC with an in-game bot.
 
-## Status: v0.1.0 pre-release
+## Status: v0.2.0 pre-release
 
-Players see each other in their own worlds, and each keeps their own save. Released (v0.1.0): presence only.
-
-In development (branch `shared-enemies`, not released yet), when players are in a Witcher Online party:
+Players see each other in their own worlds, and each keeps their own save. Since v0.2.0 (branch
+`shared-enemies`), when players are in a Witcher Online party:
 - **Monsters are shared.** The leader's world owns them; members fight copies that walk, run, attack, react and
   die as the leader's monsters do. Members' hits count in the leader's world, and the monsters' hits land on members.
 - **Quest progress is shared:** the journal and the game's quest facts (read from the engine), and members
   follow the leader's tracked quest.
 - **Dialogue stays together:** the leader's choices and skips apply to members in the same scene.
+- **Signs show:** everyone sees each other's Igni, Aard, Axii, Yrden and Quen, not only the casting gesture.
 
-Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
+v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
 | | |
 |---|---|
 | Tested | Two game copies on one PC: presence, movement, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
-| Not tested yet | Two different PCs over the internet. Real encounters beyond one monster nest (other tests spawn monsters by script). Chat, emotes, horses, party and dialogue sync on 5.01. |
+| Not tested yet | Two different PCs over the internet. Real encounters beyond one monster nest (other tests spawn monsters by script). Chat, emotes and horses on 5.01. |
 | Known limits | Monster copies attack the same player at the same moment as the leader's monsters (their own choice of attack, not the exact one) and fire their projectiles, but their dodges, taunts and jump-backs don't show yet (the `enemy_moves` test fails on it), nor spells' area effects or summons. Status effects (burning, knockdown, bleeding) are forwarded both ways but never took hold in the test games, with or without the mod; unverified in normal play. Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. |
 
 ## Playing
 
-Download `W3Coop-0.1.0.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
+Download `W3Coop-0.2.0.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
 its contents into your Witcher 3 folder. `W3Coop\README.txt` inside covers hosting, joining and uninstalling.
 The host needs Java 21 or newer.
 
@@ -54,7 +55,7 @@ Put the repos side by side:
 
 ```
 <root>\witcher3-coop            this repo (any folder name)
-<root>\WitcherOnline            Emillock/WitcherOnline, branch remastered-5.01 (or shared-enemies); without it,
+<root>\WitcherOnline            Emillock/WitcherOnline, branch shared-enemies (remastered-5.01 for v0.1.0); without it,
                                 the tools use this repo's WitcherOnline submodule (git submodule update --init)
 <root>\WitcherNativeBridge      rejuvenate7/WitcherNativeBridge (master supports 5.01)
 <root>\deps\ultimate-asi-loader-9.7.4\dinput8.dll and LICENSE
@@ -79,10 +80,10 @@ cd build\classes && jar cfm ..\WitcherServer.jar ..\..\src\META-INF\MANIFEST.MF 
 cd <root>\witcher3-coop
 relay\build.cmd
 w3test\build.cmd
-python package\build_package.py 0.1.0
+python package\build_package.py 0.2.0
 ```
 
-The last step writes `<root>\work\dist\W3Coop-0.1.0` and its zip. [config.py](config.py) finds the game
+The last step writes `<root>\work\dist\W3Coop-0.2.0` and its zip. [config.py](config.py) finds the game
 through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
 
 ## Testing

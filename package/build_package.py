@@ -80,7 +80,8 @@ def main():
     shutil.copy2(os.path.join(BRIDGE, "LICENSE.txt"), os.path.join(docs, "licenses", "WitcherNativeBridge-MIT.txt"))
     shutil.copy2(os.path.join(UAL, "LICENSE"), os.path.join(docs, "licenses", "UltimateASILoader-MIT.txt"))
     # Witcher Online is GPL-3.0: ship the modified source with the binaries
-    source_zip(WO, os.path.join(docs, "source", "WitcherOnline-remastered-5.01.zip"), "client", "server", "witcher/mods", "LICENSE", "README.md")
+    branch = subprocess.run(["git", "-C", WO, "branch", "--show-current"], capture_output=True, text=True, check=True).stdout.strip()
+    source_zip(WO, os.path.join(docs, "source", f"WitcherOnline-{branch}.zip"), "client", "server", "witcher/mods", "LICENSE", "README.md")
     git_archive(TOOLS, os.path.join(docs, "source", "w3relay.zip"), "relay")
 
     zip_path = out + ".zip"

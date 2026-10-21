@@ -5,9 +5,9 @@ See your friends in your world and travel together. Each player keeps their own 
 
 In a party (walk up to a friend's character, press the interact key and pick "Join party"),
 the party leader's world is the one that counts:
-- Monsters are shared: everyone fights the leader's monsters. They walk, run, attack, dodge,
-  taunt and shoot as the leader sees them. Your hits count in the leader's world, their attacks reach you (dodge them as
-  usual), and they die for everyone.
+- Monsters are shared: everyone fights the leader's monsters. They walk, run, attack and shoot
+  along with the leader's monsters. Your hits count in the leader's world, their attacks reach
+  you (dodge them as usual), and they die for everyone.
 - Quest progress is shared through the journal: objectives the leader reaches show up in your
   journal too (only forward; nothing you finished is undone). The quest the leader tracks becomes
   your tracked quest when the leader switches it.
@@ -73,3 +73,6 @@ two accounts. Covered: seeing each other and movement; shared monsters (hits, at
 reactions, deaths, leaving and coming back; their copies walk and run like the leader's monsters);
 journal progress, quest facts and dialogue choices. Not yet tested on two different PCs over the
 internet.
+Known limits: a monster's copy picks its own attack (same moment, same target, maybe another
+swing); dodges, taunts and jump-backs, spells' area effects and summons don't show on copies yet.
+Burning, bleeding and knockdown are passed on but unverified in normal play.
