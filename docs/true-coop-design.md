@@ -434,24 +434,18 @@ account, and traffic flowed both ways.
 
 - Members' damage. Real sword swings and Igni/Aard casts on a puppet are claimed and applied (`member_combat`,
   2026-10-20). Bombs and the crossbow go through the same `OnTakeDamage` path but are untested.
-- Status effects in the test games. No status effect takes hold at all:
-  - `AddEffectDefault` returns "deny" for burning, stagger, bleeding and even a potion, also without Witcher
-    Online (`sign_check`);
-  - the game's `effects` definition list holds 72 entries, without the core ones (`BurningEffect`,
-    `KnockdownTypeApplicator`, ...) that `gameplay\abilities\effects.xml` declares;
-  - so the player's signs carry no effects there, and monster hits never make a member bleed.
-
-  Cause, as far as it goes (`sign_check`):
-  - Hearts of Stone ships `dlc\ep1\data\gameplay\abilities\effects.xml`, with the same relative path as the base
-    `gameplay\abilities\effects.xml`.
-  - In the test games the base file is replaced by it entirely. Its abilities are undefined (`BurningEffect`,
-    `KnockdownEffect`, `BleedingEffect`), and its 82 effect entries are missing from the effect list, while the
-    expansion's are present.
-  - So every core effect is created with duration 0 and denied.
-  - The same happens with only the test bot installed (no Witcher Online) and without `-debugscripts`.
-
-  Whether a game started normally (through Steam, with the real Documents folder) behaves the same is unknown.
-  Effect forwarding is built and its messages are tested, but no forwarded effect has been seen taking hold.
+- Status effects: solved 2026-10-21. No status effect took hold in the test games because of a Steam Workshop
+  mod the owner had subscribed to, not because of the test setup or Witcher Online:
+  - "Consumables Balanced" (Workshop item 3252471752, `modConsumablesBalanced`) ships its own
+    `gameplay\abilities\effects.xml` (and `abilities_plus\effects.xml`). It replaces the game's effect list:
+    72 effects were loaded instead of 154, without `BurningEffect`, `KnockdownEffect`, `BleedingEffect` and the
+    other core ones, so every such effect was made with duration 0 and denied. This hits a normal game too, since
+    Workshop mods load there as well.
+  - With it off in the test sandbox (`W3T_DISABLE_MODS=modConsumablesBalanced`), `sign_check` shows burning,
+    stagger and bleeding taking hold, and Igni sets a drowner on fire on every cast.
+  - Effect forwarding then works both ways: in `member_combat` the member's Igni and Aard hits carried 6 effects
+    to the leader's drowner, 3 held, and it burned; in `reactions` the leader's drowner's bleeding hit made the
+    member bleed.
 - Encounter matching is tested with script-spawned twins and one real nest (nekkers). Encounters whose spawns
   differ between the two worlds (random sets, other monster types) are untested.
 - The facts layout is from 5.01; a game patch that changes it turns fact sync off (logged as the reason) until

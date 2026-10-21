@@ -74,6 +74,13 @@ def make_sandbox(docs, save_filter=None):
             shutil.copy2(src, w3)
     if os.path.exists(os.path.join(w3, "dx12user.settings")):
         set_settings(os.path.join(w3, "dx12user.settings"), test_preset())
+    # W3T_DISABLE_MODS=modA,modB: those mods (e.g. Workshop ones) off in this sandbox only, for diagnostics
+    off = [m for m in os.environ.get("W3T_DISABLE_MODS", "").split(",") if m]
+    if off:
+        mods = os.path.join(w3, "mods.settings")
+        if not os.path.exists(mods):
+            open(mods, "wb").close()
+        set_settings(mods, {m: {"Enabled": "0", "Priority": "1"} for m in off})
     if save_filter is None:
         return None
     saves_dir = os.path.join(OWNER_W3_DOCS, "gamesaves")
