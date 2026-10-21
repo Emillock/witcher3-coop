@@ -163,8 +163,12 @@ function W3T_ShowcaseLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remo
         }
         return false;
     }
-    // together again
+    // together again; the nest sends more monsters after a while: they fall at once, so the member's waves end too
     W3T_LookAt(member.ghost.GetWorldPosition());
+    if(W3T_ShowcaseKillAll(coop) > 0)
+    {
+        W3T_Log("SHOWCASE over; the nest's next monsters fall");
+    }
     if(bot.scenarioCount == 7 && phase > 6)
     {
         W3T_Log("SHOWCASE done");
@@ -236,8 +240,10 @@ function W3T_ShowcaseMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : 
         }
         bot.scenarioSeenAt = bot.ElapsedS();
         W3T_ShowcaseFight(bot, target);
+        W3T_ShowcaseUnstick(bot, target.GetWorldPosition());
         return false;
     }
+    W3T_ShowcaseUnstick(bot, ghostPos);
     W3T_LookAt(ghostPos);
     if(VecDistance(thePlayer.GetWorldPosition(), ghostPos) > 4.0 && bot.ElapsedS() - bot.scenarioActAt > 1.0)
     {
@@ -422,15 +428,47 @@ function W3T_ShowcasePuppet(coop : r_CoopEnemies, leaderPos : Vector) : CActor
     return W3T_ShowcaseNearest(puppets);
 }
 
-function W3T_ShowcaseKillAll(coop : r_CoopEnemies)
+function W3T_ShowcaseKillAll(coop : r_CoopEnemies) : int
 {
-    var i : int;
+    var i, killed : int;
 
     for(i = 0; i < coop.HostEnemyCount(); i += 1)
     {
         if(coop.HostEnemyAt(i).IsAlive())
         {
             coop.HostEnemyAt(i).Kill('W3T_Showcase', true);
+            killed += 1;
         }
     }
+    return killed;
+}
+
+// a path can't start from some spots (on a corpse, say): after 4 s without moving while `goal` is out of reach, a 2 m
+// hop toward it onto the navigation mesh, or next to it when there is none
+function W3T_ShowcaseUnstick(bot : W3T_Bot, goal : Vector)
+{
+    var pos, spot : Vector;
+
+    pos = thePlayer.GetWorldPosition();
+    if(VecDistance(pos, goal) < 4.5 || VecDistance(pos, bot.scenarioPos) > 0.5)
+    {
+        bot.scenarioPos = pos;
+        bot.scenarioFarSince = bot.ElapsedS();
+        return;
+    }
+    if(bot.ElapsedS() - bot.scenarioFarSince < 4)
+    {
+        return;
+    }
+    W3T_Log("SHOWCASE member stuck at " + W3T_VecStr(pos) + " state=" + thePlayer.GetCurrentStateName() + "; goal "
+        + FloatToStringPrec(VecDistance(pos, goal), 1) + " m away");
+    if(!theGame.GetWorld().NavigationFindSafeSpot(pos + VecNormalize2D(goal - pos) * 2.0, 0.5, 2.0, spot)
+        && !theGame.GetWorld().NavigationFindSafeSpot(goal, 0.5, 4.0, spot))
+    {
+        return;
+    }
+    thePlayer.ActionCancelAll();
+    thePlayer.Teleport(spot);
+    bot.scenarioPos = spot;
+    bot.scenarioFarSince = bot.ElapsedS();
 }
