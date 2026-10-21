@@ -243,6 +243,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyMovesMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "enemy_summons")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_EnemySummonsLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_EnemySummonsMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "dialog_sync")
     {
         if(ghosts < 1)
@@ -795,46 +808,157 @@ function W3T_AttackViewMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         && coop.puppetOwnAttacks == 0;
 }
 
-// enemy_moves, leader: the monster of enemy_attacks (a nekker unless W3T_MONSTER: they dodge), immortal, and this Geralt
+// enemy_moves, leader: the monster of enemy_attacks (a sword bandit unless W3T_MONSTER), immortal, and this Geralt
 // swings at it every 2 s: a real attack warns it as the game does, at the right moment (warnings sent by script alone
-// came mid-attack, and a nekker attacking nonstop took none). Taunts count too. Passes once a move was captured.
+// came mid-attack). The bandit dodges every warning, also mid-attack (W3T_AlwaysDodge; humans dodge through
+// CBTTaskDodge). A nekker dodges through its tree's own nodes, about once a minute or less. Taunts count too.
+// Passes once a move was captured.
 function W3T_EnemyMovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var monster : CNewNPC;
-    var spot : Vector;
-    var rot : EulerAngles;
 
     if(bot.scenarioCount == 0)
     {
-        W3T_EnemyAttacksLeader(bot, coop, member, "characters\npc_entities\monsters\nekker_lvl1.w2ent");
+        W3T_EnemyAttacksLeader(bot, coop, member, "gameplay\community\community_npcs\nml\regular\baron_bandit_strong_sword.w2ent");
         if(bot.scenarioCount == 1)
         {
             monster = (CNewNPC)bot.scenarioEntity;
             monster.SetImmortalityMode(AIM_Immortal, AIC_Default);
             monster.SetAttitude(thePlayer, AIA_Hostile);
+            monster.NoticeActor(thePlayer);
+            monster.AddTag('W3T_AlwaysDodge');
         }
         bot.scenarioTime = bot.ElapsedS();
         return false;
     }
     monster = (CNewNPC)bot.scenarioEntity;
-    W3T_LookAt(monster.GetWorldPosition());
-    if(bot.ElapsedS() - bot.scenarioTime >= 2)
-    {
-        bot.scenarioTime = bot.ElapsedS();
-        if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) > 2.5)
-        {
-            spot = monster.GetWorldPosition() + VecNormalize(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * 1.8;
-            rot.Yaw = VecHeading(monster.GetWorldPosition() - spot);
-            thePlayer.TeleportWithRotation(spot, rot);
-        }
-        thePlayer.GoToCombatIfNeeded(monster);
-        thePlayer.SetupCombatAction(EBAT_LightAttack, BS_Pressed);
-    }
-    W3T_Log("MOVES leader moves=" + coop.movesSeen + " last=" + NameToString(coop.lastMoveAnim) + " attacks=" + coop.attacksSeen + " dodging=" + monster.IsCurrentlyDodging());
+    W3T_SwingAt(bot, monster);
+    W3T_Log("MOVES leader moves=" + coop.movesSeen + " last=" + coop.lastMoveKind + "/" + NameToString(coop.lastMoveAnim)
+        + " task=" + coop.lastMoveTask + " attacks=" + coop.attacksSeen + " dodging=" + monster.IsCurrentlyDodging());
     return coop.movesSeen >= 1;
 }
 
-// enemy_moves, member: the puppet plays the leader's monster's dodges and taunts (at least one, none refused).
+// the leader's light attack at `monster` every 2 s, from 1.8 m (teleporting there if farther than 2.5 m)
+function W3T_SwingAt(bot : W3T_Bot, monster : CNewNPC)
+{
+    var spot : Vector;
+    var rot : EulerAngles;
+
+    W3T_LookAt(monster.GetWorldPosition());
+    if(bot.ElapsedS() - bot.scenarioTime < 2)
+    {
+        return;
+    }
+    bot.scenarioTime = bot.ElapsedS();
+    if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) > 2.5)
+    {
+        spot = monster.GetWorldPosition() + VecNormalize(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * 1.8;
+        rot.Yaw = VecHeading(monster.GetWorldPosition() - spot);
+        thePlayer.TeleportWithRotation(spot, rot);
+    }
+    thePlayer.GoToCombatIfNeeded(monster);
+    thePlayer.SetupCombatAction(EBAT_LightAttack, BS_Pressed);
+}
+
+// enemy_summons, leader: a summoner (a noonwraith unless W3T_MONSTER: it calls up doppelgangers), immortal, next to
+// the member's ghost and hostile to both players; this Geralt swings at it every 2 s. Passes once another monster
+// (a summoned one) is among its shared monsters.
+function W3T_EnemySummonsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster, other : CNewNPC;
+    var names : string;
+    var i, others : int;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member, "characters\npc_entities\monsters\noonwraith_lvl1.w2ent");
+        if(bot.scenarioCount == 1)
+        {
+            monster = (CNewNPC)bot.scenarioEntity;
+            monster.SetImmortalityMode(AIM_Immortal, AIC_Default);
+            monster.SetAttitude(thePlayer, AIA_Hostile);
+            monster.NoticeActor(thePlayer);
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    monster = (CNewNPC)bot.scenarioEntity;
+    W3T_SwingAt(bot, monster);
+    for(i = 0; i < coop.HostEnemyCount(); i += 1)
+    {
+        other = coop.HostEnemyAt(i);
+        if(other && other != monster && other.IsAlive() && StrFindFirst(other.GetReadableName(), "monsters") >= 0)
+        {
+            others += 1;
+            names += " " + other.GetReadableName();
+        }
+    }
+    W3T_Log("SUMMONS leader enemies=" + coop.HostEnemyCount() + " summoned=" + others + names + " attacks=" + coop.attacksSeen);
+    return others >= 1;
+}
+
+// enemy_summons, member: a copy of a monster the leader's summoner called up (another monster template than the
+// summoner's; people who join the fight, like city guards, don't count)
+function W3T_EnemySummonsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet : CActor;
+    var names : string;
+    var i, others : int;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    for(i = 0; i < coop.PuppetCount(); i += 1)
+    {
+        puppet = coop.PuppetAt(i);
+        names += " " + puppet.GetReadableName();
+        if(puppet.GetReadableName() != W3T_MonsterPath("characters\npc_entities\monsters\noonwraith_lvl1.w2ent")
+            && StrFindFirst(puppet.GetReadableName(), "monsters") >= 0)
+        {
+            others += 1;
+        }
+    }
+    if(coop.PuppetCount() > 0)
+    {
+        W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
+    }
+    W3T_Log("SUMMONS member puppets=" + coop.PuppetCount() + " summoned=" + others + names + " spawned=" + coop.puppetsSpawned
+        + " spawnFailures=" + coop.spawnFailures + " lastError=" + coop.lastError);
+    return others >= 1;
+}
+
+// enemy_moves: the leader's test monster taunts whenever its tree comes to a taunt, at most every 6 s
+@wrapMethod(CBTTaskTaunt)
+function IsAvailable() : bool
+{
+    if(GetNPC().HasTag('W3T_AlwaysDodge'))
+    {
+        useXMLTauntChance = false;
+        tauntDelay = 6;
+    }
+    return wrappedMethod();
+}
+
+// enemy_moves: the leader's test monster dodges whenever it is warned of an attack, also mid-attack
+@wrapMethod(CBTTaskDodge)
+function GetDodgeStats()
+{
+    wrappedMethod();
+    if(GetNPC().HasTag('W3T_AlwaysDodge'))
+    {
+        dodgeChanceAttackLight = 100;
+        dodgeChanceAttackHeavy = 100;
+        allowDodgeWhileAttacking = true;
+    }
+}
+
+// enemy_moves, member: the puppet's own AI makes the leader's monster's dodges and taunts (the same kind of move
+// animation is seen playing on it): at least 10, and 3 of 4 (one can be cut short by the next). Moves it made by
+// itself are logged (a monster's tree may dodge natively, out of the mod's reach, when its own warnings arrive).
 function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     if(!client.getInParty())
@@ -848,17 +972,19 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
     {
         W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
     }
-    W3T_Log("MOVES member movesPlayed=" + coop.movesPlayed + " moveFailures=" + coop.movePlayFailures
-        + " dodgesMirrored=" + coop.dodgesMirrored + " puppetDodged=" + coop.puppetDodgesSeen
-        + " attacksPlayed=" + coop.attacksPlayed + " lastError=" + coop.lastError);
-    if(coop.movePlayFailures > 0)
+    W3T_Log("MOVES member movesPlayed=" + coop.movesPlayed + " started=" + coop.puppetMovesStarted + " animated="
+        + coop.puppetMovesAnimated
+        + " missed=" + coop.puppetMovesMissed + " superseded=" + coop.puppetMovesSuperseded + " own=" + coop.puppetOwnMoves + " taunts=" + coop.puppetTauntsStarted + "/"
+        + coop.tauntsMirrored + " animOnly=" + coop.movesAnimOnly + " dodgesMirrored=" + coop.dodgesMirrored
+        + " puppetDodged=" + coop.puppetDodgesSeen + " attacksPlayed=" + coop.attacksPlayed + " ownAttacks="
+        + coop.puppetOwnAttacks + " attackEvents=" + coop.puppetAttackEvents + " moveEvents=" + coop.moveAnimEvents
+        + " lastAnim=" + NameToString(coop.lastPuppetMoveAnim) + " lastError=" + coop.lastError);
+    if(bot.ElapsedS() - bot.scenarioTime >= 20)
     {
-        W3T_Log("FAIL the puppet could not play the leader's move: " + coop.lastError);
-        W3T_Quit(1);
-        return false;
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("MOVETRACE" + coop.moveTrace);
     }
-    // a mirrored dodge must really happen on the puppet (its dodge chance can turn a warning down: more come)
-    return coop.movesPlayed >= 1 && (coop.dodgesMirrored == 0 || coop.puppetDodgesSeen >= 1);
+    return coop.movesPlayed >= 10 && coop.puppetMovesAnimated * 4 >= (coop.movesPlayed - coop.puppetMovesSuperseded) * 3;
 }
 
 // sign_check: an actor's effect manager, to build an effect the way it does and see why it is denied

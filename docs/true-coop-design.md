@@ -129,9 +129,42 @@ True Co-op rule).
     `CAIExecuteAttackAction`.
   - `attack_view` now checks what really plays: the puppet's own `OnPreAttackEvent` hit windows, each at the
     attacked player, none of its own.
-- **Dodges, taunts, jump-backs** go through the same slot action and **don't show on puppets yet** (known limit).
-  Warning the puppet of an attack ('Time2Dodge'), as the game does, with its AI free, didn't make it dodge in 4 of 4
-  tries. `enemy_moves` now fails on it: a mirrored dodge has to make the puppet really dodge (`IsCurrentlyDodging`).
+- **Dodges, taunts, jump-backs** (2026-10-21) are made by the puppet's own AI too, like attacks:
+  - The leader sends the kind with the move: by the task class (`CBTTaskDodge`, `CBTTaskTaunt`,
+    `CBTTask3StateTaunt`, `CBTTaskJumpBack`), or else by the animation's name ("dodge", "evade", "taunt",
+    "jump_back"; a nekker dodges through the plain decorator). The move field becomes `kind:param:anim`, where param
+    is the dodge direction (`DodgeDirection`) or the taunt type. A 0.2.0 member takes that as an unknown animation
+    name and plays nothing, as before.
+  - The member lifts the idle tree as for an attack, sets the dodge direction, and repeats the game's dodge warning
+    ('Time2Dodge') from 0.45 s on until the puppet dodges. Right after the idle tree goes, its `CBTTaskDodge`
+    activates without the animation playing (every activation at +0.25 s failed), so it is warned again if 0.9 s
+    pass without the animation. A warning while it dodges would restart the dodge (`allowDodgeOverlap`).
+  - Where the move is a scripted task, wraps make it the puppet's only choice: `CBTTaskDodge.Dodge` takes the
+    warning for sure, in the leader's direction, and never by itself; its counter-attack branch is off.
+    `CBTTaskTaunt` and `CBTTaskJumpBack` are available only while the leader's move of that kind waits.
+  - Its attack tasks (`CBTTaskAttack.IsAvailable`) may start only in a mirrored attack's window. An attack that
+    arrives during a move under way waits for the move to end; a move not started yet gives way to the newer
+    attack.
+  - It stands still meanwhile: the locomotion drive took the leader's monster's dodge for a run and broke the
+    puppet's dodge off.
+  - A move doesn't switch the puppet's target, and neither does an attack that arrives during one (until the move
+    is over): each switch (`ForgetAllActors`, or the per-tick turn back from this player) restarts its combat tree.
+    In a long test session, where the puppet kept picking this player, that delayed dodges to +1.5-2.5 s and only
+    30 of 53 played.
+  - On a member's screen, other players' swings warn no one (a `CActor.SetAttackData` wrap): the copy dodged at
+    the leader's character's replayed swings by itself. The member's own swings still warn, so a copy can dodge
+    the member's blade.
+  - `enemy_moves` uses a Baron's sword bandit, which dodges through `CBTTaskDodge`; the test makes it dodge every
+    warning and taunt every 6 s. Each mirrored move counts once the puppet's own move animation of that kind plays
+    (its `OnAnimEvent`; `IsCurrentlyDodging` is set before the animation and never for a nekker). Three runs passed,
+    with 9 of 11, 7 of 8 and 8 of 8 dodges played (not counting the 0, 3 and 2 that gave way to a following
+    attack), and no move of the puppet's own. In the full suite's session it passed with 5 of 6. Taunts played 3 of
+    5 times in the runs that had any.
+  - A nekker (`--monster ...nekker_lvl1.w2ent`, 7 minutes): its 2 dodges played on the puppet, but the puppet also
+    dodged 6 times by itself. A nekker dodges through native tree nodes under the plain decorator, which the wraps
+    can't hold back; these came without any warning sent, likely as its answer to the mirrored hits.
+  - Before, these moves went through the slot action and never showed. The old test missed it: a nekker never
+    sets `IsCurrentlyDodging`, even when it dodges.
 - **Hits in time with the swing.** Each hurt carries its attack number and hit time. The member applies it when
   its puppet's swing reaches that point (0.27-0.34 s after arrival in the test), so the member sees the wind-up
   and can dodge it. A hurt from an attack the member missed lands at once.
@@ -241,8 +274,8 @@ True Co-op rule).
   - Capture: these behavior-tree tasks share `CBTTaskPlayAnimationEventDecorator`. The leader wraps its
     `OnAnimEvent`, which carries the animation's name, and sends each new animation (or a restart) as
     `moveSeq`/`moveAnim` with the enemy. Attack and hit-reaction tasks keep their own paths.
-  - Playback: members play the animation through the same AI slot action as attacks. The puppet stands while it
-    plays.
+  - Playback: dodges, taunts and jump-backs by the puppet's own AI (above). The rest (parries, fear, shots'
+    animations, wraith and wyvern moves) still go through the slot action, which plays nothing.
   - Moves faster than the 10 Hz snapshots collapse into the newest.
   - `enemy_moves` tells the leader's monster every 2 s that an attack is coming, as the game tells a target.
     Moves seen on the leader and played on the puppet (2026-10-19), none refused:
@@ -268,8 +301,14 @@ True Co-op rule).
   - `enemy_projectiles` (2026-10-19): Baron's bandit with a bow (2 arrows copied, 1 hit landed on the member),
     with a crossbow (bolts) and a poison arachas (venom). A tailed endrega only fought in melee.
   - Limit: shots faster than the snapshots collapse into the newest. The arachas fired 8, and the member saw 2.
+- **Summons.** A summoned creature is a hostile NPC near the leader like any other, so the leader collects it and
+  members get a copy. Untested: `enemy_summons` (a noonwraith, or `--monster` a leshen, immortal, swung at every
+  2 s) saw no summon in 1-4 minutes in Novigrad (2026-10-21); the doppelganger summon is decided in the
+  noonwraith's tree, likely at a health threshold. A Novigrad guard who joined the fight was collected and copied.
+  A puppet's own summon task (`CBTTaskSummonCreatures`) overrides `IsAvailable` without the attack gate.
 - **Not done:**
-  - spells and summons (the animation plays; area effects and summoned creatures don't);
+  - spells' area effects (the caster's own attack plays on the puppet; what it spawns on the leader's side isn't
+    sent);
   - moves that are not behavior-tree tasks (scripted encounter animations);
   - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 

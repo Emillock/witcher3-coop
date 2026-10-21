@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
 
-# enemy_moves last in a session: its leader fights the nekker itself, which carries over (combat state)
+# enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "shared_enemy", "enemy_attacks", "reactions", "twin_match", "handoff", "quest_sync",
              "dialog_sync", "facts_sync", "puppet_walk", "real_encounter", "enemy_projectiles", "member_combat", "sign_visuals", "attack_view",
              "enemy_moves"]  # puppet_walk also checks what puppet_follow does
