@@ -164,6 +164,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "attack_view")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_AttackViewLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_AttackViewMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "real_encounter")
     {
         if(ghosts < 1)
@@ -699,34 +712,123 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
     return bot.scenarioCount == 1;
 }
 
-// enemy_moves, leader: the monster of enemy_attacks (a nekker unless W3T_MONSTER: they dodge), told every second that
-// an attack is coming (as the game tells a target), light and heavy in turn, so it dodges; taunts count too. Passes once
-// a move was captured. Its dodge task takes the warning only within 0.1 s and not mid-attack: a nekker that attacks
-// nonstop can miss many.
+// attack_view, leader: a drowner (or W3T_MONSTER) spawns 3 m from this Geralt and attacks only it, not the member's
+// copy. Passes once it attacked 4 times.
+function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var npc : CNewNPC;
+    var rot : EulerAngles;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(coop.GetRole() != 1)
+        {
+            return false;
+        }
+        template = (CEntityTemplate)LoadResource(W3T_MonsterPath(), true);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        rot.Yaw = thePlayer.GetHeading() + 180;
+        bot.scenarioEntity = theGame.CreateEntity(template, thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0,
+            rot, true, false, false, PM_DontPersist);
+        npc = (CNewNPC)bot.scenarioEntity;
+        npc.SetAttitude(thePlayer, AIA_Hostile);
+        npc.SetAttitude(member.ghost, AIA_Neutral);
+        bot.scenarioCount = 1;
+        return false;
+    }
+    npc = (CNewNPC)bot.scenarioEntity;
+    W3T_LookAt(npc.GetWorldPosition());
+    W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
+        + " graph=" + npc.GetBehaviorGraphInstanceName());
+    return coop.attacksSeen >= 4;
+}
+
+// attack_view, member: watches the copy of the drowner that attacks the leader. The leader's attacks must really play
+// on the copy: its own attack events fire (an accepted AI action alone proved nothing: for a long time it never ran),
+// only right after a mirrored attack, and at the leader's character (at most 1 in 10 at this player).
+function W3T_AttackViewMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet : CNewNPC;
+    var spot : Vector;
+    var rot : EulerAngles;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        // 4 m behind the leader, as players stand: the drowner (3 m in front of the leader) is nearer the leader, and
+        // this camera sees the fight over the leader's shoulder
+        if(theGame.GetWorld().NavigationFindSafeSpot(leader.ghost.GetWorldPosition() - VecFromHeading(leader.ghost.GetHeading()) * 4.0,
+            0.5, 2.0, spot))
+        {
+            rot.Yaw = leader.ghost.GetHeading();
+            thePlayer.TeleportWithRotation(spot, rot);
+        }
+        return false;
+    }
+    if(coop.PuppetCount() > 0)
+    {
+        puppet = coop.PuppetAt(0);
+        W3T_LookAt(puppet.GetWorldPosition());
+        if(puppet.GetTarget() == leader.ghost)
+        {
+            bot.scenarioCount += 1;  // reports with the copy going for the leader's character
+        }
+        else if(puppet.GetTarget() == thePlayer)
+        {
+            bot.scenarioStep += 1;   // ...and for this player instead
+        }
+        W3T_Log("VIEW member attacksPlayed=" + coop.attacksPlayed + " failures=" + coop.attackPlayFailures + " attackEvents="
+            + coop.puppetAttackEvents + " ownAttacks=" + coop.puppetOwnAttacks + " wrongTarget=" + coop.puppetWrongTargets
+            + " targetLeader=" + bot.scenarioCount
+            + " targetMe=" + bot.scenarioStep + " facingLeader=" + FloatToStringPrec(AngleDistance(puppet.GetHeading(),
+            VecHeading(leader.ghost.GetWorldPosition() - puppet.GetWorldPosition())), 0) + " graph=" + puppet.GetBehaviorGraphInstanceName()
+            + " lastError=" + coop.lastError);
+    }
+    // most of them really play (a few can fall into a hit reaction), not many more hit windows than the leader's (the
+    // puppet picks its own attack: a two-hit one where the leader's monster swung once doubles them), hardly any at the
+    // wrong player (the first one can start before the puppet switched to the leader), none on its own
+    return coop.attacksPlayed >= 6 && coop.puppetAttackEvents * 2 >= coop.attacksPlayed
+        && coop.puppetAttackEvents <= coop.attacksPlayed * 5 / 2 + 1 && coop.puppetWrongTargets <= Max(1, coop.puppetAttackEvents / 10)
+        && coop.puppetOwnAttacks == 0;
+}
+
+// enemy_moves, leader: the monster of enemy_attacks (a nekker unless W3T_MONSTER: they dodge), immortal, and this Geralt
+// swings at it every 2 s: a real attack warns it as the game does, at the right moment (warnings sent by script alone
+// came mid-attack, and a nekker attacking nonstop took none). Taunts count too. Passes once a move was captured.
 function W3T_EnemyMovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var monster : CNewNPC;
+    var spot : Vector;
+    var rot : EulerAngles;
 
     if(bot.scenarioCount == 0)
     {
         W3T_EnemyAttacksLeader(bot, coop, member, "characters\npc_entities\monsters\nekker_lvl1.w2ent");
+        if(bot.scenarioCount == 1)
+        {
+            monster = (CNewNPC)bot.scenarioEntity;
+            monster.SetImmortalityMode(AIM_Immortal, AIC_Default);
+            monster.SetAttitude(thePlayer, AIA_Hostile);
+        }
         bot.scenarioTime = bot.ElapsedS();
         return false;
     }
     monster = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(monster.GetWorldPosition());
-    if(bot.ElapsedS() - bot.scenarioTime >= 1)
+    if(bot.ElapsedS() - bot.scenarioTime >= 2)
     {
         bot.scenarioTime = bot.ElapsedS();
-        bot.scenarioStep += 1;
-        if(bot.scenarioStep % 2 == 0)
+        if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) > 2.5)
         {
-            monster.SignalGameplayEventParamInt('Time2Dodge', (int)EDT_Attack_Light);
+            spot = monster.GetWorldPosition() + VecNormalize(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * 1.8;
+            rot.Yaw = VecHeading(monster.GetWorldPosition() - spot);
+            thePlayer.TeleportWithRotation(spot, rot);
         }
-        else
-        {
-            monster.SignalGameplayEventParamInt('Time2Dodge', (int)EDT_Attack_Heavy);
-        }
+        thePlayer.GoToCombatIfNeeded(monster);
+        thePlayer.SetupCombatAction(EBAT_LightAttack, BS_Pressed);
     }
     W3T_Log("MOVES leader moves=" + coop.movesSeen + " last=" + NameToString(coop.lastMoveAnim) + " attacks=" + coop.attacksSeen + " dodging=" + monster.IsCurrentlyDodging());
     return coop.movesSeen >= 1;
@@ -747,6 +849,7 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
     }
     W3T_Log("MOVES member movesPlayed=" + coop.movesPlayed + " moveFailures=" + coop.movePlayFailures
+        + " dodgesMirrored=" + coop.dodgesMirrored + " puppetDodged=" + coop.puppetDodgesSeen
         + " attacksPlayed=" + coop.attacksPlayed + " lastError=" + coop.lastError);
     if(coop.movePlayFailures > 0)
     {
@@ -754,7 +857,8 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         W3T_Quit(1);
         return false;
     }
-    return coop.movesPlayed >= 1;
+    // a mirrored dodge must really happen on the puppet (its dodge chance can turn a warning down: more come)
+    return coop.movesPlayed >= 1 && (coop.dodgesMirrored == 0 || coop.puppetDodgesSeen >= 1);
 }
 
 // sign_check: an actor's effect manager, to build an effect the way it does and see why it is denied

@@ -106,10 +106,32 @@ True Co-op rule).
   - At `AET_DurationStart` it records the animation name (`GetAnimNameFromEventAnimInfo`) under a new attack
     number, and the snapshot goes out at once.
   - At `AET_DurationEnd`, where the hit is processed, it records the animation time of the hit.
+  - It also records whom the monster attacks: its target as a player's username (the leader, or the member whose
+    character it is). If the target is momentarily unset, the last player it went for is kept.
 
-  The member's puppet plays that animation through a forced `CAIPlayAnimationSlotAction` at `BTAP_Emergency`, above
-  the idle tree; afterwards it is idle again. A direct `ActionPlaySlotAnimationAsync` is refused while the idle
-  tree owns the puppet's actions.
+  On the member, the puppet's own AI plays the attack:
+  - Its idle tree is lifted for 1.1 s: long enough to start an attack, short enough not to start a second.
+  - It notices the attacked player (this Geralt, or the leader's character here). If its AI holds on to another
+    target, it forgets everyone first. During the window it is pointed back each tick if its perception picks this
+    player again.
+  - The leader's character is armed on the member's side too (player attitude group, gameplay-visible), so puppets
+    can attack it. Before, it stayed `friendly_to_player` and puppets ignored it.
+  - The puppet's own hits do no damage (`OnBeforeDamage`); the hit itself comes as the leader's hurt.
+  - So the attack lands at the same moment and on the same player, but it is the puppet's own choice of attack, not
+    the leader's exact animation.
+
+  Until 2026-10-21 the puppet was given the leader's animation through a forced `CAIPlayAnimationSlotAction`. The
+  action was accepted, so `attacksPlayed` counted it, but the animation never played. The owner saw the copies
+  stand still. Investigation:
+  - A monster's graph (e.g. `monster_drowner_combat.w2beh`) plays attacks from its Combat state; the idle puppet is
+    never there.
+  - Its 'Attack' event (the AI tree's `eventStateName`) is refused there too, as are 'MonsterEnterCombat' and
+    `CAIExecuteAttackAction`.
+  - `attack_view` now checks what really plays: the puppet's own `OnPreAttackEvent` hit windows, each at the
+    attacked player, none of its own.
+- **Dodges, taunts, jump-backs** go through the same slot action and **don't show on puppets yet** (known limit).
+  Warning the puppet of an attack ('Time2Dodge'), as the game does, with its AI free, didn't make it dodge in 4 of 4
+  tries. `enemy_moves` now fails on it: a mirrored dodge has to make the puppet really dodge (`IsCurrentlyDodging`).
 - **Hits in time with the swing.** Each hurt carries its attack number and hit time. The member applies it when
   its puppet's swing reaches that point (0.27-0.34 s after arrival in the test), so the member sees the wind-up
   and can dodge it. A hurt from an attack the member missed lands at once.

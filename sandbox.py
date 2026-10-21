@@ -22,6 +22,8 @@ TEST_EXTRAS = {
     "PostProcess": {"AAMode": "0", "EnableDLSSRR": "false", "DLSSGMode": "0", "FSRFramegen": "0",
                     "XessFrameGeneration": "false", "AllowMotionBlur": "false", "AllowBloom": "false",
                     "AllowLensEffects": "false"},
+    # tutorial hints pause the game until someone closes them (a crossbow one stopped a bot)
+    "Gameplay": {"HudTutorialEnabled": "false"},
 }
 
 

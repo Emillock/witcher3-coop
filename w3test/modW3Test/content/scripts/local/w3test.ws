@@ -371,6 +371,13 @@ state W3T_Running in W3T_Bot
         {
             parent.Report();
 
+            // a tutorial hint pauses the game until closed; the sandbox turns them off, this closes any that still shows
+            if(theGame.GetTutorialSystem() && theGame.GetTutorialSystem().HasActiveTutorial())
+            {
+                theGame.GetTutorialSystem().HideTutorialHint('', true);
+                W3T_Log("HINT closed a tutorial hint");
+            }
+
             // the player is at 0,0,0 until the save has placed it, some seconds after the bot starts
             if(!parent.homeSet && VecLengthSquared(thePlayer.GetWorldPosition()) > 1)
             {

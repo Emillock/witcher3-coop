@@ -13,12 +13,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
 
+# enemy_moves last in a session: its leader fights the nekker itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "shared_enemy", "enemy_attacks", "reactions", "twin_match", "handoff", "quest_sync",
-             "dialog_sync", "facts_sync", "puppet_walk", "enemy_moves", "real_encounter", "enemy_projectiles", "member_combat", "sign_visuals"]  # puppet_walk also checks what puppet_follow does
+             "dialog_sync", "facts_sync", "puppet_walk", "real_encounter", "enemy_projectiles", "member_combat", "sign_visuals", "attack_view",
+             "enemy_moves"]  # puppet_walk also checks what puppet_follow does
 # over Steam only the transport differs: these cover connecting, movement, the co-op channel both ways and the snapshot
 STEAM_SCENARIOS = ["movement", "shared_enemy", "member_combat", "sign_visuals"]
-# need fresh games: they change the save's quests and facts, join late on purpose, or travel 1 km to a nest
-FRESH = ["quest_sync", "dialog_sync", "facts_sync", "real_encounter"]
+# need fresh games: they change the save's quests and facts, join late on purpose, travel 1 km to a nest, or (attack_view)
+# need the leader's monster to go for the leader alone, which leftovers of other scenarios upset
+FRESH = ["quest_sync", "dialog_sync", "facts_sync", "real_encounter", "attack_view"]
 
 
 def plan(scenarios, sessions):
