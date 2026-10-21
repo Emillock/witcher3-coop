@@ -117,8 +117,8 @@ True Co-op rule).
   - The leader's character is armed on the member's side too (player attitude group, gameplay-visible), so puppets
     can attack it. Before, it stayed `friendly_to_player` and puppets ignored it.
   - The puppet's own hits do no damage (`OnBeforeDamage`); the hit itself comes as the leader's hurt.
-  - So the attack lands at the same moment and on the same player, but it is the puppet's own choice of attack, not
-    the leader's exact animation.
+  - So the attack lands at the same moment and on the same player. Since later on 2026-10-21 it is also the same
+    attack (next point); the exact animation variant is the game's choice.
 
   Until 2026-10-21 the puppet was given the leader's animation through a forced `CAIPlayAnimationSlotAction`. The
   action was accepted, so `attacksPlayed` counted it, but the animation never played. The owner saw the copies
@@ -129,6 +129,39 @@ True Co-op rule).
     `CAIExecuteAttackAction`.
   - `attack_view` now checks what really plays: the puppet's own `OnPreAttackEvent` hit windows, each at the
     attacked player, none of its own.
+- **The same attack, and spells** (2026-10-21, later the same day):
+  - The leader now sends an attack when its attack task starts (a `CBTTaskAttack.OnActivate` wrap; every kind
+    calls it: swings, charges, spells, signs, summons, projectiles), not at its first hit window. It carries which
+    task it is, `CoopAttackId`: the task's class and attack type (its animation set), the same in every copy of a
+    monster, e.g. `CBTTaskLeshyRootAttack:0`. The hit window adds the animation later. An attack without a task (a
+    counter from the parry task) still goes at its hit window. The attack field becomes `task|anim`; a 0.2.0 member
+    takes it as an animation name, which it doesn't use, and attacks as before.
+  - The puppet may start only that task for the first 0.6 s of the window, then any (the same can be out of reach).
+    It never starts a summon: what the leader's monster summons is shared. Sixteen attack task kinds decide their
+    availability without `CBTTaskAttack.IsAvailable` (signs, magic, projectiles, summons, bombs, charges, ...), so
+    each has its own gate wrap. A task already running isn't stopped by the gate (the tree asks again while it
+    runs), and the idle tree waits until it ends (up to 6 s) with the puppet standing: a spell's loop outlasts the
+    1.1 s window, and its effect comes late.
+  - Aiming: the puppet's combat target selection (`CBTTaskCombatTargetSelection`) is told whom to attack with the
+    game's 'ForceTarget' event, as quests do ('UnforceTarget' when a twin is released). Forgetting the others
+    (`ForgetAllActors`, and per tick `ForgetActor` on this player) restarted its combat tree each time: in
+    `enemy_spells` 26 of its attack tasks ended within 0.5 s for 16 mirrored attacks, and the leshen's roots never
+    came. With 'ForceTarget': 1-4, and the roots come.
+  - So a spell is the puppet's own: it spawns its area entity in the member's world itself, at the player the
+    leader's monster attacks. Damage stays single: a projectile-like spell (roots, rocks: `Init(npc)`) names the
+    monster as attacker, so the leader forwards its hits on the member's character and the member drops its
+    puppet's; an area entity that is itself the attacker (`CDamageAreaEntity`, `W3DamageAreaTrigger`) is neither
+    forwarded nor dropped, so each world's own area hurts the player standing in it.
+  - A puppet's own `W3AdvancedProjectile` doesn't fly on a member (it goes at once): the leader's projectiles
+    come as copies, and the puppet now makes projectile attacks too.
+  - `attack_view` (drowner): the same task 7 of 7, the same animation 4 of 7 (the attack type is the same; the
+    graph picks the variant, `monster_drowner_attack_dynamic1-3`), no attack at the wrong player.
+  - `enemy_spells` (a leshen, immortal; the leader swings at it for 6 s, then stands 11 m off for 6 s, since up
+    close monsters only swing): its roots came on the member as often as on the leader (4 and 4, 3 and 3, within
+    0.1-0.4 s), aimed at the leader every time, and the puppet took the same task 14-15 times of 16.
+  - Which monsters cast at all, in 2-4 minutes each: the leshen (roots, and once a summon), the water hag (its mud
+    is `CBTTaskProjectileAttack`). Earth and fire elementals, the ice giant, wraiths, noonwraith and nightwraith
+    only used plain `CBTTaskAttack` with several attack types.
 - **Dodges, taunts, jump-backs, parries** (2026-10-21) are made by the puppet's own AI too, like attacks:
   - The leader sends the kind with the move: by the task class (`CBTTaskDodge`, `CBTTaskTaunt`,
     `CBTTask3StateTaunt`, `CBTTaskJumpBack`), or else by the animation's name ("dodge", "evade", "taunt",
@@ -312,10 +345,11 @@ True Co-op rule).
   members get a copy. Untested: `enemy_summons` (a noonwraith, or `--monster` a leshen, immortal, swung at every
   2 s) saw no summon in 1-4 minutes in Novigrad (2026-10-21); the doppelganger summon is decided in the
   noonwraith's tree, likely at a health threshold. A Novigrad guard who joined the fight was collected and copied.
-  A puppet's own summon task (`CBTTaskSummonCreatures`) overrides `IsAvailable` without the attack gate.
+  A puppet never starts its own summon task (its gate, above).
 - **Not done:**
-  - spells' area effects (the caster's own attack plays on the puppet; what it spawns on the leader's side isn't
-    sent);
+  - spawns of tasks that aren't attack tasks: frost areas (`BTTaskFrostAreaAttack`), spawned objects and FX
+    entities (`CBTTaskSpawnObject`, `CBTTaskSpawnFXEntity`), bombardment and projectiles dropped from above, and the
+    decorator `CBTTaskSpawnEntityOffset`. They show only if the puppet's own AI happens to make them;
   - moves that are not behavior-tree tasks (scripted encounter animations);
   - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 

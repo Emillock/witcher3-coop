@@ -260,6 +260,7 @@ statemachine class W3T_Bot
     public var scenarioPos : Vector;     // where it stood when it last moved (stuck checks)
     public var scenarioValue : float;
     public var scenarioName : name;
+    public var scenarioText : string;
 
     public var scenario : string;        // the one running (empty in a session until the harness says go)
     public var scenarioIndex : int;      // its place in the session
@@ -302,6 +303,7 @@ statemachine class W3T_Bot
         scenarioPos = Vector(0, 0, 0);
         scenarioValue = 0;
         scenarioName = '';
+        scenarioText = "";
         scenarioIndex = index;
         scenario = next;
         settleUntil = ElapsedS() + 5;
