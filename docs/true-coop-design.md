@@ -129,7 +129,7 @@ True Co-op rule).
     `CAIExecuteAttackAction`.
   - `attack_view` now checks what really plays: the puppet's own `OnPreAttackEvent` hit windows, each at the
     attacked player, none of its own.
-- **Dodges, taunts, jump-backs** (2026-10-21) are made by the puppet's own AI too, like attacks:
+- **Dodges, taunts, jump-backs, parries** (2026-10-21) are made by the puppet's own AI too, like attacks:
   - The leader sends the kind with the move: by the task class (`CBTTaskDodge`, `CBTTaskTaunt`,
     `CBTTask3StateTaunt`, `CBTTaskJumpBack`), or else by the animation's name ("dodge", "evade", "taunt",
     "jump_back"; a nekker dodges through the plain decorator). The move field becomes `kind:param:anim`, where param
@@ -142,9 +142,15 @@ True Co-op rule).
   - Where the move is a scripted task, wraps make it the puppet's only choice: `CBTTaskDodge.Dodge` takes the
     warning for sure, in the leader's direction, and never by itself; its counter-attack branch is off.
     `CBTTaskTaunt` and `CBTTaskJumpBack` are available only while the leader's move of that kind waits.
-  - Its attack tasks (`CBTTaskAttack.IsAvailable`) may start only in a mirrored attack's window. An attack that
-    arrives during a move under way waits for the move to end; a move not started yet gives way to the newer
-    attack.
+  - Parries (`CBTTaskPerformParry` animations with "parry" in the name; its guard and counter-attack animations
+    aren't parries, and counters come as attacks): the member raises the puppet's guard, warns it ('ParryStart')
+    until its parry task is up (`CanParryAttack`), then parries as `CNewNPC.OnParry` does ('parryAttackType',
+    'ParryPerform'), again 0.5 s on if no parry animation started. A puppet parries only then, for sure (no chance
+    roll, no counter instead). The parry task took about a second to come up, and in some tries never did.
+  - Its attack tasks (`CBTTaskAttack.IsAvailable`) may start only in a mirrored attack's window, and not while a
+    mirrored move waits or is under way: an attack that arrives then follows when the move is over, as on the
+    leader (a parry, then the counter-attack). Dropping the move for the newer attack lost most parries, since
+    the leader's bandit counters 0.8 s after parrying.
   - It stands still meanwhile: the locomotion drive took the leader's monster's dodge for a run and broke the
     puppet's dodge off.
   - A move doesn't switch the puppet's target, and neither does an attack that arrives during one (until the move
@@ -159,7 +165,8 @@ True Co-op rule).
     (its `OnAnimEvent`; `IsCurrentlyDodging` is set before the animation and never for a nekker). Three runs passed,
     with 9 of 11, 7 of 8 and 8 of 8 dodges played (not counting the 0, 3 and 2 that gave way to a following
     attack), and no move of the puppet's own. In the full suite's session it passed with 5 of 6. Taunts played 3 of
-    5 times in the runs that had any.
+    5 times in the runs that had any. With parries added the test now counts dodges only (3 of 4 of at least 8);
+    parries played 2 of 4, 4 of 5, 3 of 5 and 4 of 11 in four runs.
   - A nekker (`--monster ...nekker_lvl1.w2ent`, 7 minutes): its 2 dodges played on the puppet, but the puppet also
     dodged 6 times by itself. A nekker dodges through native tree nodes under the plain decorator, which the wraps
     can't hold back; these came without any warning sent, likely as its answer to the mirrored hits.
@@ -274,7 +281,7 @@ True Co-op rule).
   - Capture: these behavior-tree tasks share `CBTTaskPlayAnimationEventDecorator`. The leader wraps its
     `OnAnimEvent`, which carries the animation's name, and sends each new animation (or a restart) as
     `moveSeq`/`moveAnim` with the enemy. Attack and hit-reaction tasks keep their own paths.
-  - Playback: dodges, taunts and jump-backs by the puppet's own AI (above). The rest (parries, fear, shots'
+  - Playback: dodges, taunts, jump-backs and parries by the puppet's own AI (above). The rest (fear, shots'
     animations, wraith and wyvern moves) still go through the slot action, which plays nothing.
   - Moves faster than the 10 Hz snapshots collapse into the newest.
   - `enemy_moves` tells the leader's monster every 2 s that an attack is coming, as the game tells a target.

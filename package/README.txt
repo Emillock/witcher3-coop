@@ -77,6 +77,6 @@ reactions, deaths, leaving and coming back; their copies walk and run like the l
 journal progress, quest facts and dialogue choices. Not yet tested on two different PCs over the
 internet.
 Known limits: a monster's copy picks its own attack, dodge or taunt animation (same moment, same
-target; a dodge shows about half a second late); parries and spells' area effects don't show on
-copies yet.
+target; a dodge shows about half a second late); parries show only part of the time, and spells'
+area effects don't show on copies yet.
 Burning, bleeding and knockdown are passed on but unverified in normal play.

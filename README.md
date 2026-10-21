@@ -24,14 +24,14 @@ Players see each other in their own worlds, and each keeps their own save. Since
 - **Dialogue stays together:** the leader's choices and skips apply to members in the same scene.
 - **Signs show:** everyone sees each other's Igni, Aard, Axii, Yrden and Quen, not only the casting gesture.
 
-Not released yet (branch `shared-enemies` after v0.2.0): monster copies also dodge, taunt and jump back when the
-leader's monsters do. v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
+Not released yet (branch `shared-enemies` after v0.2.0): monster copies also dodge, taunt, jump back and parry when
+the leader's monsters do. v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
 | | |
 |---|---|
 | Tested | Two game copies on one PC: presence, movement, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
 | Not tested yet | Two different PCs over the internet. Real encounters beyond one monster nest (other tests spawn monsters by script). Chat, emotes and horses on 5.01. |
-| Known limits | Monster copies attack, dodge, taunt and jump back when the leader's monsters do, at the same player (their own choice of animation, not the exact one, about half a second later for a dodge), and fire their projectiles; parries and spells' area effects don't show yet, and summoned creatures (shared like any monster) are untested. Status effects (burning, knockdown, bleeding) are forwarded both ways; they work unless another mod replaces the game's effect list, as the Workshop mod "Consumables Balanced" does (no burning, bleeding or knockdown at all, also without co-op). Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. |
+| Known limits | Monster copies attack, dodge, taunt and jump back when the leader's monsters do, at the same player (their own choice of animation, not the exact one, about half a second later for a dodge), and fire their projectiles; parries show about half the time, spells' area effects don't show yet, and summoned creatures (shared like any monster) are untested. Status effects (burning, knockdown, bleeding) are forwarded both ways; they work unless another mod replaces the game's effect list, as the Workshop mod "Consumables Balanced" does (no burning, bleeding or knockdown at all, also without co-op). Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. |
 
 ## Playing
 
@@ -103,7 +103,7 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py sign_visuals` | The member fights the leader's drowner and casts all five signs: its own Igni and Aard play their effects, and the leader shows each sign at the member's character (Igni's fire, Aard's wave, Axii, Yrden's trap, Quen's shield), with the member's own Yrden range and duration and its Quen's hit bursts. `W3T_OLD_SIGNS=1` ignores the sign fields of the member's snapshots, as from an older version. |
 | `python run_test.py sign_check --bots 1` | One game, no co-op needed: the game's effect definitions and what Igni/Aard do to a drowner (a diagnostic: with a mod that replaces the game's effect list, no status effect takes hold). |
 | `python run_test.py enemy_projectiles [--monster PATH]` | The leader's archer (a Baron's bandit with a bow by default) shoots at the member's ghost: copies of its arrows fly on the member's side, and a hit lands on the member. |
-| `python run_test.py enemy_moves [--monster PATH]` | The leader swings at its monster (a sword bandit by default, made to dodge every swing and taunt every 6 s), which dodges or taunts; the puppet's own AI must make the same moves (its own dodge or taunt animation plays) for 3 of 4 of at least 10, and none by itself. |
+| `python run_test.py enemy_moves [--monster PATH]` | The leader swings at its monster (a sword bandit by default, made to dodge every swing and taunt every 6 s), which dodges, parries or taunts; the puppet's own AI must make the same dodges (its own dodge animation plays) for 3 of 4 of at least 8. Parries, taunts and moves of its own are logged. |
 | `python run_test.py enemy_summons [--monster PATH]` | Diagnostic: the leader fights a summoner (a noonwraith by default); passes once a monster it summoned has a copy on the member. In Novigrad neither a noonwraith nor a leshen summoned within 4 minutes, so it is not in the suite. |
 | `python run_test.py reactions` | The leader's hits replay on the member's puppet; a bleeding hit reaches the member with its effect. |
 | `python run_test.py twin_match` | A drowner exists in both worlds: the member's own becomes the puppet, with no duplicate. |
