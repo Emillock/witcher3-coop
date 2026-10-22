@@ -47,6 +47,19 @@ function W3T_BeginScenario(bot : W3T_Bot)
     theGame.r_getMultiplayerClient().getCoopEnemies().ResetDiagnostics();
 }
 
+// the mod's attack-sync events, each with its time on the PC's performance counter (WO_ClockMs, shared by both games;
+// attack_sync.py pairs the leader's and the member's)
+function W3T_DrainSyncLog(coop : r_CoopEnemies)
+{
+    var i : int;
+
+    for(i = 0; i < coop.syncLog.Size(); i += 1)
+    {
+        W3T_Log("SYNC " + coop.syncLog[i]);
+    }
+    coop.syncLog.Clear();
+}
+
 function W3T_ScenarioCheck(bot : W3T_Bot) : bool
 {
     var scenario : string = bot.scenario;
@@ -79,6 +92,7 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             ghosts += 1;
         }
     }
+    W3T_DrainSyncLog(client.getCoopEnemies());
 
     if(scenario == "facts_sync")
     {
@@ -745,6 +759,7 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     var template : CEntityTemplate;
     var npc : CNewNPC;
     var rot : EulerAngles;
+    var action : W3DamageAction;
 
     if(bot.scenarioCount == 0)
     {
@@ -765,7 +780,17 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     }
     npc = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(npc.GetWorldPosition());
-    W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
+    // experiment (W3T_VIEW_HIT=1, best with W3T_TICK=0.1): a hit as each attack starts, which cuts its swing short
+    if(W3T_GetEnv("W3T_VIEW_HIT") == "1" && coop.attacksSeen > bot.scenarioStep)
+    {
+        bot.scenarioStep = coop.attacksSeen;
+        action = new W3DamageAction in theGame.damageMgr;
+        action.Initialize(thePlayer, npc, thePlayer, "W3T", EHRT_Heavy, CPS_Undefined, true, false, false, false);
+        action.AddDamage(theGame.params.DAMAGE_NAME_DIRECT, 0.02 * npc.GetMaxHealth());
+        theGame.damageMgr.ProcessAction(action);
+        delete action;
+    }
+    W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " falseStarts=" + coop.attackFalseStarts + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
         + " graph=" + npc.GetBehaviorGraphInstanceName());
     return coop.attacksSeen >= 4;
 }
@@ -794,6 +819,15 @@ function W3T_AttackViewMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         }
         return false;
     }
+    // experiments: the leader's swing animations on the copy's slot (W3T_SLOT_ATTACKS=0: its own AI's swings), which slot
+    if(W3T_GetEnv("W3T_SLOT_ATTACKS") != "")
+    {
+        coop.slotAttacks = W3T_GetEnv("W3T_SLOT_ATTACKS") == "1";
+    }
+    if(W3T_GetEnv("W3T_ATTACK_SLOT") != "")
+    {
+        coop.attackSlot = WO_ToName(W3T_GetEnv("W3T_ATTACK_SLOT"));
+    }
     if(coop.PuppetCount() > 0)
     {
         puppet = coop.PuppetAt(0);
@@ -812,7 +846,8 @@ function W3T_AttackViewMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
             + " targetMe=" + bot.scenarioStep + " facingLeader=" + FloatToStringPrec(AngleDistance(puppet.GetHeading(),
             VecHeading(leader.ghost.GetWorldPosition() - puppet.GetWorldPosition())), 0) + " graph=" + puppet.GetBehaviorGraphInstanceName()
             + " sameTask=" + coop.puppetSameTasks + " otherTask=" + coop.puppetOtherTasks + " sameAnim=" + coop.puppetSameAnims + "/" + coop.attackAnimsCompared
-            + " pair=" + coop.lastAnimPair + " lastError=" + coop.lastError);
+            + " pair=" + coop.lastAnimPair + " slot=" + coop.slotAttacksPlayed + "/" + coop.slotAttacksRefused + "/" + coop.slotAttacksMissed + " catchUps=" + coop.slotCatchUps + " slotState=" + coop.lastSlotState
+            + " lastError=" + coop.lastError);
     }
     // most of them really play (a few can fall into a hit reaction), not many more hit windows than the leader's (the
     // puppet picks its own attack: a two-hit one where the leader's monster swung once doubles them), hardly any at the

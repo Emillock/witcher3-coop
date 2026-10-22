@@ -42,9 +42,9 @@ Code: `scripts/local/coopEnemies.ws` in the Witcher Online fork, plus a `COOP` o
 server.
 
 - **Transport.** `COOP` packets carry a channel name and fields. The server keeps each player's latest value per
-  channel (at most 4) and rebroadcasts it every 100 ms, like Witcher Online's own state; the client passes a
-  channel's value to scripts only when it changed. Both channels are state, so a lost packet is repaired by
-  the next one.
+  channel (at most 4) and forwards it on arrival (since 2026-10-22; before, only on its 100 ms broadcast tick, which
+  held a monster's attack back 0-100 ms). The tick repeats a channel nothing new came on for 100 ms, so a lost
+  packet is repaired. The client passes a channel's value to scripts only when it changed.
   - `en` (leader): `epoch seq area`, hit acknowledgements `user session lastSeq`, a template table, then per
     enemy `netId template appearance x y z yaw health alive`. At most 24 enemies.
   - `hit` (member): `leader epoch session hurtAck`, then every hit not yet acknowledged as `seq netId fraction`.
@@ -118,7 +118,7 @@ True Co-op rule).
     can attack it. Before, it stayed `friendly_to_player` and puppets ignored it.
   - The puppet's own hits do no damage (`OnBeforeDamage`); the hit itself comes as the leader's hurt.
   - So the attack lands at the same moment and on the same player. Since later on 2026-10-21 it is also the same
-    attack (next point); the exact animation variant is the game's choice.
+    attack (next point), and since 2026-10-22 the same animation (below).
 
   Until 2026-10-21 the puppet was given the leader's animation through a forced `CAIPlayAnimationSlotAction`. The
   action was accepted, so `attacksPlayed` counted it, but the animation never played. The owner saw the copies
@@ -155,7 +155,8 @@ True Co-op rule).
   - A puppet's own `W3AdvancedProjectile` doesn't fly on a member (it goes at once): the leader's projectiles
     come as copies, and the puppet now makes projectile attacks too.
   - `attack_view` (drowner): the same task 7 of 7, the same animation 4 of 7 (the attack type is the same; the
-    graph picks the variant, `monster_drowner_attack_dynamic1-3`), no attack at the wrong player.
+    graph picks the variant, `monster_drowner_attack_dynamic1-3`), no attack at the wrong player. (Before the slot
+    animations below.)
   - `enemy_spells` (a leshen, immortal; the leader swings at it for 6 s, then stands 11 m off for 6 s, since up
     close monsters only swing): its roots came on the member as often as on the leader (4 and 4, 3 and 3, within
     0.1-0.4 s), aimed at the leader every time, and the puppet took the same task 14-15 times of 16.
@@ -194,6 +195,53 @@ True Co-op rule).
     The fairytale witch (bombardment) and the base game's black mage never fought in the test spot.
   - `enemy_spells` settings: `W3T_KITE` (stand-off, 11 m), `W3T_MONSTER_HP` (its health first),
     `W3T_SPELL_ATTACKS` (the leader passes after that many, 16), `W3T_AI_FREE=0` (the old idle-between-windows).
+- **The same animation, about 30 ms behind** (2026-10-22):
+  - Before, the puppet's own AI picked the swing within the leader's task (a drowner's `CBTTaskAttack:1` is one of
+    `monster_drowner_attack_dynamic1-3`, picked at random by its graph): 1 of 7 matched, and it started a median
+    297 ms (p90 789 ms) after the leader's. The time went to the server's 100 ms tick, the hit window that named the
+    animation, and the puppet's tree picking an attack.
+  - Leader: an attack counts once it plays (`CommitAttack`): at its first animation event, at its hit window, or
+    still running two frames later. A task the graph refuses ends at once and starts again every frame (a bear
+    between its attacks made 1454 "attacks" in 150 s). The first animation event ('SyncBlend', 'SlideToTarget', ...)
+    names the animation, and the snapshot goes out from that event (`HostSend`), not on the next frame. The attack
+    field becomes `task|anim|time|cut`: the animation's own time when sent, and "1" once a hit cut the attack short.
+  - Server: co-op state is forwarded on arrival (Transport).
+  - Member: a plain swing, or an attack without a task, plays the leader's animation straight on the puppet's
+    `NPC_ANIM_SLOT` through its animated component (`PlaySlotAnimationAsync`; the name comes from the new native
+    `WO_ToName`). Unlike the AI slot action of 2026-10-21 this plays, in the Exploration graph too. Meanwhile the
+    gate holds its own swings, also at `OnActivate`: human trees start attack tasks without asking `IsAvailable`.
+    A spell or special attack stays the puppet's own task, since its effect comes from it. Any slot animation still
+    playing stops first, and before a mirrored move: it would hide them (a leshen's roots came 1 time in 4).
+  - Some animations have no event before the hit window (hag, arachas, endrega, bear, troll, some human swings).
+    They are named only there, 0.1-0.65 s in. The puppet's own swing waits up to 0.7 s for the name. The slot
+    animation then plays faster, at most twice as fast, until it has caught up (`CatchUp`), so the hit lands closer
+    to the leader's. Later parts of an attack (a drowner's counter: dodge, then lunge) play on the slot as they come.
+  - A hit that ends the leader's attack within 0.5 s sets the cut flag. The puppet's slot animation then stops
+    (playing no animation on the slot ends the one there), so its own hit reaction shows. An attack that goes on
+    through a hit goes on on the puppet too. With a hit at each attack's start, all 10 swings that were cut short
+    after starting on a slot stopped on the puppet as well. The actor-action form of the slot was refused 6 times in
+    7, and `GAMEPLAY_SLOT` isn't in the Exploration graph, so neither could be stopped that way.
+  - If a slot attack's hit window never comes twice in a row (a graph without the slot), that monster's puppets swing
+    with their own AI again (`SlotAttackCheck`).
+  - `attack_view` per monster, measured with `attack_sync.py`. Both games and the server ran on one PC; over the
+    internet, add the network's one-way delay. Start: from the leader's attack task to the puppet's animation.
+    Hit window: the puppet's first, after the leader's.
+    | Monster | Same animation | Start, median (p90) | Hit window, median |
+    |---|---|---|---|
+    | drowner | 7 / 7 | 25 ms (36) | 40 ms |
+    | nightwraith | 5 / 5 | 24 ms (43) | 28 ms |
+    | katakan | 6 / 6 | 38 ms (184) | 76 ms |
+    | sword bandit | 5 / 5 | 56 ms (471) | 54 ms |
+    | werewolf | 6 / 6 | 71 ms (116) | 52 ms |
+    | alghoul | 3 / 3 | 84 ms | 48 ms |
+    | water hag | 7 / 7 | 103 ms (165) | 80 ms |
+    | harpy | 6 / 6 | 136 ms (211) | 112 ms |
+    | endrega | 4 / 4 | 162 ms (486) | 150 ms |
+    | arachas | 9 / 9 | 176 ms (471) | 132 ms |
+    | bear | 7 / 7 | 362 ms (644) | 301 ms |
+
+    In some runs the wolf, ghoul and troll stayed out of combat in this test (the leader's monster never attacked),
+    and the cyclops lost its target.
 - **Dodges, taunts, jump-backs, parries** (2026-10-21) are made by the puppet's own AI too, like attacks:
   - The leader sends the kind with the move: by the task class (`CBTTaskDodge`, `CBTTaskTaunt`,
     `CBTTask3StateTaunt`, `CBTTaskJumpBack`), or else by the animation's name ("dodge", "evade", "taunt",

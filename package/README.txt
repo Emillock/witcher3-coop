@@ -76,6 +76,7 @@ two accounts. Covered: seeing each other and movement; shared monsters (hits, at
 reactions, deaths, leaving and coming back; their copies walk and run like the leader's monsters);
 journal progress, quest facts and dialogue choices. Not yet tested on two different PCs over the
 internet.
-Known limits: a monster's copy makes the same attack or spell, but the game picks the animation
-variant; a dodge shows about half a second late; parries show only part of the time.
+Known limits: a monster's copy plays the same attack animation, but for some monsters (bear,
+arachas, water hag) it starts 0.1-0.6 s late and then catches up; a dodge shows about half a second
+late; parries show only part of the time.
 Burning, bleeding and knockdown are passed on but unverified in normal play.
