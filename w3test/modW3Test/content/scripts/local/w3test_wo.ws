@@ -753,7 +753,7 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
 }
 
 // attack_view, leader: a drowner (or W3T_MONSTER) spawns 3 m from this Geralt and attacks only it, not the member's
-// copy. Passes once it attacked 4 times.
+// copy. Passes once it attacked 4 times (W3T_VIEW_ATTACKS).
 function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var template : CEntityTemplate;
@@ -780,6 +780,10 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     }
     npc = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(npc.GetWorldPosition());
+    if(W3T_GetEnv("W3T_POSE") != "")
+    {
+        coop.poseNaming = W3T_GetEnv("W3T_POSE") == "1";
+    }
     // experiment (W3T_VIEW_HIT=1, best with W3T_TICK=0.1): a hit as each attack starts, which cuts its swing short
     if(W3T_GetEnv("W3T_VIEW_HIT") == "1" && coop.attacksSeen > bot.scenarioStep)
     {
@@ -790,9 +794,9 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
         theGame.damageMgr.ProcessAction(action);
         delete action;
     }
-    W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " falseStarts=" + coop.attackFalseStarts + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
+    W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " falseStarts=" + coop.attackFalseStarts + " poseNamed=" + coop.poseNamed + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
         + " graph=" + npc.GetBehaviorGraphInstanceName());
-    return coop.attacksSeen >= 4;
+    return coop.attacksSeen >= StringToInt(W3T_GetEnv("W3T_VIEW_ATTACKS"), 4);
 }
 
 // attack_view, member: watches the copy of the drowner that attacks the leader. The leader's attacks must really play

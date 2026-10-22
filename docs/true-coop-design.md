@@ -223,23 +223,49 @@ True Co-op rule).
     7, and `GAMEPLAY_SLOT` isn't in the Exploration graph, so neither could be stopped that way.
   - If a slot attack's hit window never comes twice in a row (a graph without the slot), that monster's puppets swing
     with their own AI again (`SlotAttackCheck`).
+  - Naming more swings as they start (later on 2026-10-22). What reaches scripts before a hit window was read from
+    the game's animation sets (CR2W `.w2anims` in the bundles: each `CSkeletalAnimationSetEntry` holds its events
+    inline). Sound, footstep and effect events, often the earliest, never reach scripts, not even through entity
+    callbacks (`AddAnimEventCallback`); the attack task gets duration and generic events ('SyncBlend',
+    'SlideToTarget'); enum events ('RotateEvent': at once in human swings, 0.2 s into an arachas' or a troll's) come
+    only to `CActor.OnEnumAnimEvent`, now wrapped. Over 18 animation sets, the attack animations named later than
+    0.15 s fell from 123 of 220 to 81 (the ice giant's 40 of them; humans', harpies' and wraiths' none).
+    - A name counts only from an animation that started with the attack (its own time at most the attack's age plus
+      0.35 s: some graphs start a swing before its task, a katakan's by 0.2 s; and not the animation that played
+      before, still blending out), within 0.6 s, and only an attack animation (a task can start with a run). The hit
+      window still names an attack nothing named.
+    - Bookkeeping: a hit window belongs to the attack while its task runs, or after it if it is still its animation
+      (a bear's task can end before its hit window: two attacks were counted, and the copy swung twice). Once a
+      leader names animations, a copy never stands in its own swing (it swung where a bear only started a task).
+    - The troll's attack task (`CBTTaskTrollAttack`: its own events only pick targets) plays on the slot too.
+  - Pose naming, for swings with no event at all before their hit window (a bear's bite hits at 0.6 s): 0.12, 0.2
+    and 0.3 s into an unnamed attack, the leader compares its monster's bones (`GetBoneWorldMatrixByIndex`, model
+    space, about their centre) with each swing that monster type made before (learned from hit windows), sampled
+    with `GetBoneMatrixMovementModelSpaceInAnimation` at times from 0 to 0.4 s past the attack's age. It names the
+    attack when the match is clear: error under 0.5 (15 bones, metres) with the next best 2.5 times that, or the next
+    best 4.5 times the best. Over 200 test snapshots of bears, trolls, arachas, endregas and katakans the rule passed
+    no wrong one; a wrong one would be put right by the hit window. The bear's median start went from 604 to 257 ms,
+    and its hits from 298 to 33 ms behind.
   - `attack_view` per monster, measured with `attack_sync.py`. Both games and the server ran on one PC; over the
     internet, add the network's one-way delay. Start: from the leader's attack task to the puppet's animation.
     Hit window: the puppet's first, after the leader's.
-    | Monster | Same animation | Start, median (p90) | Hit window, median |
-    |---|---|---|---|
-    | drowner | 7 / 7 | 25 ms (36) | 40 ms |
-    | nightwraith | 5 / 5 | 24 ms (43) | 28 ms |
-    | katakan | 6 / 6 | 38 ms (184) | 76 ms |
-    | sword bandit | 5 / 5 | 56 ms (471) | 54 ms |
-    | werewolf | 6 / 6 | 71 ms (116) | 52 ms |
-    | alghoul | 3 / 3 | 84 ms | 48 ms |
-    | water hag | 7 / 7 | 103 ms (165) | 80 ms |
-    | harpy | 6 / 6 | 136 ms (211) | 112 ms |
-    | endrega | 4 / 4 | 162 ms (486) | 150 ms |
-    | arachas | 9 / 9 | 176 ms (471) | 132 ms |
-    | bear | 7 / 7 | 362 ms (644) | 301 ms |
+    | Monster | Same animation | Start, median (p90) | Hit window, median | Start, first slot version |
+    |---|---|---|---|---|
+    | drowner | 13 / 13 | 24 ms (43) | 18 ms | 25 ms |
+    | nightwraith | 10 / 10 | 28 ms (46) | 24 ms | 24 ms |
+    | harpy | 6 / 6 | 16 ms (28) | 24 ms | 136 ms |
+    | sword bandit | 12 / 12 | 24 ms (43) | 28 ms | 56 ms |
+    | alghoul | 8 / 8 | 25 ms (955) | 52 ms | 84 ms |
+    | werewolf | 10 / 10 | 32 ms (163) | 47 ms | 71 ms |
+    | katakan | 9 / 9 | 38 ms (165) | 67 ms | 38 ms |
+    | troll | 8 / 8 | 44 ms | 22 ms | - |
+    | endrega | 10 / 10 | 47 ms (177) | 176 ms | 162 ms |
+    | arachas | 7 / 7 | 56 ms (135) | 96 ms | 176 ms |
+    | water hag | 13 / 13 | 89 ms (160) | 108 ms | 103 ms |
+    | bear | 10 / 10 | 98 ms (297) | 73 ms | 362 ms |
 
+    The troll's row is from the run before (in the last one it stayed out of combat). The water hag's swings have no
+    event before their hit window at 0.05 s, so they are named there; its catch-up keeps the hit about 0.1 s behind.
     In some runs the wolf, ghoul and troll stayed out of combat in this test (the leader's monster never attacked),
     and the cyclops lost its target.
 - **Dodges, taunts, jump-backs, parries** (2026-10-21) are made by the puppet's own AI too, like attacks:
