@@ -852,11 +852,13 @@ function W3T_EnemyMovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     return coop.movesSeen >= 1;
 }
 
-// the leader's light attack at `monster` every 2 s, from 1.8 m (teleporting there if farther than 2.5 m)
+// the leader's light attack at `monster` every 2 s, from 1.8 m off its body (teleporting there if 0.7 m farther; a
+// golem can't attack someone standing inside its body)
 function W3T_SwingAt(bot : W3T_Bot, monster : CNewNPC)
 {
     var spot : Vector;
     var rot : EulerAngles;
+    var reach : float;
 
     W3T_LookAt(monster.GetWorldPosition());
     if(bot.ElapsedS() - bot.scenarioTime < 2)
@@ -864,9 +866,10 @@ function W3T_SwingAt(bot : W3T_Bot, monster : CNewNPC)
         return;
     }
     bot.scenarioTime = bot.ElapsedS();
-    if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) > 2.5)
+    reach = 1.8 + MaxF(0, monster.GetRadius() - 0.5);
+    if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) > reach + 0.7)
     {
-        spot = monster.GetWorldPosition() + VecNormalize(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * 1.8;
+        spot = monster.GetWorldPosition() + VecNormalize(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * reach;
         rot.Yaw = VecHeading(monster.GetWorldPosition() - spot);
         thePlayer.TeleportWithRotation(spot, rot);
     }
@@ -875,9 +878,9 @@ function W3T_SwingAt(bot : W3T_Bot, monster : CNewNPC)
 }
 
 // enemy_spells, leader: a spell caster (a leshen unless W3T_MONSTER: its roots), immortal, next to the member's ghost
-// and hostile to both players. This Geralt swings at it every 2 s for 6 s, then stands 11 m off for 6 s (monsters
-// cast at range; up close they only swing). Lists the attack tasks it starts (CoopAttackId, e.g.
-// CBTTaskLeshyRootAttack:0); passes after 16 of them.
+// and hostile to both players. This Geralt swings at it every 2 s for 6 s, then stands off for 6 s (W3T_KITE, 11 m;
+// monsters cast at range, up close they only swing). W3T_MONSTER_HP sets its health first. Lists the attack tasks it starts (CoopAttackId, e.g.
+// CBTTaskLeshyRootAttack:0); passes after 16 of them (W3T_SPELL_ATTACKS).
 function W3T_EnemySpellsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var monster : CNewNPC;
@@ -893,6 +896,11 @@ function W3T_EnemySpellsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
             monster.SetImmortalityMode(AIM_Immortal, AIC_Default);
             monster.SetAttitude(thePlayer, AIA_Hostile);
             monster.NoticeActor(thePlayer);
+            // W3T_MONSTER_HP: some spells come below a health threshold (a golem's pillar arena)
+            if(W3T_GetEnv("W3T_MONSTER_HP") != "")
+            {
+                monster.SetHealthPerc(StringToFloat(W3T_GetEnv("W3T_MONSTER_HP"), 1.0));
+            }
             // noon (members follow the leader's time), for recordings
             theGame.SetGameTime(GameTimeCreate(GameTimeDays(theGame.GetGameTime()) + 1, 12, 0, 0), true);
         }
@@ -907,9 +915,9 @@ function W3T_EnemySpellsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
     else
     {
         W3T_LookAt(monster.GetWorldPosition());
-        if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) < 8
+        if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) < W3T_KiteDistance() - 3
             && theGame.GetWorld().NavigationFindSafeSpot(monster.GetWorldPosition()
-            + VecNormalize2D(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * 11.0, 0.5, 3.0, spot))
+            + VecNormalize2D(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * W3T_KiteDistance(), 0.5, 3.0, spot))
         {
             rot.Yaw = VecHeading(monster.GetWorldPosition() - spot);
             thePlayer.TeleportWithRotation(spot, rot);
@@ -919,13 +927,37 @@ function W3T_EnemySpellsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
     {
         bot.scenarioText += " " + coop.lastAttackTask + " ";
     }
-    W3T_Log("SPELLS leader attacks=" + coop.attacksSeen + " spawns=" + coop.spellSpawns + " task=" + coop.lastAttackTask
+    W3T_Log("SPELLS leader attacks=" + coop.attacksSeen + " spawns=" + coop.spellSpawns + " fx=" + coop.lastFxSpawn
+        + " task=" + coop.lastAttackTask
         + " seen:" + bot.scenarioText);
-    return coop.attacksSeen >= 16;
+    return coop.attacksSeen >= StringToInt(W3T_GetEnv("W3T_SPELL_ATTACKS"), 16);
+}
+
+// whether `actor` has the component combat tickets come from (diagnostics)
+function W3T_HasCombatData(actor : CActor) : bool
+{
+    var data : CCombatDataComponent;
+
+    data = (CCombatDataComponent)actor.GetComponentByClassName('CCombatDataComponent');
+    if(data)
+    {
+        return true;
+    }
+    return false;
+}
+
+// enemy_spells: how far the leader stands off (W3T_KITE, 11 m by default)
+function W3T_KiteDistance() : float
+{
+    if(W3T_GetEnv("W3T_KITE") != "")
+    {
+        return StringToFloat(W3T_GetEnv("W3T_KITE"), 11.0);
+    }
+    return 11.0;
 }
 
 // enemy_spells, member: the puppet makes the leader's monster's attack tasks (the same spell or swing), at least 8,
-// two thirds of them the same task, and casts a spell (spawns its area entity) at the player the leader's monster
+// two thirds of them the same task or another plain swing, and casts a spell (spawns its area entity) at the player the leader's monster
 // attacks, never at another; its own projectiles don't fly (the leader's come as copies)
 function W3T_EnemySpellsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
@@ -940,11 +972,25 @@ function W3T_EnemySpellsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     {
         W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
     }
-    W3T_Log("SPELLS member attacksPlayed=" + coop.attacksPlayed + " sameTask=" + coop.puppetSameTasks + " otherTask="
+    if(W3T_GetEnv("W3T_AI_FREE") != "")
+    {
+        coop.puppetAiFree = W3T_GetEnv("W3T_AI_FREE") == "1";
+    }
+    if(coop.PuppetCount() > 0)
+    {
+        W3T_Log("SPELLS copy graph=" + coop.PuppetAt(0).GetBehaviorGraphInstanceName() + " targetLeader="
+            + (coop.PuppetAt(0).GetTarget() == leader.ghost) + " targetMe=" + (coop.PuppetAt(0).GetTarget() == thePlayer)
+            + " dist=" + FloatToStringPrec(VecDistance(coop.PuppetAt(0).GetWorldPosition(), leader.ghost.GetWorldPosition()), 1)
+            + " gate asked=" + coop.gateAsked + " heldByMove=" + coop.gateHeldByMove + " otherTask=" + coop.gateOtherTask + " denied=" + coop.lastGateDenied
+            + " movesPlayed=" + coop.movesPlayed + " fxTasks=" + coop.puppetFxTasks + " fx=" + coop.lastFxSpawn + " ghostCombatData="
+            + W3T_HasCombatData(leader.ghost));
+    }
+    W3T_Log("SPELLS member attacksPlayed=" + coop.attacksPlayed + " sameTask=" + coop.puppetSameTasks + " swingSwaps=" + coop.puppetSwingSwaps + " otherTask="
         + coop.puppetOtherTasks + " attackEvents=" + coop.puppetAttackEvents + " sameAnim=" + coop.puppetSameAnims + "/" + coop.attackAnimsCompared
         + " ownAttacks=" + coop.puppetOwnAttacks + " spawns=" + coop.spellSpawns + " wrongSpells=" + coop.spellWrongTargets + " quickEnds=" + coop.puppetAttackQuickEnds + " projectilesMuted=" + coop.projectilesMuted + " projectilesFired="
         + coop.projectilesFired + " lastTask=" + coop.lastPuppetTask + " lastError=" + coop.lastError);
-    return coop.attacksPlayed >= 8 && coop.puppetSameTasks * 3 >= (coop.puppetSameTasks + coop.puppetOtherTasks) * 2
+    return coop.attacksPlayed >= 8
+        && (coop.puppetSameTasks + coop.puppetSwingSwaps) * 3 >= (coop.puppetSameTasks + coop.puppetSwingSwaps + coop.puppetOtherTasks) * 2
         && coop.puppetSameTasks >= 4 && coop.spellSpawns >= 1 && coop.spellWrongTargets == 0;
 }
 

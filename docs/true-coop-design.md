@@ -159,9 +159,41 @@ True Co-op rule).
   - `enemy_spells` (a leshen, immortal; the leader swings at it for 6 s, then stands 11 m off for 6 s, since up
     close monsters only swing): its roots came on the member as often as on the leader (4 and 4, 3 and 3, within
     0.1-0.4 s), aimed at the leader every time, and the puppet took the same task 14-15 times of 16.
-  - Which monsters cast at all, in 2-4 minutes each: the leshen (roots, and once a summon), the water hag (its mud
-    is `CBTTaskProjectileAttack`). Earth and fire elementals, the ice giant, wraiths, noonwraith and nightwraith
-    only used plain `CBTTaskAttack` with several attack types.
+  - Which monsters cast, and where their spells are: the AI trees (`.w2behtree`, most in
+    `content0\bundles\startup.bundle`) name the task classes they use.
+    - The ice giant has no spell at all (plain attacks, a charge, taunts).
+    - The golem tree (golems, earth and fire elementals) gates the stone smash, fire throw, projectile throws and a
+      pillar arena behind abilities, distance, a clean shot and (the arena) low health. A fire golem 20 m off at 40%
+      health threw fire and fireballs; an earth elemental never cast in 3-4 minutes.
+    - `CBTTaskSpawnFXEntity` (effect entities, not attack tasks) is in 33 trees: Blood and Wine monsters and mages'
+      specials. They sit in the branch of an attack task, so the puppet runs them with the same attack.
+    - The bombardment is only the fairytale witch's, the drop from above only Shaelmaar's (`sharley`);
+      `BTTaskFrostAreaAttack` is in no tree.
+  - Puppets' AI stays free while their monster fights (a mirrored attack in the last 6 s), no longer only for each
+    window: big monsters (golems, giants, the scolopendromorph) spend a window turning and stepping into range, and
+    the idle tree at its end restarted that, so their puppets hardly attacked (a fire golem's: none in 86 windows; its
+    tree asked for an attack 4 times). The gates keep the free AI to the leader's monster's attacks and moves: a
+    puppet's plain animation tasks (`CBTTaskPlayAnimationEventDecorator` itself: native dodges, slams) only while a
+    mirrored move waits or plays. A window lasts up to 2.5 s until the puppet starts an attack, then 1.1 s.
+  - The attack a puppet may make: the leader's monster's task; for a plain swing any plain swing (the tree picks its
+    attack type itself, and refusing it often meant no attack at all); after 0.6 s a plain swing as a fallback. Never
+    a spell or special attack the leader's monster didn't make (a mage's puppet cast twice as many spells before).
+  - Projectiles dropped from above (Shaelmaar's boulders) get no caster (`Init(NULL)`): the monster whose task spawns
+    them stands in (`projectileSpawner`), so the leader mirrors them and a member mutes its puppet's own.
+  - `enemy_spells` with each caster (2026-10-22, puppets' AI free; the leader's spawns / the puppet's):
+    | Monster | Spells | Spawns |
+    |---|---|---|
+    | leshen | roots | 21 / 18 |
+    | Hearts of Stone mage (`hakland_mage`) | tornado, magic coil, wind, sand cage | 2 / 3 |
+    | spriggan | `CBTTaskSpawnMultipleEntities3StateAttack`, projectile | 12 / 11 |
+    | scolopendromorph | effect entities, spit | 12 / 11 |
+    | bruxa | scream (`CBTTaskSpawnFXEntity`) | 3 / 2 |
+    | fire golem | fire throw, fireballs (attacks: 67 for 48 mirrored) | - |
+    | water hag, echinops | projectile attacks (the puppet's own muted, the leader's copied) | - |
+    | Shaelmaar | boulders, projectiles, dust | 5 / 0: its puppet barely acts (asked for an attack 5 times in 228 windows) |
+    The fairytale witch (bombardment) and the base game's black mage never fought in the test spot.
+  - `enemy_spells` settings: `W3T_KITE` (stand-off, 11 m), `W3T_MONSTER_HP` (its health first),
+    `W3T_SPELL_ATTACKS` (the leader passes after that many, 16), `W3T_AI_FREE=0` (the old idle-between-windows).
 - **Dodges, taunts, jump-backs, parries** (2026-10-21) are made by the puppet's own AI too, like attacks:
   - The leader sends the kind with the move: by the task class (`CBTTaskDodge`, `CBTTaskTaunt`,
     `CBTTask3StateTaunt`, `CBTTaskJumpBack`), or else by the animation's name ("dodge", "evade", "taunt",
@@ -347,9 +379,8 @@ True Co-op rule).
   noonwraith's tree, likely at a health threshold. A Novigrad guard who joined the fight was collected and copied.
   A puppet never starts its own summon task (its gate, above).
 - **Not done:**
-  - spawns of tasks that aren't attack tasks: frost areas (`BTTaskFrostAreaAttack`), spawned objects and FX
-    entities (`CBTTaskSpawnObject`, `CBTTaskSpawnFXEntity`), bombardment and projectiles dropped from above, and the
-    decorator `CBTTaskSpawnEntityOffset`. They show only if the puppet's own AI happens to make them;
+  - Shaelmaar's puppet barely acts; the fairytale witch's bombardment and the offset spawns of two bosses (Dettlaff,
+    the toad) are untested (they didn't fight at the test spot, or weren't tried);
   - moves that are not behavior-tree tasks (scripted encounter animations);
   - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 
