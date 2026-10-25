@@ -268,7 +268,17 @@ True Co-op rule).
     event before their hit window at 0.05 s, so they are named there; its catch-up keeps the hit about 0.1 s behind.
     In some runs the wolf, ghoul and troll stayed out of combat in this test (the leader's monster never attacked),
     and the cyclops lost its target.
-- **Dodges, taunts, jump-backs, parries** (2026-10-21) are made by the puppet's own AI too, like attacks:
+- **Moves on the slot** (2026-10-25). Every move of the leader's monster (dodge, taunt, jump-back, parry, and the
+  other animated moves of its tree: strafes, counter-attacks' first parts, fear) plays with its exact animation on the
+  puppet's `NPC_ANIM_SLOT`, as attacks do: sent from the event that names it, with the animation's time (the move
+  field becomes `kind:param:anim:time`), caught up if it comes late. Nothing is left for the puppet's AI to make, so an
+  attack after it plays at once. A mirrored hit that dealt damage stops a move on the slot (a dodged or parried hit
+  deals none), for the puppet's hit reaction. A counter-attack that came as a move first isn't started again when it
+  comes as an attack at its hit window. If the slot refuses a move, the puppet's own AI makes it as before.
+  `enemy_moves` (sword bandit): moves shown 7 of 12 and the same animation 3 times, a median 1182 ms late (p90 3168),
+  through the puppet's AI; on the slot 26 of 26, the same animation every time, a median 18-25 ms late (p90 31-37).
+- **Dodges, taunts, jump-backs, parries** (2026-10-21) were made by the puppet's own AI too, like attacks (since
+  2026-10-25 only when the slot refuses the move):
   - The leader sends the kind with the move: by the task class (`CBTTaskDodge`, `CBTTaskTaunt`,
     `CBTTask3StateTaunt`, `CBTTaskJumpBack`), or else by the animation's name ("dodge", "evade", "taunt",
     "jump_back"; a nekker dodges through the plain decorator). The move field becomes `kind:param:anim`, where param
@@ -420,9 +430,11 @@ True Co-op rule).
   - Capture: these behavior-tree tasks share `CBTTaskPlayAnimationEventDecorator`. The leader wraps its
     `OnAnimEvent`, which carries the animation's name, and sends each new animation (or a restart) as
     `moveSeq`/`moveAnim` with the enemy. Attack and hit-reaction tasks keep their own paths.
-  - Playback: dodges, taunts, jump-backs and parries by the puppet's own AI (above). The rest (fear, shots'
-    animations, wraith and wyvern moves) still go through the slot action, which plays nothing.
-  - Moves faster than the 10 Hz snapshots collapse into the newest.
+  - Playback (since 2026-10-25): every move plays with the leader's animation on the puppet's slot, as attacks do
+    (`SlotMove`); before, dodges, taunts, jump-backs and parries were made by the puppet's own AI (above) and the rest
+    went through the slot action, which plays nothing.
+  - Moves faster than the 10 Hz snapshots collapse into the newest. (The leader now also sends a move from the event
+    that names it, so a new one goes out at once.)
   - `enemy_moves` tells the leader's monster every 2 s that an attack is coming, as the game tells a target.
     Moves seen on the leader and played on the puppet (2026-10-19), none refused:
 

@@ -1129,9 +1129,10 @@ function GetDodgeStats()
     }
 }
 
-// enemy_moves, member: the puppet's own AI makes the leader's monster's dodges and parries (its own dodge or parry
-// animation is seen playing): 3 of 4 of at least 8 (one can be cut short by the next). Taunts and moves it made by
-// itself are logged (a monster's tree may dodge natively, out of the mod's reach).
+// enemy_moves, member: the puppet shows the leader's monster's dodges and parries, on its slot (the leader's animation)
+// or, with W3T_SLOT_MOVES=0, made by its own AI (its own dodge or parry animation is seen playing): 3 of 4 of at least
+// 8 (one can be cut short by the next). Taunts and moves it made by itself are logged (a monster's tree may dodge
+// natively, out of the mod's reach).
 function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     if(!client.getInParty())
@@ -1140,6 +1141,10 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         client.joinParty(leader.username);
         return false;
+    }
+    if(W3T_GetEnv("W3T_SLOT_MOVES") != "")
+    {
+        coop.slotMoves = W3T_GetEnv("W3T_SLOT_MOVES") == "1";
     }
     if(coop.PuppetCount() > 0)
     {
@@ -1151,14 +1156,15 @@ function W3T_EnemyMovesMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         + coop.tauntsMirrored + " parries=" + coop.puppetParriesStarted + "/" + coop.parriesMirrored + " animOnly=" + coop.movesAnimOnly + " dodges=" + coop.puppetDodgesAnimated + "/" + coop.dodgesMirrored
         + " puppetDodged=" + coop.puppetDodgesSeen + " attacksPlayed=" + coop.attacksPlayed + " ownAttacks="
         + coop.puppetOwnAttacks + " attackEvents=" + coop.puppetAttackEvents + " moveEvents=" + coop.moveAnimEvents
-        + " lastAnim=" + NameToString(coop.lastPuppetMoveAnim) + " lastError=" + coop.lastError);
+        + " lastAnim=" + NameToString(coop.lastPuppetMoveAnim) + " slotMoves=" + coop.slotMovesPlayed + "/" + coop.slotMovesRefused
+        + " lastError=" + coop.lastError);
     if(bot.ElapsedS() - bot.scenarioTime >= 20)
     {
         bot.scenarioTime = bot.ElapsedS();
         W3T_Log("MOVETRACE" + coop.moveTrace);
     }
-    return coop.dodgesMirrored + coop.parriesMirrored >= 8
-        && (coop.puppetDodgesAnimated + coop.puppetParriesStarted) * 4 >= (coop.dodgesMirrored + coop.parriesMirrored) * 3;
+    return coop.dodgesMirrored + coop.parriesMirrored >= 8 && (coop.puppetDodgesAnimated + coop.puppetParriesStarted
+        + coop.slotDodgesParries) * 4 >= (coop.dodgesMirrored + coop.parriesMirrored) * 3;
 }
 
 // sign_check: an actor's effect manager, to build an effect the way it does and see why it is denied

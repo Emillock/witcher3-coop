@@ -90,6 +90,19 @@ def main():
         slotted = [a for a in cut if a in slots]
         print(f"hit before the hit window {len(early)}: leader's swing cut short {len(cut)}; of those started on the copy's "
               f"slot {len(slotted)}, cut short there too {sum(a not in cwindows for a in slotted)}")
+    # moves: the leader's (LMV kind/anim) against the member's (MV: on the slot; MM: its own AI's move animation)
+    lmoves = {(n, s): (w, t) for k, n, s, w, t in lead if k == "LMV"}
+    mmoves = {}
+    for k, n, s, w, t in memb:
+        if k in ("MV", "MM") and (n, s) not in mmoves:
+            mmoves[(n, s)] = (w, t)
+    if lmoves:
+        played = [a for a in lmoves if a in mmoves]
+        same_move = [a for a in played if lmoves[a][0].split("/")[-1] == mmoves[a][0]]
+        print(f"moves {len(lmoves)}, shown {len(played)}, same animation {len(same_move)}")
+        mdelay = [mmoves[a][1] - lmoves[a][1] for a in played]
+        if mdelay:
+            print(f"move delay median {statistics.median(mdelay):5.0f} ms   p90 {pct(mdelay, 0.9):5.0f} ms   max {max(mdelay):5.0f} ms")
     missed = [a for a in received if a not in copies]
     other = [a for a in started if copies[a][0] != starts[a][0]]
     if missed:
