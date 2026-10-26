@@ -760,6 +760,8 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     var npc : CNewNPC;
     var rot : EulerAngles;
     var action : W3DamageAction;
+    var keep : float;
+    var spot : Vector;
 
     if(bot.scenarioCount == 0)
     {
@@ -768,7 +770,15 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
             return false;
         }
         template = (CEntityTemplate)LoadResource(W3T_MonsterPath(), true);
-        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        // W3T_VIEW_MORTAL=1: hit but never killed (some animals may not go for an invulnerable target)
+        if(W3T_GetEnv("W3T_VIEW_MORTAL") == "1")
+        {
+            thePlayer.SetImmortalityMode(AIM_Immortal, AIC_Cheat, true);
+        }
+        else
+        {
+            thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        }
         rot.Yaw = thePlayer.GetHeading() + 180;
         bot.scenarioEntity = theGame.CreateEntity(template, thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0,
             rot, true, false, false, PM_DontPersist);
@@ -780,6 +790,18 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     }
     npc = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(npc.GetWorldPosition());
+    // W3T_VIEW_KEEP=N: once it fights, the leader steps back to N m when the monster comes closer, at most every 4 s
+    // (ranged attacks: a troll throws at 5-16 m, a giant or werewolf charges from 5 m)
+    keep = StringToFloat(W3T_GetEnv("W3T_VIEW_KEEP"), 0);
+    if(keep > 0 && npc.GetBehaviorGraphInstanceName() == 'Combat' && bot.ElapsedS() - bot.scenarioTime >= 4
+        && VecDistance2D(npc.GetWorldPosition(), thePlayer.GetWorldPosition()) < keep - 3
+        && theGame.GetWorld().NavigationFindSafeSpot(npc.GetWorldPosition()
+        + VecNormalize2D(thePlayer.GetWorldPosition() - npc.GetWorldPosition()) * keep, 0.5, 3.0, spot))
+    {
+        rot.Yaw = VecHeading(npc.GetWorldPosition() - spot);
+        thePlayer.TeleportWithRotation(spot, rot);
+        bot.scenarioTime = bot.ElapsedS();
+    }
     if(W3T_GetEnv("W3T_POSE") != "")
     {
         coop.poseNaming = W3T_GetEnv("W3T_POSE") == "1";
@@ -794,7 +816,8 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
         theGame.damageMgr.ProcessAction(action);
         delete action;
     }
-    W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " falseStarts=" + coop.attackFalseStarts + " poseNamed=" + coop.poseNamed + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
+    W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " falseStarts=" + coop.attackFalseStarts + " poseNamed=" + coop.poseNamed
+        + " projectiles=" + coop.projectilesSeen + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
         + " graph=" + npc.GetBehaviorGraphInstanceName());
     return coop.attacksSeen >= StringToInt(W3T_GetEnv("W3T_VIEW_ATTACKS"), 4);
 }
@@ -850,7 +873,8 @@ function W3T_AttackViewMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
             + " targetMe=" + bot.scenarioStep + " facingLeader=" + FloatToStringPrec(AngleDistance(puppet.GetHeading(),
             VecHeading(leader.ghost.GetWorldPosition() - puppet.GetWorldPosition())), 0) + " graph=" + puppet.GetBehaviorGraphInstanceName()
             + " sameTask=" + coop.puppetSameTasks + " otherTask=" + coop.puppetOtherTasks + " sameAnim=" + coop.puppetSameAnims + "/" + coop.attackAnimsCompared
-            + " pair=" + coop.lastAnimPair + " slot=" + coop.slotAttacksPlayed + "/" + coop.slotAttacksRefused + "/" + coop.slotAttacksMissed + " catchUps=" + coop.slotCatchUps + " slotState=" + coop.lastSlotState
+            + " pair=" + coop.lastAnimPair + " slot=" + coop.slotAttacksPlayed + "/" + coop.slotAttacksRefused + "/" + coop.slotAttacksMissed + " catchUps=" + coop.slotCatchUps
+            + " projectilesFired=" + coop.projectilesFired + " slotState=" + coop.lastSlotState
             + " lastError=" + coop.lastError);
     }
     // most of them really play (a few can fall into a hit reaction), not many more hit windows than the leader's (the

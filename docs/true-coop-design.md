@@ -247,6 +247,17 @@ True Co-op rule).
       "attack"), and a late one catches up from up to 1.6 s behind. Only swings are checked for a hit window (a spit or
       a pull has none: two such checks in a row had switched the arachas' puppets back to their own AI). Names from
       events also teach pose naming, so a monster's second throw can be named by its pose.
+    - Attacks in phases (3-state attacks: a troll's rage; charges): each phase that starts while the task runs (its
+      animation's own time under 0.35 s) is named and sent, and a loop's restart too ("anim#n"), so the puppet plays
+      start, loop and end in turn (`NextPhase`). The 3-state task's glow on its loop (`playFXOnLoopStart`) doesn't show
+      on the puppet.
+    - Verified with `attack_view` and `W3T_VIEW_KEEP=10` (the leader steps back to 10 m: a troll throws at 5-16 m,
+      from its tree): a troll's throws named first at 1.1 s ('Prepare'), then by pose at 0.24-0.31 s, the puppet
+      starting them 0.25-0.33 s in; every rock came as a copy (6 of 6); its rage played start, loop and end on the
+      slot. Charges (5 m and more, facing the target, a clear line) never came in the test: monsters closed in and
+      swung.
+    - Wolves and ghouls never fought the invulnerable test leader; with `W3T_VIEW_MORTAL=1` (hit, never killed) a
+      ghoul's 8 swings and a wolf's one played with the same animation, a median 30 ms behind.
   - Pose naming, for swings with no event at all before their hit window (a bear's bite hits at 0.6 s): 0.12, 0.2
     and 0.3 s into an unnamed attack, the leader compares its monster's bones (`GetBoneWorldMatrixByIndex`, model
     space, about their centre) with each swing that monster type made before (learned from hit windows), sampled
