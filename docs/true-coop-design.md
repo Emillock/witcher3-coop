@@ -210,8 +210,9 @@ True Co-op rule).
     `NPC_ANIM_SLOT` through its animated component (`PlaySlotAnimationAsync`; the name comes from the new native
     `WO_ToName`). Unlike the AI slot action of 2026-10-21 this plays, in the Exploration graph too. Meanwhile the
     gate holds its own swings, also at `OnActivate`: human trees start attack tasks without asking `IsAvailable`.
-    A spell or special attack stays the puppet's own task, since its effect comes from it. Any slot animation still
-    playing stops first, and before a mirrored move: it would hide them (a leshen's roots came 1 time in 4).
+    A spell stays the puppet's own task, since its effect comes from it (since 2026-10-26 throws, spits, the
+    arachas' pull and charges play on the slot too, below). Any slot animation still playing stops first, and before
+    a mirrored move: it would hide them (a leshen's roots came 1 time in 4).
   - Some animations have no event before the hit window (hag, arachas, endrega, bear, troll, some human swings).
     They are named only there, 0.1-0.65 s in. The puppet's own swing waits up to 0.7 s for the name. The slot
     animation then plays faster, at most twice as fast, until it has caught up (`CatchUp`), so the hit lands closer
@@ -238,6 +239,14 @@ True Co-op rule).
       (a bear's task can end before its hit window: two attacks were counted, and the copy swung twice). Once a
       leader names animations, a copy never stands in its own swing (it swung where a bear only started a task).
     - The troll's attack task (`CBTTaskTrollAttack`: its own events only pick targets) plays on the slot too.
+    - Special attacks (2026-10-26): throws and spits (`CBTTaskProjectileAttack`, `...WithPrepare`: their projectile
+      comes as a copy anyway), the arachas' tongue pull and charges play on the slot too (`CoopSlotSwing`); before,
+      the puppet's own AI rarely started them, so its copy stood still while the leader's monster threw or spat. Their
+      animations can be named later: within 2 s (a troll's throw has no event before 1.1 s, a cyclops' ground slam
+      before 1 s), from anything but moving about (no "run", "walk", "strafe", "turn", "idle", "move" unless an
+      "attack"), and a late one catches up from up to 1.6 s behind. Only swings are checked for a hit window (a spit or
+      a pull has none: two such checks in a row had switched the arachas' puppets back to their own AI). Names from
+      events also teach pose naming, so a monster's second throw can be named by its pose.
   - Pose naming, for swings with no event at all before their hit window (a bear's bite hits at 0.6 s): 0.12, 0.2
     and 0.3 s into an unnamed attack, the leader compares its monster's bones (`GetBoneWorldMatrixByIndex`, model
     space, about their centre) with each swing that monster type made before (learned from hit windows), sampled
