@@ -63,8 +63,12 @@ def main():
     received = [a for a in starts if a in got]
     started = [a for a in received if a in copies]
     same = [a for a in started if copies[a][0] == starts[a][0]]
+    # the copy's animation: the one started on its slot, else its first hit window (an overlapping earlier swing's
+    # hit window can come first)
+    for a, (w, t) in slots.items():
+        canims[a] = w
     anims = [a for a in started if a in lanims and a in canims]
-    same_anim = [a for a in anims if lanims[a] == canims[a]]
+    same_anim = [a for a in anims if lanims[a] == canims[a].split("#")[0]]
     transfer = [got[a][1] - starts[a][1] for a in received]
     reaction = [copies[a][1] - got[a][1] for a in started]
     delay = [copies[a][1] - starts[a][1] for a in started]

@@ -802,6 +802,16 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
         thePlayer.TeleportWithRotation(spot, rot);
         bot.scenarioTime = bot.ElapsedS();
     }
+    // W3T_VIEW_PROVOKE=1: still out of combat, it takes a light hit every 3 s (some casters never start a fight)
+    if(W3T_GetEnv("W3T_VIEW_PROVOKE") == "1" && npc.GetBehaviorGraphInstanceName() != 'Combat' && bot.ElapsedS() - bot.scenarioTime >= 3)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+        action = new W3DamageAction in theGame.damageMgr;
+        action.Initialize(thePlayer, npc, thePlayer, "W3T", EHRT_Light, CPS_Undefined, true, false, false, false);
+        action.AddDamage(theGame.params.DAMAGE_NAME_DIRECT, 0.01 * npc.GetMaxHealth());
+        theGame.damageMgr.ProcessAction(action);
+        delete action;
+    }
     if(W3T_GetEnv("W3T_POSE") != "")
     {
         coop.poseNaming = W3T_GetEnv("W3T_POSE") == "1";

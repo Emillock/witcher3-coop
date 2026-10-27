@@ -191,7 +191,7 @@ True Co-op rule).
     | bruxa | scream (`CBTTaskSpawnFXEntity`) | 3 / 2 |
     | fire golem | fire throw, fireballs (attacks: 67 for 48 mirrored) | - |
     | water hag, echinops | projectile attacks (the puppet's own muted, the leader's copied) | - |
-    | Shaelmaar | boulders, projectiles, dust | 5 / 0: its puppet barely acts (asked for an attack 5 times in 228 windows) |
+    | Shaelmaar | boulders, projectiles, dust | 5 / 0: its puppet barely acts (asked for an attack 5 times in 228 windows; since 2026-10-22 its swings play on the slot) |
     The fairytale witch (bombardment) and the base game's black mage never fought in the test spot.
   - `enemy_spells` settings: `W3T_KITE` (stand-off, 11 m), `W3T_MONSTER_HP` (its health first),
     `W3T_SPELL_ATTACKS` (the leader passes after that many, 16), `W3T_AI_FREE=0` (the old idle-between-windows).
@@ -485,8 +485,11 @@ True Co-op rule).
   noonwraith's tree, likely at a health threshold. A Novigrad guard who joined the fight was collected and copied.
   A puppet never starts its own summon task (its gate, above).
 - **Not done:**
-  - Shaelmaar's puppet barely acts; the fairytale witch's bombardment and the offset spawns of two bosses (Dettlaff,
-    the toad) are untested (they didn't fight at the test spot, or weren't tried);
+  - Shaelmaar's swings play on its puppet now (2026-10-27, `attack_view`: 12 of 12 with the leader's animation,
+    0.26-0.58 s late: its swings show nothing before a RotateEvent or their hit window, and its two shoulder swings
+    look too alike early for pose naming); its spells are untested. The fairytale witch and the black mage never
+    fought at the test spot, not even hit (`W3T_VIEW_PROVOKE`) or with a leader that can be hit; the offset spawns
+    of two bosses (Dettlaff, the toad) weren't tried;
   - moves that are not behavior-tree tasks (scripted encounter animations);
   - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
 
