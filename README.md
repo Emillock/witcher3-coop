@@ -5,7 +5,7 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
 
 - The port of Witcher Online itself is in the fork
   [Emillock/WitcherOnline](https://github.com/Emillock/WitcherOnline): branch `remastered-5.01` (v0.1.0,
-  presence only) and `shared-enemies` (true co-op, v0.2.0 and later; tag `v0.2.0`). It is included here as the
+  presence only) and `shared-enemies` (true co-op, v0.2.0 and later; tags `v0.2.0`, `v0.3.0`). It is included here as the
   submodule `WitcherOnline`, pinned to the `shared-enemies` commit these tools were tested with. Clone with
   `git clone --recurse-submodules`.
 - This repo holds what goes around it:
@@ -13,7 +13,7 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
   - The **player package** builder.
   - The **test harness** that runs two game copies on one PC with an in-game bot.
 
-## Status: v0.2.0 pre-release
+## Status: v0.3.0 pre-release
 
 Players see each other in their own worlds, and each keeps their own save. Since v0.2.0 (branch
 `shared-enemies`), when players are in a Witcher Online party:
@@ -24,9 +24,10 @@ Players see each other in their own worlds, and each keeps their own save. Since
 - **Dialogue stays together:** the leader's choices and skips apply to members in the same scene.
 - **Signs show:** everyone sees each other's Igni, Aard, Axii, Yrden and Quen, not only the casting gesture.
 
-Not released yet (branch `shared-enemies` after v0.2.0): monster copies make the same attack as the leader's
-monsters (the same swing, spell or sign, so spells' area effects show for members too), and dodge, taunt, jump back
-and parry when they do. v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
+New in v0.3.0: monster copies play the leader's monsters' exact attack and move animations, a few dozen
+milliseconds behind (the same swing, throw, charge, spell or sign, so spells' area effects show for members too), and
+dodge, taunt, jump back and parry when they do. Effects a monster's attack plays from its script show on the copy, and
+effects it applies without a hit (a fugas' burning vomit, a wraith's blinding aura) reach members. v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
 | | |
 |---|---|
@@ -36,7 +37,7 @@ and parry when they do. v0.1.0 was presence only. Gwent duels between players ar
 
 ## Playing
 
-Download `W3Coop-0.2.0.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
+Download `W3Coop-0.3.0.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
 its contents into your Witcher 3 folder. `W3Coop\README.txt` inside covers hosting, joining and uninstalling.
 The host needs Java 21 or newer.
 
@@ -82,10 +83,10 @@ cd build\classes && jar cfm ..\WitcherServer.jar ..\..\src\META-INF\MANIFEST.MF 
 cd <root>\witcher3-coop
 relay\build.cmd
 w3test\build.cmd
-python package\build_package.py 0.2.0
+python package\build_package.py 0.3.0
 ```
 
-The last step writes `<root>\work\dist\W3Coop-0.2.0` and its zip. [config.py](config.py) finds the game
+The last step writes `<root>\work\dist\W3Coop-0.3.0` and its zip. [config.py](config.py) finds the game
 through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
 
 ## Testing

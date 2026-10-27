@@ -6,7 +6,8 @@ See your friends in your world and travel together. Each player keeps their own 
 In a party (walk up to a friend's character, press the interact key and pick "Join party"),
 the party leader's world is the one that counts:
 - Monsters are shared: everyone fights the leader's monsters. They walk, run, attack, cast,
-  dodge, taunt and shoot along with the leader's monsters (the same attack or spell). Your hits count in the leader's world, their attacks reach
+  dodge, taunt and shoot along with the leader's monsters (the same attack or spell, with the
+  same animation). Your hits count in the leader's world, their attacks reach
   you (dodge them as usual), and they die for everyone.
 - Quest progress is shared through the journal: objectives the leader reaches show up in your
   journal too (only forward; nothing you finished is undone). The quest the leader tracks becomes
