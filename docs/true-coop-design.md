@@ -273,9 +273,24 @@ True Co-op rule).
       meanwhile, moving it straight to the leader's spot. `attack_view` and `enemy_attacks` with a fugas and
       `W3T_COUNTER=4` (its vomit is a counter-attack): 5 of 5 vomits on the puppet, 14-44 ms behind. A wraith
       (`wraith_lvl1`, the leader standing off at 14 m) teleported twice: its vanishing and reappearing effects played on
-      the puppet, 4 of 4, 42 ms behind; it never turned invisible, so `!hidden` is untested. The vomit's body
-      animation doesn't play on the puppet: its start and loop have no event scripts see, its end the first at 2.09 s,
-      so the puppet stands while its mouth burns.
+      the puppet, 4 of 4, 42 ms behind; it never turned invisible, so `!hidden` is untested.
+    - Attacks on the graph alone (2026-10-27): a 3-state attack whose task only raises a graph event, loops, then sets
+      `AttackEnd` (a fugas' vomit; `CBTTask3StateAttack` and the subclasses that keep its `Main`) has no animation
+      event scripts see before its end, so nothing could name its start or loop for the slot. The leader sends its
+      event and attack type with the attack (`|event:type:0`, and `|event:endType:1` once it sees `AttackEnd` go up,
+      with the end's attack type); the member sets the same behavior variables on the puppet and raises the event,
+      later sets `AttackEnd` too, so the same graph plays the same start, loop and end. The puppet's graph check
+      (`RaiseForceEvent`) refuses the event, also every frame for 0.3 s, yet raised unchecked
+      (`RaiseForceEventWithoutTestCheck`) the graph plays it. Raised in the same frame as a swing on its slot was
+      stopped, the puppet kept the swing's pose for the whole attack, so then it waits 0.1 s. To tell, both sides log
+      the monster's bones 0.5, 1, 1.5 and 2 s into such an attack (`LP`, `MP`); `attack_sync.py` compares them (summed
+      over 15 bones, about their centre): the puppet's against the leader's monster's at the same moment, and half a
+      second apart as a yardstick. A fugas' vomit (`W3T_COUNTER=4`): 2 of 2 on the puppet, error 0.02-0.14 at all four
+      moments against 0.2-0.5 for other moments, started 120 ms after the leader's task was sent (about 30 ms when no
+      swing was on its slot), its end 19 ms behind. A troll's rage (`CBTTask3StateWithDistAndRot`, a 6 s loop): error
+      0.24 against 2.6 half a second apart, 40 ms behind, its end 26 ms behind. Hit windows of the attack on the
+      puppet's graph aren't counted as its own attacks. Charges, pulls and 3-state projectile attacks stay on the slot
+      (their own `Main` moves or shoots).
     - Wolves and ghouls never fought the invulnerable test leader; with `W3T_VIEW_MORTAL=1` (hit, never killed) a
       ghoul's 8 swings and a wolf's one played with the same animation, a median 30 ms behind.
   - Pose naming, for swings with no event at all before their hit window (a bear's bite hits at 0.6 s): 0.12, 0.2

@@ -727,7 +727,8 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         + " attacks=" + coop.attacksSeen + " moves=" + coop.movesSeen
         + " tracked=" + coop.HostNetIdOf(drowner) + " ghostAttitude=" + drowner.GetAttitude(member.ghost)
         + " ghostDist=" + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), member.ghost.GetWorldPosition()), 2)
-        + " directEffects=" + coop.directEffectsSent + " victimFx=" + coop.victimFxSent + " fx=" + coop.fxChanges + "/" + coop.lastFx);
+        + " directEffects=" + coop.directEffectsSent + " victimFx=" + coop.victimFxSent + " fx=" + coop.fxChanges + "/" + coop.lastFx
+        + " graphAttacks=" + coop.graphAttacksSeen);
 
     // W3T_DIRECT_EFFECTS=N: also N effects its tasks put straight on the ghost (a fugas' vomit)
     if(bot.scenarioCount == 1 && coop.hurtsCaptured >= 2 && coop.PendingHurtCount() == 0
@@ -765,7 +766,8 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
         + " movesPlayed=" + coop.movesPlayed + " moveFailures=" + coop.movePlayFailures
         + " lastHurtDelay=" + FloatToStringPrec(coop.lastHurtDelay, 2) + " directEffects=" + coop.directEffectsApplied + "/"
         + coop.directEffectsHeld + " victimFx=" + coop.victimFxPlayed + " fx=" + coop.fxMirrored + " puppetEffectsDropped="
-        + coop.puppetEffectsDropped + " lastError=" + coop.lastError);
+        + coop.puppetEffectsDropped + " graphAttacks=" + coop.graphAttacksPlayed + "/" + coop.graphAttacksRefused + "/" + coop.graphEndsPlayed
+        + " lastError=" + coop.lastError);
 
     if(coop.attackPlayFailures > 0 || coop.movePlayFailures > 0)
     {
@@ -798,7 +800,7 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     var rot : EulerAngles;
     var action : W3DamageAction;
     var keep : float;
-    var spot : Vector;
+    var spot, away : Vector;
 
     if(bot.scenarioCount == 0)
     {
@@ -833,13 +835,25 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     npc = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(npc.GetWorldPosition());
     W3T_Counter(bot, npc);
+    // it stays on the leader (stood off, the member's character can come nearer, and it switched to that one)
+    if(W3T_Fighting(npc) && npc.GetTarget() != thePlayer && bot.ElapsedS() - bot.scenarioSeenAt >= 2)
+    {
+        bot.scenarioSeenAt = bot.ElapsedS();
+        npc.SetAttitude(member.ghost, AIA_Neutral);
+        npc.SignalGameplayEventParamObject('ForceTarget', thePlayer);
+    }
     // W3T_VIEW_KEEP=N: once it fights, the leader steps back to N m when the monster comes closer, at most every 4 s
-    // (ranged attacks: a troll throws at 5-16 m, a giant or werewolf charges from 5 m)
+    // (ranged attacks: a troll throws at 5-16 m, a giant or werewolf charges from 5 m). Away from the monster, or toward
+    // the member once that would be over 30 m from them, so the fight doesn't drift off past the 60 m hand-off.
     keep = StringToFloat(W3T_GetEnv("W3T_VIEW_KEEP"), 0);
+    away = thePlayer.GetWorldPosition() - npc.GetWorldPosition();
+    if(VecDistance2D(npc.GetWorldPosition() + VecNormalize2D(away) * keep, member.ghost.GetWorldPosition()) > 30)
+    {
+        away = member.ghost.GetWorldPosition() - npc.GetWorldPosition();
+    }
     if(keep > 0 && W3T_Fighting(npc) && bot.ElapsedS() - bot.scenarioTime >= 4
         && VecDistance2D(npc.GetWorldPosition(), thePlayer.GetWorldPosition()) < keep - 3
-        && theGame.GetWorld().NavigationFindSafeSpot(npc.GetWorldPosition()
-        + VecNormalize2D(thePlayer.GetWorldPosition() - npc.GetWorldPosition()) * keep, 0.5, 3.0, spot))
+        && theGame.GetWorld().NavigationFindSafeSpot(npc.GetWorldPosition() + VecNormalize2D(away) * keep, 0.5, 3.0, spot))
     {
         rot.Yaw = VecHeading(npc.GetWorldPosition() - spot);
         thePlayer.TeleportWithRotation(spot, rot);
@@ -871,7 +885,8 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     }
     W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " falseStarts=" + coop.attackFalseStarts + " poseNamed=" + coop.poseNamed
         + " projectiles=" + coop.projectilesSeen + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
-        + " graph=" + npc.GetBehaviorGraphInstanceName() + " fx=" + coop.fxChanges + "/" + coop.lastFx + " visible=" + npc.GetVisibility());
+        + " graph=" + npc.GetBehaviorGraphInstanceName() + " fx=" + coop.fxChanges + "/" + coop.lastFx + " visible=" + npc.GetVisibility()
+        + " graphAttacks=" + coop.graphAttacksSeen);
     return coop.attacksSeen >= StringToInt(W3T_GetEnv("W3T_VIEW_ATTACKS"), 4);
 }
 
@@ -929,6 +944,7 @@ function W3T_AttackViewMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
             + " pair=" + coop.lastAnimPair + " slot=" + coop.slotAttacksPlayed + "/" + coop.slotAttacksRefused + "/" + coop.slotAttacksMissed + " catchUps=" + coop.slotCatchUps
             + " projectilesFired=" + coop.projectilesFired + " slotState=" + coop.lastSlotState + " fx=" + coop.fxMirrored
             + " visible=" + puppet.GetVisibility() + " puppetEffectsDropped=" + coop.puppetEffectsDropped
+            + " graphAttacks=" + coop.graphAttacksPlayed + "/" + coop.graphAttacksRefused + "/" + coop.graphEndsPlayed
             + " lastError=" + coop.lastError);
     }
     // most of them really play (a few can fall into a hit reaction), not many more hit windows than the leader's (the

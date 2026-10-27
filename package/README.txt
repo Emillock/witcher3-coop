@@ -80,5 +80,4 @@ internet.
 Known limits: a monster's copy plays the same attacks, dodges, parries and taunts, but for a few
 swings (some of the bear's, the water hag's) it starts about 0.1-0.3 s late and then catches up.
 Burning, bleeding and knockdown are passed on, also when a monster's attack applies them without
-a hit (a fugas' fiery vomit, a wraith's blinding aura). A fugas' copy shows its vomit's fire but
-not its body's vomiting motion.
+a hit (a fugas' fiery vomit, a wraith's blinding aura).

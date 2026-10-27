@@ -31,6 +31,18 @@ def pct(values, q):
     return values[min(len(values) - 1, int(q * len(values)))]
 
 
+def pose(text):
+    """LP/MP "i/x,y,z;..." -> (i, bones about their centre)"""
+    i, bones = text.split("/", 1)
+    vs = [tuple(map(float, b.split(","))) for b in bones.split(";") if b]
+    c = [sum(v[j] for v in vs) / len(vs) for j in range(3)]
+    return int(i), [tuple(v[j] - c[j] for j in range(3)) for v in vs]
+
+
+def pose_error(a, b):
+    return sum(sum((x - y) ** 2 for x, y in zip(u, v)) ** 0.5 for u, v in zip(a, b))
+
+
 def main():
     run = sys.argv[1]
     scenario = sys.argv[2] if len(sys.argv) > 2 else None
@@ -55,8 +67,10 @@ def main():
         elif k == "MA" and (n, s) not in canims:
             canims[(n, s)] = w
             cwindows[(n, s)] = t
+    # 3-state attacks raised on the copy's graph (MG), its own the same task
+    graphs = {(n, s): t for k, n, s, w, t in memb if k == "MG"}
     # a slot start is the start of the leader's attack (same task) with its animation
-    for a, (w, t) in slots.items():
+    for a, (w, t) in list(slots.items()) + [(a, ("", t)) for a, t in graphs.items()]:
         if a not in copies or copies[a][1] > t:
             copies[a] = (starts[a][0] if a in starts else "?", t)
     total = len(starts)
@@ -136,6 +150,27 @@ def main():
     ticks = [w for k, n, s, w, t in lead if k == "LU"]
     if ticks:
         print(f"damage ticks of tasks sent as hurts {len(ticks)}")
+    # 3-state attacks (LG event:type, then end/type) raised on the copy's graph (MG, its end MGE; MGX refused), and
+    # both monsters' poses 0.5-2 s in (LP/MP): the same moment, and as a yardstick the copy's against the leader's
+    # monster half a second later
+    lgraph = {(n, s): w for k, n, s, w, t in lead if k == "LG" and not w.startswith("end/")}
+    if lgraph:
+        lend = {(n, s): t for k, n, s, w, t in lead if k == "LG" and w.startswith("end/")}
+        mend = {(n, s): t for k, n, s, w, t in memb if k == "MGE"}
+        refused = [w for k, n, s, w, t in memb if k == "MGX"]
+        gdelay = [graphs[a] - starts[a][1] for a in lgraph if a in graphs and a in starts]
+        edelay = [mend[a] - lend[a] for a in lgraph if a in mend and a in lend]
+        print(f"graph attacks {len(lgraph)} ({', '.join(sorted(set(lgraph.values())))}), raised on the copy {len(gdelay)}, "
+              f"refused {len(refused)}" + (f" ({refused[0]})" if refused else "")
+              + (f"; delay median {statistics.median(gdelay):.0f} ms max {max(gdelay):.0f} ms" if gdelay else "")
+              + (f"; end delay median {statistics.median(edelay):.0f} ms" if edelay else ""))
+        lp = {(n, s) + pose(w)[:1]: pose(w)[1] for k, n, s, w, t in lead if k == "LP"}
+        mp = {(n, s) + pose(w)[:1]: pose(w)[1] for k, n, s, w, t in memb if k == "MP"}
+        at_once = [pose_error(lp[a], mp[a]) for a in mp if a in lp]
+        shifted = [pose_error(lp[a[:2] + (a[2] + 1,)], mp[a]) for a in mp if a[:2] + (a[2] + 1,) in lp]
+        if at_once:
+            print(f"graph poses {len(at_once)}: error median {statistics.median(at_once):.2f} max {max(at_once):.2f} "
+                  f"(0.5 s apart: median {statistics.median(shifted) if shifted else float('nan'):.2f})")
     missed = [a for a in received if a not in copies]
     other = [a for a in started if copies[a][0] != starts[a][0]]
     # an attack task the monster's tree replaced with another within 0.3 s, before anything named its animation, never
