@@ -619,6 +619,26 @@ function W3T_WalkableSpot(from : Vector, range : float) : Vector
     return spot;
 }
 
+// W3T_COUNTER=N: every N s in combat the monster is told to counter-attack, as after a few hits (a fugas' vomit, a
+// werewolf's or katakan's charge come only so)
+function W3T_Counter(bot : W3T_Bot, npc : CNewNPC)
+{
+    var every : float;
+
+    every = StringToFloat(W3T_GetEnv("W3T_COUNTER"), 0);
+    if(every > 0 && W3T_Fighting(npc) && bot.ElapsedS() - bot.scenarioActAt >= every)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        npc.SignalGameplayEvent('LaunchCounterAttack');
+    }
+}
+
+// in a fight: its combat graph, or in combat by its AI (a werewolf fights in its exploration graph)
+function W3T_Fighting(npc : CNewNPC) : bool
+{
+    return npc.GetBehaviorGraphInstanceName() == 'Combat' || npc.IsInCombat();
+}
+
 // turns the camera toward a spot, for screenshots (run_test.py --shots)
 function W3T_LookAt(target : Vector)
 {
@@ -665,6 +685,10 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         drowner = (CNewNPC)bot.scenarioEntity;
         drowner.SetAttitude(thePlayer, AIA_Neutral);
         drowner.SetAttitude(member.ghost, AIA_Hostile);
+        if(W3T_GetEnv("W3T_MONSTER_HP") != "")
+        {
+            drowner.SetHealthPerc(StringToFloat(W3T_GetEnv("W3T_MONSTER_HP"), 1.0));
+        }
         if(far)
         {
             drowner.NoticeActor(member.ghost);  // humans 12 m away don't notice it by themselves
@@ -683,6 +707,7 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
     }
 
     W3T_LookAt(drowner.GetWorldPosition());
+    W3T_Counter(bot, drowner);
     target = drowner.GetTarget();
     targetName = "none";
     if(target == thePlayer)
@@ -701,9 +726,12 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         + " ghostHits=" + coop.ghostHitsSeen + " hurtsCaptured=" + coop.hurtsCaptured + " pendingHurts=" + coop.PendingHurtCount()
         + " attacks=" + coop.attacksSeen + " moves=" + coop.movesSeen
         + " tracked=" + coop.HostNetIdOf(drowner) + " ghostAttitude=" + drowner.GetAttitude(member.ghost)
-        + " ghostDist=" + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), member.ghost.GetWorldPosition()), 2));
+        + " ghostDist=" + FloatToStringPrec(VecDistance(drowner.GetWorldPosition(), member.ghost.GetWorldPosition()), 2)
+        + " directEffects=" + coop.directEffectsSent + " victimFx=" + coop.victimFxSent + " fx=" + coop.fxChanges + "/" + coop.lastFx);
 
-    if(bot.scenarioCount == 1 && coop.hurtsCaptured >= 2 && coop.PendingHurtCount() == 0)
+    // W3T_DIRECT_EFFECTS=N: also N effects its tasks put straight on the ghost (a fugas' vomit)
+    if(bot.scenarioCount == 1 && coop.hurtsCaptured >= 2 && coop.PendingHurtCount() == 0
+        && coop.directEffectsSent >= StringToInt(W3T_GetEnv("W3T_DIRECT_EFFECTS"), 0))
     {
         W3T_Log("ENEMY leader: " + coop.hurtsCaptured + " hits on the ghost sent and acknowledged");
         bot.scenarioCount = 2;
@@ -719,6 +747,11 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
     {
         W3T_Log("PARTY join " + leader.username);
         client.joinParty(leader.username);
+        // waiting for effects that come rarely: hit, never killed
+        if(W3T_GetEnv("W3T_DIRECT_EFFECTS") != "")
+        {
+            thePlayer.SetImmortalityMode(AIM_Immortal, AIC_Cheat, true);
+        }
         return false;
     }
 
@@ -730,7 +763,9 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
         + " dodged=" + coop.hurtsDodged + " damageTaken=" + FloatToStringPrec(coop.hurtDamageTaken, 1) + " puppets=" + coop.PuppetCount()
         + " attacksPlayed=" + coop.attacksPlayed + " attackFailures=" + coop.attackPlayFailures
         + " movesPlayed=" + coop.movesPlayed + " moveFailures=" + coop.movePlayFailures
-        + " lastHurtDelay=" + FloatToStringPrec(coop.lastHurtDelay, 2) + " lastError=" + coop.lastError);
+        + " lastHurtDelay=" + FloatToStringPrec(coop.lastHurtDelay, 2) + " directEffects=" + coop.directEffectsApplied + "/"
+        + coop.directEffectsHeld + " victimFx=" + coop.victimFxPlayed + " fx=" + coop.fxMirrored + " puppetEffectsDropped="
+        + coop.puppetEffectsDropped + " lastError=" + coop.lastError);
 
     if(coop.attackPlayFailures > 0 || coop.movePlayFailures > 0)
     {
@@ -739,8 +774,10 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
         return false;
     }
 
-    // the monster's swings show on its puppet, and its hits land
-    if(bot.scenarioCount == 0 && coop.hurtsApplied >= 2 && coop.hurtDamageTaken > 0 && coop.attacksPlayed >= 1)
+    // the monster's swings show on its puppet, and its hits land (and W3T_DIRECT_EFFECTS of its effects that come
+    // without a hit)
+    if(bot.scenarioCount == 0 && coop.hurtsApplied >= 2 && coop.hurtDamageTaken > 0 && coop.attacksPlayed >= 1
+        && coop.directEffectsApplied >= StringToInt(W3T_GetEnv("W3T_DIRECT_EFFECTS"), 0))
     {
         W3T_Log("ENEMY member took " + FloatToStringPrec(coop.hurtDamageTaken, 1) + " damage from " + coop.hurtsApplied
             + " of the leader's monster's hits; its puppet played " + coop.attacksPlayed + " attacks and "
@@ -785,15 +822,21 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
         npc = (CNewNPC)bot.scenarioEntity;
         npc.SetAttitude(thePlayer, AIA_Hostile);
         npc.SetAttitude(member.ghost, AIA_Neutral);
+        // W3T_MONSTER_HP: its health first (some attacks come below a threshold: Shaelmaar's rocks at half)
+        if(W3T_GetEnv("W3T_MONSTER_HP") != "")
+        {
+            npc.SetHealthPerc(StringToFloat(W3T_GetEnv("W3T_MONSTER_HP"), 1.0));
+        }
         bot.scenarioCount = 1;
         return false;
     }
     npc = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(npc.GetWorldPosition());
+    W3T_Counter(bot, npc);
     // W3T_VIEW_KEEP=N: once it fights, the leader steps back to N m when the monster comes closer, at most every 4 s
     // (ranged attacks: a troll throws at 5-16 m, a giant or werewolf charges from 5 m)
     keep = StringToFloat(W3T_GetEnv("W3T_VIEW_KEEP"), 0);
-    if(keep > 0 && npc.GetBehaviorGraphInstanceName() == 'Combat' && bot.ElapsedS() - bot.scenarioTime >= 4
+    if(keep > 0 && W3T_Fighting(npc) && bot.ElapsedS() - bot.scenarioTime >= 4
         && VecDistance2D(npc.GetWorldPosition(), thePlayer.GetWorldPosition()) < keep - 3
         && theGame.GetWorld().NavigationFindSafeSpot(npc.GetWorldPosition()
         + VecNormalize2D(thePlayer.GetWorldPosition() - npc.GetWorldPosition()) * keep, 0.5, 3.0, spot))
@@ -828,7 +871,7 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     }
     W3T_Log("VIEW leader attacks=" + coop.attacksSeen + " falseStarts=" + coop.attackFalseStarts + " poseNamed=" + coop.poseNamed
         + " projectiles=" + coop.projectilesSeen + " target=" + (npc.GetTarget() == thePlayer) + " hurtsCaptured=" + coop.hurtsCaptured
-        + " graph=" + npc.GetBehaviorGraphInstanceName());
+        + " graph=" + npc.GetBehaviorGraphInstanceName() + " fx=" + coop.fxChanges + "/" + coop.lastFx + " visible=" + npc.GetVisibility());
     return coop.attacksSeen >= StringToInt(W3T_GetEnv("W3T_VIEW_ATTACKS"), 4);
 }
 
@@ -884,7 +927,8 @@ function W3T_AttackViewMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
             VecHeading(leader.ghost.GetWorldPosition() - puppet.GetWorldPosition())), 0) + " graph=" + puppet.GetBehaviorGraphInstanceName()
             + " sameTask=" + coop.puppetSameTasks + " otherTask=" + coop.puppetOtherTasks + " sameAnim=" + coop.puppetSameAnims + "/" + coop.attackAnimsCompared
             + " pair=" + coop.lastAnimPair + " slot=" + coop.slotAttacksPlayed + "/" + coop.slotAttacksRefused + "/" + coop.slotAttacksMissed + " catchUps=" + coop.slotCatchUps
-            + " projectilesFired=" + coop.projectilesFired + " slotState=" + coop.lastSlotState
+            + " projectilesFired=" + coop.projectilesFired + " slotState=" + coop.lastSlotState + " fx=" + coop.fxMirrored
+            + " visible=" + puppet.GetVisibility() + " puppetEffectsDropped=" + coop.puppetEffectsDropped
             + " lastError=" + coop.lastError);
     }
     // most of them really play (a few can fall into a hit reaction), not many more hit windows than the leader's (the

@@ -249,13 +249,33 @@ True Co-op rule).
       events also teach pose naming, so a monster's second throw can be named by its pose.
     - Attacks in phases (3-state attacks: a troll's rage; charges): each phase that starts while the task runs (its
       animation's own time under 0.35 s) is named and sent, and a loop's restart too ("anim#n"), so the puppet plays
-      start, loop and end in turn (`NextPhase`). The 3-state task's glow on its loop (`playFXOnLoopStart`) doesn't show
-      on the puppet.
+      start, loop and end in turn (`NextPhase`). The loop's effect (`playFXOnLoopStart`) comes with the script effects
+      (below).
     - Verified with `attack_view` and `W3T_VIEW_KEEP=10` (the leader steps back to 10 m: a troll throws at 5-16 m,
       from its tree): a troll's throws named first at 1.1 s ('Prepare'), then by pose at 0.24-0.31 s, the puppet
       starting them 0.25-0.33 s in; every rock came as a copy (6 of 6); its rage played start, loop and end on the
-      slot. Charges (5 m and more, facing the target, a clear line) never came in the test: monsters closed in and
-      swung.
+      slot. Charges (5 m and more, facing the target, a clear line) never came in that test: monsters closed in and
+      swung. An armored arachas (`arachas_lvl2__armored`: its tree charges within 5 m, every 5 s at most) charged on
+      2026-10-27: its puppet started the same jump 30 ms after the leader's monster, its hit window 28 ms behind. A
+      werewolf charges only as a counter-attack, after its counter dodge left it 4-12 m away (`W3T_COUNTER=4`, the
+      leader hit but never killed; standing off made it circle and taunt instead): its puppet started the same charge
+      104 ms behind (named 77 ms in, then caught up), its hit window 45 ms behind.
+    - Script effects (2026-10-27). Effects a task plays from script never showed on a puppet that plays the leader's
+      animation on its slot: a fugas' vomit (`playFXOnLoopStart`), a bite's blood as it lands (`fxOnDamageInstigated`),
+      a wraith's vanishing and reappearing (the teleport tasks' `disappearfxName`, `appearFXName`,
+      `additionalAppearFXName`), and whatever the generic `CBTTaskPlayEffect` plays on its monster (in 54 trees:
+      Shaelmaar's digging, a bruxa, Dettlaff, the giant). The leader learns those names from each attack task that
+      starts, each teleport task asked whether it may start and each effect task that plays one on its own monster,
+      checks every frame which of them play on its monster (`IsEffectActive`), and
+      sends that set with the attack (`task|anim|time|cut|fx`), with `!hidden` while its monster is invisible
+      (`GetVisibility`: a wraith between vanishing and reappearing). The member plays them on the puppet (again when
+      one ended there first: the fugas replays its vomit every 0.25 s), stops those gone, and hides the puppet
+      meanwhile, moving it straight to the leader's spot. `attack_view` and `enemy_attacks` with a fugas and
+      `W3T_COUNTER=4` (its vomit is a counter-attack): 5 of 5 vomits on the puppet, 14-44 ms behind. A wraith
+      (`wraith_lvl1`, the leader standing off at 14 m) teleported twice: its vanishing and reappearing effects played on
+      the puppet, 4 of 4, 42 ms behind; it never turned invisible, so `!hidden` is untested. The vomit's body
+      animation doesn't play on the puppet: its start and loop have no event scripts see, its end the first at 2.09 s,
+      so the puppet stands while its mouth burns.
     - Wolves and ghouls never fought the invulnerable test leader; with `W3T_VIEW_MORTAL=1` (hit, never killed) a
       ghoul's 8 swings and a wolf's one played with the same animation, a median 30 ms behind.
   - Pose naming, for swings with no event at all before their hit window (a bear's bite hits at 0.6 s): 0.12, 0.2
@@ -357,6 +377,22 @@ True Co-op rule).
     reaction. A puppet's own damage on a member is dropped; members are only hurt by the leader's hits.
 - **Effects of monster hits** (bleeding, poison, stagger, knockdown) travel with the hurt as effect types. The
   member's own immunities and resistances decide whether they take hold.
+  - Effects put straight on a target, not through a hit (2026-10-27), never reached members before: a fugas' vomit
+    burns or poisons (`AddEffectCustom` in its loop), a charge staggers, many swings add a critical effect as they
+    land (`ApplyCriticalEffectOnTarget`), a wraith's aura blinds anyone near it. The leader wraps
+    `CActor.AddEffectCustom` and `AddEffectDefault`; one a shared monster puts on a member's ghost goes as a hurt of
+    its own, `type:duration:add:mul` among its effects and no damage (the same effect on the same player at most
+    once a second; a wraith's blindness lasts 3 s). The member adds it with that duration and value, unless it is
+    dodging. `enemy_attacks` with a fugas: its burning reached the member twice and took hold (`EI_Pass`); a
+    nightwraith's blindness aura reached the member standing 7 m away 14 times in `attack_view`.
+  - A puppet's own effects on others are dropped in a member's world (`DropsPuppetEffect`: its aura, a task of its
+    own), since the leader's come forwarded; its effects on itself stay.
+  - Damage over time on a ghost was never sent, so that a burning member doesn't burn twice (the effect ticks in the
+    member's own world). Ticks a task deals itself (Shaelmaar's tornado around its digging: `SetIsDoTDamage`, the
+    causer a task, not an effect) now go as hurts too.
+  - The effect a hit plays on its victim (`fxOnDamageVictim`: a fugas' fire, sand, sparks) rides with the hurt as
+    `fx:name` and plays on the member's Geralt as it lands (`EventDamageInstigated`, wrapped). Not seen in a test
+    yet: the fugas' fire comes with its vomit, which deals no hit.
 - **Other players' signs.** Witcher Online replayed only the casting gesture on a remote player's copy, so nobody
   saw another player's signs.
   - Now each cast also creates the sign's own entity at the copy, only to play its effects: no projectile, no
@@ -478,7 +514,9 @@ True Co-op rule).
   - Damage: the hit arrives as a hurt from the leader, and a puppet's own damage is dropped anyway.
   - `enemy_projectiles` (2026-10-19): Baron's bandit with a bow (2 arrows copied, 1 hit landed on the member),
     with a crossbow (bolts) and a poison arachas (venom). A tailed endrega only fought in melee.
-  - Limit: shots faster than the snapshots collapse into the newest. The arachas fired 8, and the member saw 2.
+  - Shots faster than the snapshots collapsed into the newest (the arachas fired 8, and the member saw 2); each shot
+    now goes out with the next frame's snapshot: Shaelmaar's rain of rocks (2026-10-27, at 40% health) came 187 for
+    187.
 - **Summons.** A summoned creature is a hostile NPC near the leader like any other, so the leader collects it and
   members get a copy. Untested: `enemy_summons` (a noonwraith, or `--monster` a leshen, immortal, swung at every
   2 s) saw no summon in 1-4 minutes in Novigrad (2026-10-21); the doppelganger summon is decided in the
@@ -487,7 +525,13 @@ True Co-op rule).
 - **Not done:**
   - Shaelmaar's swings play on its puppet now (2026-10-27, `attack_view`: 12 of 12 with the leader's animation,
     0.26-0.58 s late: its swings show nothing before a RotateEvent or their hit window, and its two shoulder swings
-    look too alike early for pose naming); its spells are untested. The fairytale witch and the black mage never
+    look too alike early for pose naming). At 40% health (`W3T_MONSTER_HP=0.4`, the leader standing off at 12 m) it
+    also digs in and shakes the ground (`CBTTaskTornadoAttack` with a 3-state animation, which reaches the puppet as
+    moves, 20-30 ms behind; its tremor effects 42-50 ms behind), confusing and hurting everyone near it (with the
+    member its target in `enemy_attacks`: 6 confusions and 22 damage ticks reached the member), and rains rocks
+    (99 of 99 and 187 of 187 copied). Its charges (7-16 m, moving slowly) never came. The puppet's AI had also
+    swung on its own during the digging; a plain swing no longer stands in for an attack whose animation came to the
+    slot as moves. The fairytale witch and the black mage never
     fought at the test spot, not even hit (`W3T_VIEW_PROVOKE`) or with a leader that can be hit; the offset spawns
     of two bosses (Dettlaff, the toad) weren't tried;
   - moves that are not behavior-tree tasks (scripted encounter animations);

@@ -74,6 +74,10 @@ def main():
     delay = [copies[a][1] - starts[a][1] for a in started]
     print(f"leader attacks {total}, received {len(received)}, copy started {len(started)} ({len(slots)} on the slot), "
           f"same task {len(same)}, same animation {len(same_anim)} of {len(anims)}")
+    tasks = {}
+    for a in starts:
+        tasks[starts[a][0]] = tasks.get(starts[a][0], 0) + 1
+    print("tasks:", ", ".join(f"{k} x{v}" for k, v in sorted(tasks.items(), key=lambda kv: -kv[1])))
     catchups = [float(w) for k, n, s, w, t in memb if k == "MC"]
     if catchups:
         print(f"caught up {len(catchups)} slot attacks named late (behind median {statistics.median(catchups) * 1000:.0f} ms)")
@@ -107,8 +111,41 @@ def main():
         mdelay = [mmoves[a][1] - lmoves[a][1] for a in played]
         if mdelay:
             print(f"move delay median {statistics.median(mdelay):5.0f} ms   p90 {pct(mdelay, 0.9):5.0f} ms   max {max(mdelay):5.0f} ms")
+    # script effects: each one the leader's monster started (LF: the set playing now) and the copy's start (MF), within 2 s
+    fx_starts, playing = [], {}
+    for k, n, s, w, t in lead:
+        if k == "LF":
+            now = set() if w == "-" else set(w.split(","))
+            fx_starts += [(n, f, t) for f in now - playing.get(n, set())]
+            playing[n] = now
+    if fx_starts:
+        mfx = [(n, w, t) for k, n, s, w, t in memb if k == "MF"]
+        fdelay = []
+        for n, f, t in fx_starts:
+            later = [mt - t for mn, mw, mt in mfx if mn == n and mw == f and -100 <= mt - t <= 2000]
+            if later:
+                fdelay.append(min(later))
+        print(f"script effects started {len(fx_starts)} ({', '.join(sorted({f for n, f, t in fx_starts}))}), on the copy {len(fdelay)}"
+              + (f", delay median {statistics.median(fdelay):.0f} ms max {max(fdelay):.0f} ms" if fdelay else ""))
+    # effects put straight on the member's ghost (LD) and applied to the member (MD: type/result), hit effects (MW)
+    ld = [w for k, n, s, w, t in lead if k == "LD"]
+    md = [w for k, n, s, w, t in memb if k == "MD"]
+    mw = [w for k, n, s, w, t in memb if k == "MW"]
+    if ld or md or mw:
+        print(f"direct effects sent {len(ld)}, applied {len(md)} ({', '.join(md[:8])}); hit effects shown {len(mw)} ({', '.join(mw[:4])})")
+    ticks = [w for k, n, s, w, t in lead if k == "LU"]
+    if ticks:
+        print(f"damage ticks of tasks sent as hurts {len(ticks)}")
     missed = [a for a in received if a not in copies]
     other = [a for a in started if copies[a][0] != starts[a][0]]
+    # an attack task the monster's tree replaced with another within 0.3 s, before anything named its animation, never
+    # showed on the leader either (the copy plays the one that followed)
+    named = {(n, s) for k, n, s, w, t in lead if k in ("LE", "LA")}
+    order = sorted(starts, key=lambda a: starts[a][1])
+    replaced = {a for a, b in zip(order, order[1:]) if a[0] == b[0] and a not in named and starts[b][1] - starts[a][1] < 300}
+    if replaced & set(missed):
+        print(f"replaced within 0.3 s before showing: {len(replaced & set(missed))}")
+    missed = [a for a in missed if a not in replaced]
     if missed:
         print("not started:", ", ".join(f"{starts[a][0]}" for a in missed[:12]))
     if other:
