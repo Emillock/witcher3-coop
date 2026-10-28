@@ -80,6 +80,10 @@ function W3T_StartBot()
         w3t_bot = new W3T_Bot in this;
         w3t_bot.Start();
     }
+    else
+    {
+        w3t_bot.Resume();
+    }
 }
 
 @wrapMethod(CR4StartupMoviesMenu)
@@ -129,6 +133,13 @@ function OnConfigUI()
     if(W3T_Active())
     {
         W3T_Log("MENU open " + NameToString(GetMenuName()));
+        // it pauses the game, the bot's loop too: respawn as its button does (loads the last save)
+        if(GetMenuName() == 'DeathScreenMenu')
+        {
+            W3T_Log("MENU death screen -> respawn from the last save");
+            theGame.SetIsRespawningInLastCheckpoint();
+            theGame.LoadLastGameInit(true);
+        }
     }
 }
 
@@ -282,6 +293,24 @@ statemachine class W3T_Bot
         }
         W3T_Log("BOT start scenario=" + W3T_GetEnv("W3T_SCENARIO"));
         GotoState('W3T_Running');
+    }
+
+    // after a save was loaded (member_death) its loop may have gone with the old world: it runs on, scenario state kept
+    public function Resume()
+    {
+        if(ElapsedS() - lastReportReal < 3)
+        {
+            return;
+        }
+        W3T_Log("BOT resumes after a load");
+        if(GetCurrentStateName() == 'W3T_Running')
+        {
+            GotoState('W3T_RunningAgain');
+        }
+        else
+        {
+            GotoState('W3T_Running');
+        }
     }
 
     // a session's next scenario: the last one's leftovers go, the free-form state starts over
@@ -449,4 +478,9 @@ state W3T_Running in W3T_Bot
             Sleep(StringToFloat(W3T_GetEnv("W3T_TICK"), 1.0));
         }
     }
+}
+
+// the same loop, entered again after a load (W3T_Bot.Resume)
+state W3T_RunningAgain in W3T_Bot extends W3T_Running
+{
 }

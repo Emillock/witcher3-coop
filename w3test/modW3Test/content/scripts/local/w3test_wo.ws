@@ -271,6 +271,15 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "member_death")
+    {
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_DeathLeader(bot, client.getCoopEnemies(), players);
+        }
+        return W3T_DeathMember(bot, client, client.getCoopEnemies(), players);
+    }
+
     if(scenario == "enemy_effects")
     {
         if(ghosts < 1)
@@ -1998,6 +2007,120 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// member_death, leader: the drowner of enemy_attacks, immortal, fights the member's character until the member dies;
+// its game loads the member's save. Passes once the member was dead (no hurts sent for it meanwhile) and is alive in
+// this party again (scenarioCount: 1 drowner spawned, 2 member dead, 3 back).
+function W3T_DeathLeader(bot : W3T_Bot, coop : r_CoopEnemies, players : array<r_RemotePlayer>) : bool
+{
+    var ghost, alive : bool;
+
+    // (no short-circuit in this language: the index only once there is one)
+    ghost = false;
+    alive = true;
+    if(players.Size() > 0)
+    {
+        if(players[0].ghost)
+        {
+            ghost = true;
+        }
+        alive = players[0].isAlive;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        if(ghost)
+        {
+            W3T_EnemyAttacksLeader(bot, coop, players[0]);
+            if(bot.scenarioCount == 1)
+            {
+                ((CNewNPC)bot.scenarioEntity).SetImmortalityMode(AIM_Immortal, AIC_Default);
+            }
+        }
+        return false;
+    }
+    if(bot.scenarioCount == 1 && !alive)
+    {
+        W3T_Log("DEATH leader: the member died");
+        bot.scenarioCount = 2;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    else if(bot.scenarioCount == 2 && ghost && alive && coop.GetRole() == 1)
+    {
+        W3T_Log("DEATH leader: the member is back in the party after " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s");
+        bot.scenarioCount = 3;
+    }
+    W3T_Log("DEATH leader step=" + bot.scenarioCount + " ghost=" + ghost + " alive=" + alive + " role=" + coop.GetRole() + " hurtsCaptured="
+        + coop.hurtsCaptured + " droppedDead=" + coop.hurtsDroppedDead + " pendingHurts=" + coop.PendingHurtCount() + " enemies=" + coop.HostEnemyCount());
+    return bot.scenarioCount == 3;
+}
+
+// member_death, member: joins the party with little health and no immortality, so the leader's drowner kills it;
+// the death screen respawns it from the last save (w3test.ws answers it). Passes once it is back in the party, with
+// a copy of the leader's drowner, and no more than 2 hurts landed in its first 3 s alive again (they had piled up
+// while it was dead and killed it again at once); then it is invulnerable (scenarioCount: 1 joined, 2 died, 3 alive
+// again, 4 back; scenarioValue: hurts applied when alive again).
+function W3T_DeathMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, players : array<r_RemotePlayer>) : bool
+{
+    if(bot.scenarioCount == 0)
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(!players[0].ghost)
+        {
+            return false;
+        }
+        if(!client.getInParty())
+        {
+            W3T_Log("PARTY join " + players[0].username);
+            client.joinParty(players[0].username);
+            return false;
+        }
+        thePlayer.SetImmortalityMode(AIM_None, AIC_Cheat, true);
+        thePlayer.SetImmortalityMode(AIM_None, AIC_Default, true);
+        bot.scenarioCount = 1;
+    }
+    if(bot.scenarioCount == 1)
+    {
+        if(thePlayer.IsAlive() && coop.PuppetCount() > 0 && thePlayer.GetStat(BCS_Vitality) > 30)
+        {
+            thePlayer.ForceSetStat(BCS_Vitality, 30);
+        }
+        if(!thePlayer.IsAlive())
+        {
+            W3T_Log("DEATH member died");
+            bot.scenarioCount = 2;
+            bot.scenarioTime = bot.ElapsedS();
+        }
+    }
+    else if(bot.scenarioCount == 2 && thePlayer.IsAlive())
+    {
+        W3T_Log("DEATH member alive again after " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s, hp="
+            + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0));
+        bot.scenarioCount = 3;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioValue = coop.hurtsApplied;
+    }
+    else if(bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime >= 3 && coop.hurtsApplied - bot.scenarioValue > 2)
+    {
+        W3T_Log("FAIL " + (coop.hurtsApplied - bot.scenarioValue) + " hurts landed in the first 3 s after the respawn");
+        W3T_Quit(1);
+        return false;
+    }
+    else if(bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime >= 3 && thePlayer.IsAlive() && client.getInParty()
+        && coop.PuppetCount() > 0)
+    {
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        W3T_Log("DEATH member back in the party with " + coop.PuppetCount() + " copies, " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1)
+            + " s after it was alive again");
+        bot.scenarioCount = 4;
+    }
+    W3T_Log("DEATH member step=" + bot.scenarioCount + " alive=" + thePlayer.IsAlive() + " hp=" + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0)
+        + " inParty=" + client.getInParty() + " joined=" + client.getJoinedParty() + " puppets=" + coop.PuppetCount() + " role=" + coop.GetRole()
+        + " hurtsApplied=" + coop.hurtsApplied + " droppedDead=" + coop.hurtsDroppedDead + " ghosts=" + players.Size());
+    return bot.scenarioCount == 4;
 }
 
 // the status effects enemy_effects gives (W3T_EFFECTS: EEffectType numbers, "18,9"; default burning, knockdown,

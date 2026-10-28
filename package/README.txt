@@ -22,6 +22,8 @@ the party leader's world is the one that counts:
   Yrden's trap on the ground and Quen's shield. Bombs and crossbow bolts fly and explode for
   everyone too.
 - Farther than about 60 m from the leader, your own world's monsters take over again.
+- If you die, load your save as usual: you stay in the party, and the leader's monsters leave
+  your character alone until you are back.
 - Everyone sees each other's horse: ridden, and standing where its rider left it.
 - The hidden quest facts the leader's game sets during the session are shared too (also only
   forward), so your quests can follow the leader's progress. Loot stays per player.

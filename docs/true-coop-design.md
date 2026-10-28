@@ -686,6 +686,21 @@ the leader tracks two quests in turn, skips twice, and picks choice B; the membe
 later. PASS: both tracking switches followed, both skips replayed, and the pick was applied 2 s after the member
 reached the choices.
 
+## A member's death (2026-10-28)
+
+A member killed by a shared monster gets the game's own death screen and loads its last save, as in single player
+(Witcher Online has no death handling). `member_death` (the member joins with little health and no immortality, the
+leader's immortal drowner kills it, the death screen's respawn loads the save) found:
+- The party, the co-op state and the monster copies survive the load: about a second after the member is in the
+  world again it is in the party, with its copy of the leader's drowner.
+- Witcher Online keeps the dead member's character in the leader's world through the load, and the leader's
+  monster went on hitting it: 11 hurts piled up in the 40 s of death screen and loading, and landed together as the
+  member respawned (5965 health down to 249), so it died again at once, over and over.
+- Now the leader leaves a dead member's character alone (it is disarmed: out of gameplay sight and friendly, by the
+  member's own snapshot field `isAlive`), sends no hurts for it and drops those still waiting, and a member drops
+  any that arrive while it is dead. In the test 1 hurt was dropped, the member respawned with 5140 health and
+  fought on.
+
 ## Presence on 5.01: horses, chat, emotes (2026-10-28)
 
 Witcher Online's own presence features, first tested on the port with `horse_ride` and `social`:
