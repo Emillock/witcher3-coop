@@ -39,6 +39,8 @@ Not released yet (after v0.3.0; the host needs this version's server):
   the kill's experience wherever it stands.
 - A member killed in a shared fight respawns from its save as usual and is back in the fight: the leader's monsters
   no longer keep hitting its character meanwhile (those hits all landed on the respawn and killed it again).
+- A member on horseback can be fought: the leader's monsters went for its horse and then stood by it.
+- A member's heavy blow lands heavily in the leader's world too (every member's hit was a light one there).
 - Up to 48 monsters are shared at once (was 24; past that a member didn't see the rest).
 - A player's horse stays in sight for the others where they left it (Witcher Online showed it only while ridden).
 
