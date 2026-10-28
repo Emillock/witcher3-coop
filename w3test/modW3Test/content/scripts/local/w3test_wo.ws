@@ -20,14 +20,21 @@ function W3T_EndScenario(bot : W3T_Bot)
     {
         client.leaveParty();
     }
+    // a horse called up goes too: later scenarios' monsters went for it instead of the member
+    if(thePlayer.IsUsingHorse())
+    {
+        thePlayer.DismountVehicle(thePlayer.GetHorseCurrentlyMounted(), DT_instant);
+    }
+    W3T_EndEntity(thePlayer.GetHorseWithInventory());
     thePlayer.SetImmortalityMode(AIM_None, AIC_Cheat, true);
     thePlayer.RemoveAllNonAutoBuffs();
     thePlayer.ForceSetStat(BCS_Vitality, thePlayer.GetStatMax(BCS_Vitality));
     coop = client.getCoopEnemies();
     coop.ResetDiagnostics();
+    // facing as at the start too: scenarios spawn monsters ahead of the player (after a ride a drowner landed on a ledge)
     if(bot.homeSet)
     {
-        thePlayer.Teleport(bot.home);
+        thePlayer.TeleportWithRotation(bot.home, bot.homeRot);
     }
     W3T_Log("SCENARIO " + bot.scenario + " cleaned up");
 }
@@ -150,6 +157,39 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_MoverStep(bot);
         }
         return W3T_ObserverStep(bot, players[0]);
+    }
+
+    if(scenario == "social")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_SocialSender(bot);
+        }
+        return W3T_SocialWatcher(bot, players[0]);
+    }
+
+    if(scenario == "horse_ride")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_HorseRider(bot);
+        }
+        // W3T_HORSE_PARTY=1: in the rider's party, as co-op players are
+        if(W3T_GetEnv("W3T_HORSE_PARTY") == "1" && !client.getInParty())
+        {
+            W3T_Log("PARTY join " + players[0].username);
+            client.joinParty(players[0].username);
+            return false;
+        }
+        return W3T_HorseWatcher(bot, players[0]);
     }
 
     if(scenario == "shared_enemy")
@@ -400,6 +440,215 @@ function W3T_ObserverStep(bot : W3T_Bot, peer : r_RemotePlayer) : bool
     return bot.scenarioCount >= 2;
 }
 
+// social, sender: every 15 s a chat line, then a wave and a bow (Witcher Online's chat and emote commands), so a
+// watcher that arrives late still sees a round. Passes after one round.
+function W3T_SocialSender(bot : W3T_Bot) : bool
+{
+    var t : float;
+
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    t = bot.ElapsedS() - bot.scenarioTime;
+    if(bot.scenarioStep == 0 && t >= 2)
+    {
+        mpghosts_chat("w3test hello " + bot.scenarioCount);
+        W3T_Log("SOCIAL chat w3test hello " + bot.scenarioCount);
+        bot.scenarioStep = 1;
+    }
+    else if(bot.scenarioStep == 1 && t >= 5)
+    {
+        mpghosts_emote(0);
+        W3T_Log("SOCIAL emote 0 (wave)");
+        bot.scenarioStep = 2;
+    }
+    else if(bot.scenarioStep == 2 && t >= 10)
+    {
+        mpghosts_emote(1);
+        W3T_Log("SOCIAL emote 1 (bow)");
+        bot.scenarioStep = 3;
+    }
+    else if(bot.scenarioStep == 3 && t >= 15)
+    {
+        theGame.r_getMultiplayerClient().clearLocalEmoteState();
+        bot.scenarioCount += 1;
+        bot.scenarioStep = 0;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    return bot.scenarioCount >= 1;
+}
+
+// social, watcher: the sender's chat line shows over its character here, and each emote it makes plays on it (two
+// different ones).
+function W3T_SocialWatcher(bot : W3T_Bot, peer : r_RemotePlayer) : bool
+{
+    var now : float;
+    var emote : int;
+
+    if(!peer.ghost)
+    {
+        return false;
+    }
+    now = theGame.GetEngineTimeAsSeconds();
+    if(!bot.scenarioFlag && StrFindFirst(peer.lastChat, "w3test hello") == 0 && peer.chatShownAt > 0)
+    {
+        bot.scenarioFlag = true;
+        W3T_Log("SOCIAL watcher chat shown: " + peer.lastChat);
+    }
+    // a new emote (its time changed) that plays on the character: its animation runs until a later time (its number:
+    // as the sender sends it, or -1 right after it played, kept as prevEmote)
+    if(peer.lastEmoteTime != bot.scenarioValue && peer.currentAnimEndTime > now)
+    {
+        bot.scenarioValue = peer.lastEmoteTime;
+        emote = peer.lastEmote;
+        if(emote < 0)
+        {
+            emote = peer.prevEmote;
+        }
+        if(StrFindFirst(bot.scenarioText, " " + emote + " ") < 0)
+        {
+            bot.scenarioText += " " + emote + " ";
+            bot.scenarioCount += 1;
+        }
+        W3T_Log("SOCIAL watcher emote " + emote + " plays for " + FloatToStringPrec(peer.currentAnimEndTime - now, 2)
+            + " s; emotes seen:" + bot.scenarioText);
+    }
+    return bot.scenarioFlag && bot.scenarioCount >= 2;
+}
+
+// horse_ride, rider: calls its horse and mounts it (as quests do), rides it 8 m back and forth every 4 s (four times),
+// then gets off and, 2 s later, walks 6 m away, leaving the horse there. Passes once away.
+function W3T_HorseRider(bot : W3T_Bot) : bool
+{
+    var coop : r_CoopEnemies;
+    var horse : CNewNPC;
+    var target : Vector;
+    var rot : EulerAngles;
+
+    if(bot.scenarioCount >= 5)
+    {
+        horse = thePlayer.GetHorseWithInventory();
+        if(bot.scenarioCount == 5 && horse && bot.ElapsedS() - bot.scenarioTime >= 2.0)
+        {
+            rot = horse.GetWorldRotation();
+            thePlayer.TeleportWithRotation(horse.GetWorldPosition() + VecFromHeading(rot.Yaw + 90) * 6.0, rot);
+            bot.scenarioCount = 6;
+            W3T_Log("HORSE rider walked off from its horse at " + W3T_VecStr(horse.GetWorldPosition()));
+        }
+        coop = theGame.r_getMultiplayerClient().getCoopEnemies();
+        W3T_Log("HORSE rider off: sends " + coop.parkedText + " (" + coop.parkedSent + " sent)");
+        return bot.scenarioCount >= 6;
+    }
+    if(!thePlayer.IsUsingHorse())
+    {
+        // (again every 5 s: a horse called from far away takes a while)
+        if(bot.ElapsedS() - bot.scenarioTime >= 5.0)
+        {
+            bot.scenarioTime = bot.ElapsedS();
+            InstantMountPlayer('None', EVT_Horse, false, false);
+            W3T_Log("HORSE mount");
+        }
+        return bot.scenarioCount >= 2;
+    }
+    horse = thePlayer.GetHorseCurrentlyMounted();
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioVec = horse.GetWorldPosition();
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("HORSE mounted at " + W3T_VecStr(bot.scenarioVec));
+        return false;
+    }
+    if(bot.scenarioCount == 4 && bot.ElapsedS() - bot.scenarioTime >= 4.0)
+    {
+        thePlayer.DismountVehicle(horse, DT_instant);
+        bot.scenarioCount = 5;
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("HORSE off at " + W3T_VecStr(horse.GetWorldPosition()));
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioTime >= 4.0)
+    {
+        target = bot.scenarioVec;
+        rot = horse.GetWorldRotation();
+        if(bot.scenarioCount % 2 == 0)
+        {
+            target += VecFromHeading(rot.Yaw) * 8.0;
+        }
+        horse.TeleportWithRotation(target, rot);
+        bot.scenarioCount += 1;
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("HORSE ride " + bot.scenarioCount + " to " + W3T_VecStr(target) + " mounted=" + thePlayer.IsUsingHorse());
+    }
+    return false;
+}
+
+// horse_ride, watcher: the rider's character sits on a horse here too (Witcher Online's horse for remote riders), and
+// that horse follows the rider: two rides seen (more than 4 m from where it last settled, within 2.5 m of the position
+// the rider reports). Then, the rider off, its horse stays in sight where it was left for 3 s (scenarioStep: seconds
+// seen so).
+function W3T_HorseWatcher(bot : W3T_Bot, peer : r_RemotePlayer) : bool
+{
+    var horsePos, spot, aim : Vector;
+    var rot : EulerAngles;
+    var onHorse, hasHorse : bool;
+
+    if(!peer.ghost)
+    {
+        return bot.scenarioCount >= 2 && bot.scenarioStep >= 3;
+    }
+    onHorse = peer.ghost.IsUsingHorse(true);
+    aim = peer.ghost.GetWorldPosition();
+    if(peer.horse)
+    {
+        hasHorse = true;
+        horsePos = peer.horse.GetWorldPosition();
+        if(!peer.isMounted)
+        {
+            aim = horsePos;
+        }
+    }
+    // in view: 7 m behind the rider (or the horse it left) as the camera looks (screenshots)
+    if(VecDistance2D(thePlayer.GetWorldPosition() + theCamera.GetCameraForwardOnHorizontalPlane() * 7.0, aim) > 2.0
+        && theGame.GetWorld().NavigationFindSafeSpot(aim - theCamera.GetCameraForwardOnHorizontalPlane() * 7.0, 0.5, 3.0, spot))
+    {
+        rot.Yaw = theCamera.GetCameraHeading();
+        thePlayer.TeleportWithRotation(spot, rot);
+    }
+    W3T_Log("HORSE watcher mounted=" + peer.isMounted + " horse=" + hasHorse + " onHorse=" + onHorse
+        + " horseVisible=" + (hasHorse && peer.horse.GetVisibility()) + " ghostVisible=" + peer.ghost.GetVisibility()
+        + " horseToRider=" + FloatToStringPrec(VecDistance2D(horsePos, peer.pos), 2) + " rides=" + bot.scenarioCount
+        + " parked=" + peer.parkedHorse + "/" + FloatToStringPrec(theGame.GetEngineTimeAsSeconds() - peer.parkedAt, 1)
+        + " heard=" + theGame.r_getMultiplayerClient().getCoopEnemies().parkedHeard);
+    if(bot.scenarioCount >= 2 && !peer.isMounted && hasHorse && peer.horse.GetVisibility() && peer.parkedHorse
+        && VecDistance2D(horsePos, peer.parkedPos) < 1.5 && VecDistance2D(horsePos, peer.pos) > 3.0)
+    {
+        bot.scenarioStep += 1;
+        W3T_Log("HORSE watcher sees the horse left at " + W3T_VecStr(horsePos) + " (its owner's game: "
+            + W3T_VecStr(peer.parkedPos) + "), its rider " + FloatToStringPrec(VecDistance2D(horsePos, peer.pos), 1) + " m away");
+    }
+    if(!peer.isMounted || !peer.horse || !onHorse)
+    {
+        return bot.scenarioCount >= 2 && bot.scenarioStep >= 3;
+    }
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioVec = horsePos;
+        W3T_Log("HORSE watcher sees the rider mounted at " + W3T_VecStr(horsePos));
+    }
+    else if(VecDistance2D(horsePos, bot.scenarioVec) > 4.0 && VecDistance2D(horsePos, peer.pos) < 2.5)
+    {
+        bot.scenarioCount += 1;
+        bot.scenarioVec = horsePos;
+        W3T_Log("HORSE watcher ride " + bot.scenarioCount + ": horse at " + W3T_VecStr(horsePos) + " network " + W3T_VecStr(peer.pos));
+    }
+    return bot.scenarioCount >= 2 && bot.scenarioStep >= 3;
+}
+
 // shared_enemy, leader: once a member joined the party, spawn a drowner 6 m ahead; after the member's three
 // hits are applied here, kill it. Passes a few seconds after the kill (members need the death in a snapshot).
 function W3T_SharedEnemyLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
@@ -579,7 +828,7 @@ function W3T_MonsterPath(optional fallback : string) : string
 // (both bots load the same save, so their cameras look the same way: in view for screenshots); W = 0 if none
 function W3T_SpotInView(from : Vector) : Vector
 {
-    var spot, safe, best : Vector;
+    var spot, safe, best, reachable : Vector;
     var x, y, bestX : float;
     var i, r : int;
 
@@ -589,14 +838,26 @@ function W3T_SpotInView(from : Vector) : Vector
         for(i = 0; i < 32; i += 1)
         {
             spot = from + VecFromHeading(i * 11.25) * r;
-            if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 2.0, safe) && theGame.GetWorld().NavigationLineTest(from, safe, 0.5)
-                && theCamera.WorldVectorToViewRatio(safe, x, y) && AbsF(x) < bestX && AbsF(y) < 0.9)
+            if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 2.0, safe) && theGame.GetWorld().NavigationLineTest(from, safe, 0.5))
             {
-                bestX = AbsF(x);
-                best = safe;
-                best.W = 1;
+                if(reachable.W == 0)
+                {
+                    reachable = safe;
+                    reachable.W = 1;
+                }
+                if(theCamera.WorldVectorToViewRatio(safe, x, y) && AbsF(x) < bestX && AbsF(y) < 0.9)
+                {
+                    bestX = AbsF(x);
+                    best = safe;
+                    best.W = 1;
+                }
             }
         }
+    }
+    // none in view: any reachable one
+    if(best.W == 0)
+    {
+        return reachable;
     }
     return best;
 }

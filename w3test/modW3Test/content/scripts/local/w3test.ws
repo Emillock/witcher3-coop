@@ -266,7 +266,8 @@ statemachine class W3T_Bot
     public var scenarioIndex : int;      // its place in the session
     public var settleUntil : float;      // after a switch: let the last scenario's monsters go first
     public var begun : bool;             // the session's scenario has started after settling
-    public var home : Vector;            // where the save put the player; each session scenario starts there
+    public var home : Vector;            // where the save put the player, and its facing; each session scenario starts there
+    public var homeRot : EulerAngles;
     public var homeSet : bool;
 
     public function Start()
@@ -386,6 +387,7 @@ state W3T_Running in W3T_Bot
             if(!parent.homeSet && VecLengthSquared(thePlayer.GetWorldPosition()) > 1)
             {
                 parent.home = thePlayer.GetWorldPosition();
+                parent.homeRot = thePlayer.GetWorldRotation();
                 parent.homeSet = true;
             }
 

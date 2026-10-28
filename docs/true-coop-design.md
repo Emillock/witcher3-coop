@@ -645,6 +645,24 @@ the leader tracks two quests in turn, skips twice, and picks choice B; the membe
 later. PASS: both tracking switches followed, both skips replayed, and the pick was applied 2 s after the member
 reached the choices.
 
+## Presence on 5.01: horses, chat, emotes (2026-10-28)
+
+Witcher Online's own presence features, first tested on the port with `horse_ride` and `social`:
+- **Riding.** A rider's copy sits on Witcher Online's horse for remote riders
+  (`dlc\dlc_mpmod\data\entities\horse_vehicle.w2ent`, appearance from the rider's menu choice), which slides after
+  the rider's position: 0-0.24 m apart within a second, also in a party (screenshots show it drawn).
+- **The horse left behind.** Witcher Online hid that horse when its rider got off, so others never saw a player's
+  horse standing (reported by the owner). Each player's game now sends where its own horse stands while not ridden
+  and within 100 m (`coop hz seq 1 x y z yaw`, or `hz seq 0`, on change and every 2 s; the count makes each one new,
+  since the client passes a channel's message on only when it changed). The others keep the horse in sight there,
+  following the real one when it wanders, and hide it again on `0` or after 5 s without word. A horse made this way
+  loads its rider's AI when the rider mounts it (as Witcher Online's own spawn does), so the rider still sits on it.
+  The server keeps up to 8 co-op channels per player (was 4: a leader already used en, hurt, jr, fx). `horse_ride`:
+  the rider gets off and walks 6 m away; the watcher sees the horse where it was left within 1 s, the rider 6 m off.
+- **Chat and emotes.** A chat line showed over the sender's copy within 0.2 s; a wave and a bow played on it
+  0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
+  stays as `prevEmote`).
+
 ## Verification (2026-10-19, all milestones)
 
 `run_suite.py` with two game clients on one PC; every scenario is pass/fail by the in-game bots.

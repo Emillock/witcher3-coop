@@ -19,6 +19,7 @@ the party leader's world is the one that counts:
 - You see each other's signs, not only the casting gesture: Igni's fire, Aard's wave, Axii,
   Yrden's trap on the ground and Quen's shield.
 - Farther than about 60 m from the leader, your own world's monsters take over again.
+- Everyone sees each other's horse: ridden, and standing where its rider left it.
 - The hidden quest facts the leader's game sets during the session are shared too (also only
   forward), so your quests can follow the leader's progress. Loot stays per player.
 To play without shared monsters, turn on "MPGhosts_LocalEnemiesOnly" in the mod's options.
@@ -73,10 +74,10 @@ Witcher Online by rejuvenate7 and contributors (GPL-3.0), ported to Remastered h
 WitcherNativeBridge by Flawkee and rejuvenate7 (MIT). Ultimate ASI Loader by ThirteenAG (MIT).
 Licenses and the full source of the modified parts are in W3Coop\licenses and W3Coop\source.
 Status: tested with automated bots, two game copies on one PC, also through real Steam between
-two accounts. Covered: seeing each other and movement; shared monsters (hits, attacks, hit
-reactions, deaths, leaving and coming back; their copies walk and run like the leader's monsters);
-journal progress, quest facts and dialogue choices. Not yet tested on two different PCs over the
-internet.
+two accounts. Covered: seeing each other, movement, riding, chat and emotes; shared monsters
+(hits, attacks, hit reactions, deaths, summoned creatures, leaving and coming back; their copies
+walk and run like the leader's monsters); journal progress, quest facts and dialogue choices.
+Not yet tested on two different PCs over the internet.
 Known limits: a monster's copy plays the same attacks, dodges, parries and taunts, but for a few
 swings (some of the bear's, the water hag's) it starts about 0.1-0.3 s late and then catches up.
 Burning, bleeding and knockdown are passed on, also when a monster's attack applies them without
