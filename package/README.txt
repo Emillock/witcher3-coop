@@ -80,11 +80,11 @@ Witcher Online by rejuvenate7 and contributors (GPL-3.0), ported to Remastered h
 WitcherNativeBridge by Flawkee and rejuvenate7 (MIT). Ultimate ASI Loader by ThirteenAG (MIT).
 Licenses and the full source of the modified parts are in W3Coop\licenses and W3Coop\source.
 Status: tested with automated bots, two game copies on one PC, also through real Steam between
-two accounts. Covered: seeing each other, movement, riding, chat and emotes; shared monsters
-(hits, attacks, hit reactions, deaths, summoned creatures, leaving and coming back; their copies
-walk and run like the leader's monsters); journal progress, quest facts and dialogue choices.
-Not yet tested on two different PCs over the internet.
+two accounts. Covered: seeing each other, movement, riding, chat, emotes and trading; shared
+monsters (hits, attacks, hit reactions, status effects, bombs and bolts, deaths, summoned creatures,
+big fights of up to 48 monsters, leaving and coming back; their copies walk and run like the
+leader's monsters); a player's death and respawn; journal progress, quest facts and dialogue choices.
+Not yet tested on two different PCs over the internet, or with three or more players.
 Known limits: a monster's copy plays the same attacks, dodges, parries and taunts, but for a few
 swings (some of the bear's, the water hag's) it starts about 0.1-0.3 s late and then catches up.
-Burning, bleeding and knockdown are passed on, also when a monster's attack applies them without
-a hit (a fugas' fiery vomit, a wraith's blinding aura).
+Finishers on a shared monster are not shown to the others (it just dies).
