@@ -747,6 +747,10 @@ Witcher Online's own presence features, first tested on the port with `horse_rid
   dropped like any a player's character deals), and take it off when it ended (not forced). `player_effects`: the
   member burns, is knocked down, frozen and poisoned in turn; on the leader all four were on its character and
   ended with it, and screenshots show the fire, the knockdown and the frozen look.
+- **Trading** (2026-10-28, `trade`). Witcher Online's own trade works on 5.01: the leader offered a Dwarven spirit to
+  the member through its item popup and price slider (10 crowns), the member's game showed the offer and accepted
+  it; the leader had one spirit less and 10 crowns more, the member one more and 10 crowns less. The bot answers the
+  popups as they open (`w3test.ws`), so how they look is not checked.
 - **Chat and emotes.** A chat line showed over the sender's copy within 0.2 s; a wave and a bow played on it
   0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
   stays as `prevEmote`).

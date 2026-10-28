@@ -271,6 +271,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "trade")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_TradeSeller(bot, client, players[0]);
+        }
+        return W3T_TradeBuyer(bot, client, players[0]);
+    }
+
     if(scenario == "enemy_crowd")
     {
         if(players.Size() < 1)
@@ -2063,6 +2076,57 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// trade, leader: gets a Dwarven spirit and offers it to the member for 10 crowns (Witcher Online's trade: the bot answers
+// its popups, see w3test.ws). Passes once the spirit is gone from its inventory and 10 crowns came in (scenarioValue:
+// money before, scenarioVec.X: spirits before).
+function W3T_TradeSeller(bot : W3T_Bot, client : r_MultiplayerClient, buyer : r_RemotePlayer) : bool
+{
+    var spirits, money : int;
+
+    if(!buyer.ghost)
+    {
+        return false;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        thePlayer.inv.AddAnItem('Dwarven spirit', 1);
+        bot.scenarioValue = thePlayer.GetMoney();
+        bot.scenarioVec.X = thePlayer.inv.GetItemQuantityByName('Dwarven spirit');
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 3)
+    {
+        W3T_Log("TRADE seller offers a Dwarven spirit to " + buyer.username);
+        client.tradeWithPlayer(buyer.ghost);
+        bot.scenarioCount = 2;
+    }
+    spirits = thePlayer.inv.GetItemQuantityByName('Dwarven spirit');
+    money = thePlayer.GetMoney();
+    W3T_Log("TRADE seller step=" + bot.scenarioCount + " spirits=" + spirits + "/" + (int)bot.scenarioVec.X + " money=" + money + "/"
+        + (int)bot.scenarioValue + " flag=" + client.getOutgoingTradeFlag() + " price=" + client.getOutgoingTradePrice());
+    return bot.scenarioCount == 2 && spirits == (int)bot.scenarioVec.X - 1 && money == (int)bot.scenarioValue + 10;
+}
+
+// trade, member: accepts the offer (w3test.ws answers the popup). Passes once it has one more Dwarven spirit and
+// 10 crowns less.
+function W3T_TradeBuyer(bot : W3T_Bot, client : r_MultiplayerClient, seller : r_RemotePlayer) : bool
+{
+    var spirits, money : int;
+
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioValue = thePlayer.GetMoney();
+        bot.scenarioVec.X = thePlayer.inv.GetItemQuantityByName('Dwarven spirit');
+        bot.scenarioCount = 1;
+    }
+    spirits = thePlayer.inv.GetItemQuantityByName('Dwarven spirit');
+    money = thePlayer.GetMoney();
+    W3T_Log("TRADE buyer spirits=" + spirits + "/" + (int)bot.scenarioVec.X + " money=" + money + "/" + (int)bot.scenarioValue);
+    return spirits == (int)bot.scenarioVec.X + 1 && money == (int)bot.scenarioValue - 10;
 }
 
 // enemy_crowd, leader: W3T_CROWD (default 40; it shares up to 48) immortal drowners in a ring 6-12 m around the

@@ -49,6 +49,16 @@ function W3T_SessionGo() : int
     return -1;
 }
 
+// the scenario running now (in a session too)
+function W3T_CurrentScenario() : string
+{
+    if(theGame.w3t_bot)
+    {
+        return theGame.w3t_bot.scenario;
+    }
+    return W3T_GetEnv("W3T_SCENARIO");
+}
+
 function W3T_VecStr(v : Vector) : string
 {
     return FloatToStringPrec(v.X, 2) + "," + FloatToStringPrec(v.Y, 2) + "," + FloatToStringPrec(v.Z, 2);
@@ -133,6 +143,13 @@ function OnConfigUI()
     if(W3T_Active())
     {
         W3T_Log("MENU open " + NameToString(GetMenuName()));
+        // the trade's price slider (Witcher Online's r_TradeWindow): 10 crowns, as a player would set and confirm
+        if(GetMenuName() == 'PopupMenu' && W3T_CurrentScenario() == "trade")
+        {
+            W3T_Log("MENU trade price -> 10 crowns");
+            theGame.r_getMultiplayerClient().setTradeAmount(10);
+            CloseMenu();
+        }
         // it pauses the game, the bot's loop too: respawn as its button does (loads the last save)
         if(GetMenuName() == 'DeathScreenMenu')
         {
@@ -177,6 +194,37 @@ function ShowProgressDialog( messageId : int, title : string, message : string, 
         UserDialogCallback(messageId, UMA_Yes);
         HideUserDialog(messageId);
         W3T_Log("DIALOG answered Yes");
+    }
+}
+
+// Witcher Online's trade popups (trade): the seller picks the Dwarven spirit, the buyer accepts the offer
+@wrapMethod(CR4ItemSelectionPopup)
+function OnConfigUI()
+{
+    var ids : array<SItemUniqueId>;
+
+    wrappedMethod();
+    if(!W3T_Active() || W3T_CurrentScenario() != "trade")
+    {
+        return true;
+    }
+    if(m_DataObject.wo_isTrade)
+    {
+        ids = thePlayer.inv.GetItemsByName('Dwarven spirit');
+        W3T_Log("MENU trade: offers " + ids.Size() + " Dwarven spirit(s), picks one");
+        if(ids.Size() > 0)
+        {
+            OnCallSelectItem(ids[0]);
+        }
+    }
+    else if(m_DataObject.wo_isReceivingTrade)
+    {
+        ids = m_DataObject.targetInventory.GetItemsByName('Dwarven spirit');
+        W3T_Log("MENU trade: offered " + ids.Size() + " Dwarven spirit for " + m_DataObject.wo_crownsAmount + " crowns -> accept");
+        if(ids.Size() > 0)
+        {
+            OnCallSelectItem(ids[0]);
+        }
     }
 }
 
