@@ -2963,7 +2963,7 @@ function W3T_TwinMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
 }
 
 // real_encounter: the nearest active monster nest of this world, from the map pins (both bots load the same save,
-// so they pick the same one); W = 0 if none
+// so they pick the same one); W = 0 if none. W3T_PIN_TYPE: another kind of map pin (BanditCamp, MonsterDen, ...)
 function W3T_NearestNest(out label : string) : Vector
 {
     var manager : CCommonMapManager;
@@ -2972,8 +2972,15 @@ function W3T_NearestNest(out label : string) : Vector
     var best : Vector;
     var bestDist, d : float;
     var worlds : string;
+    var kind : name;
+    var kinds : array<name>;
     var i, j : int;
 
+    kind = 'MonsterNest';
+    if(W3T_GetEnv("W3T_PIN_TYPE") != "")
+    {
+        kind = WO_ToName(W3T_GetEnv("W3T_PIN_TYPE"));
+    }
     manager = theGame.GetCommonMapManager();
     areas = manager.GetAreaMapPins();
     bestDist = 100000;
@@ -2987,7 +2994,11 @@ function W3T_NearestNest(out label : string) : Vector
         pins = manager.GetEntityMapPins(areas[i].worldPath);
         for(j = 0; j < pins.Size(); j += 1)
         {
-            if(pins[j].entityType != 'MonsterNest' || manager.IsEntityMapPinDisabled(pins[j].entityName))
+            if(!kinds.Contains(pins[j].entityType))
+            {
+                kinds.PushBack(pins[j].entityType);
+            }
+            if(pins[j].entityType != kind || manager.IsEntityMapPinDisabled(pins[j].entityName))
             {
                 continue;
             }
@@ -3003,7 +3014,11 @@ function W3T_NearestNest(out label : string) : Vector
     }
     if(best.W == 0)
     {
-        label = "this world " + theGame.GetWorld().GetDepotPath() + "; areas:" + worlds;
+        label = "this world " + theGame.GetWorld().GetDepotPath() + "; areas:" + worlds + "; pin kinds:";
+        for(i = 0; i < kinds.Size(); i += 1)
+        {
+            label += " " + NameToString(kinds[i]);
+        }
     }
     return best;
 }

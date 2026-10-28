@@ -811,6 +811,10 @@ account, and traffic flowed both ways.
 - Encounter matching is tested with script-spawned twins and one real nest (nekkers). An encounter that came out
   differently in the member's world (`encounter_mismatch`, 2026-10-28: a nekker there, a drowner in the leader's at
   the same spot): the member's nekker stayed hidden and idle, not a copy, and the leader's drowner came as a spawned
-  copy. Random sets in real encounters are still untested.
+  copy. A real bandit camp with a random set (`W3T_PIN_TYPE=BanditCamp run_test.py real_encounter`, 2026-10-28;
+  Flaming Rose guards at ep1_pan_dziedzina_mp, 1.6 km from the save) came out differently in the two worlds: of the
+  leader's 5, 2 bound the member's own as twins and 3 came as spawned copies, the member's other 2 stayed hidden,
+  none of its own fought beside them, and all 5 copies died with the leader's. (At a boss-and-treasure pin nobody
+  spawned in 90 s, in either world.)
 - The facts layout is from 5.01; a game patch that changes it turns fact sync off (logged as the reason) until
   the layout is checked again.
