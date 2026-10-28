@@ -31,7 +31,7 @@ def collect(s, seconds):
     end = time.time() + seconds
     while time.time() < end:
         try:
-            parts = s.recv(8192).decode().split("\t")
+            parts = s.recv(65536).decode().split("\t")
         except socket.timeout:
             continue
         if parts[0] == "COOP" and len(parts) >= 4:
@@ -66,11 +66,11 @@ def main():
         if collect(bob, 1.0).get(("Alice", "en")) != ["en", "7", "2", "0"]:
             failures.append("Alice's updated 'en' state did not replace the old one")
 
-        # at most 4 channels per player, names up to 8 characters
-        for channel in ("c1", "c2", "c3", "c4", "c5", "toolongname"):
+        # at most 8 channels per player, names up to 8 characters
+        for channel in ("c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "toolongname"):
             send(alice, "COOP", "Alice", channel, "x")
         channels = sorted(ch for (who, ch) in collect(bob, 1.0) if who == "Alice")
-        if len(channels) != 4 or "toolongname" in channels or "en" not in channels:
+        if len(channels) != 8 or "toolongname" in channels or "en" not in channels:
             failures.append(f"channel limit not applied: Alice's channels {channels}")
 
         # the old opcodes still work next to COOP
@@ -79,11 +79,17 @@ def main():
         end = time.time() + 1.0
         while time.time() < end and not seen_move:
             try:
-                seen_move = bob.recv(8192).decode().startswith("MOVE\t")
+                seen_move = bob.recv(65536).decode().startswith("MOVE\t")
             except socket.timeout:
                 pass
         if not seen_move:
             failures.append("MOVE was not relayed")
+
+        # a busy fight's snapshot is larger than 8 KB: it arrives whole (last: its rebroadcasts fill the sockets)
+        big = "x" * 20000
+        send(alice, "COOP", "Alice", "en", "7", "3", big)
+        if collect(bob, 1.0).get(("Alice", "en")) != ["en", "7", "3", big]:
+            failures.append("a 20 KB 'en' state did not arrive whole")
     finally:
         try:
             server.stdin.write(b"stop\n")

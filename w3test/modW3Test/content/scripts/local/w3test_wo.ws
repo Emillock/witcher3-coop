@@ -271,6 +271,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "enemy_crowd")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_CrowdLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_CrowdMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "player_effects")
     {
         if(players.Size() < 1)
@@ -2029,6 +2042,64 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// enemy_crowd, leader: W3T_CROWD (default 24, the most it shares) immortal drowners in a ring 6-12 m around the
+// member's character, neutral to this Geralt. Passes 10 s after the last, with all of them shared.
+function W3T_CrowdLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var npc : CNewNPC;
+    var pos, spot : Vector;
+    var rot : EulerAngles;
+    var wanted, i : int;
+
+    wanted = StringToInt(W3T_GetEnv("W3T_CROWD"), 24);
+    if(coop.GetRole() != 1 || !member.ghost)
+    {
+        return false;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        for(i = 0; i < wanted; i += 1)
+        {
+            pos = member.ghost.GetWorldPosition() + VecFromHeading(i * 360.0 / wanted) * (6.0 + (i % 3) * 3.0);
+            if(!theGame.GetWorld().NavigationFindSafeSpot(pos, 0.5, 3.0, spot))
+            {
+                spot = pos;
+            }
+            rot.Yaw = VecHeading(member.ghost.GetWorldPosition() - spot);
+            npc = (CNewNPC)theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
+            npc.SetImmortalityMode(AIM_Immortal, AIC_Default);
+            npc.SetAttitude(thePlayer, AIA_Neutral);
+            bot.scenarioEntities.PushBack(npc);
+        }
+        W3T_Log("CROWD leader spawned " + bot.scenarioEntities.Size() + " drowners");
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    W3T_Log("CROWD leader shared=" + coop.HostEnemyCount() + " snapshotBytesMax=" + coop.hostSendBytesMax + " hurtsCaptured=" + coop.hurtsCaptured);
+    return coop.HostEnemyCount() >= wanted && bot.ElapsedS() - bot.scenarioTime >= 10;
+}
+
+// enemy_crowd, member: joins the party (invulnerable) and must copy every one of the leader's drowners.
+function W3T_CrowdMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var wanted : int;
+
+    wanted = StringToInt(W3T_GetEnv("W3T_CROWD"), 24);
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    W3T_Log("CROWD member puppets=" + coop.PuppetCount() + " spawned=" + coop.puppetsSpawned + " hurtsApplied=" + coop.hurtsApplied
+        + " lastError=" + coop.lastError);
+    return coop.PuppetCount() >= wanted;
 }
 
 // player_effects, member: puts burning, a knockdown, frozen and poison on itself, 6 s apart (invulnerable, so only

@@ -686,6 +686,15 @@ the leader tracks two quests in turn, skips twice, and picks choice B; the membe
 later. PASS: both tracking switches followed, both skips replayed, and the pick was applied 2 s after the member
 reached the choices.
 
+## Many monsters at once (2026-10-28)
+
+The leader shares at most 24 monsters. `enemy_crowd` spawns that many drowners around the member's character: the
+member copied all 24 and both games kept full speed; the leader's snapshot was at most 2.7 KB (about 110 bytes a
+monster). The server and the client read each datagram into 8192 bytes, and co-op messages are sent whole, so one
+over 8 KB was cut; that takes nearly every monster in the middle of an attack with effects and a projectile in the
+air at once. Both now read up to 64 KB (`server_coop_test.py` sends a 20 KB message through the server). The Steam
+relay already took 64 KB.
+
 ## A member's death (2026-10-28)
 
 A member killed by a shared monster gets the game's own death screen and loads its last save, as in single player
