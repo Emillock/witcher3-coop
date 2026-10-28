@@ -127,11 +127,18 @@ def main():
             print(f"move delay median {statistics.median(mdelay):5.0f} ms   p90 {pct(mdelay, 0.9):5.0f} ms   max {max(mdelay):5.0f} ms")
     # script effects: each one the leader's monster started (LF: the set playing now) and the copy's start (MF), within 2 s
     fx_starts, playing = [], {}
+    eff_starts, eff_ends, having = [], [], {}
     for k, n, s, w, t in lead:
         if k == "LF":
             now = set() if w == "-" else set(w.split(","))
+            # status effects that show ("!e<type>:<seconds>"), apart
+            effs = {f[2:].split(":")[0] for f in now if f.startswith("!e")}
+            now = {f for f in now if not f.startswith("!e")}
             fx_starts += [(n, f, t) for f in now - playing.get(n, set())]
             playing[n] = now
+            eff_starts += [(n, e, t) for e in effs - having.get(n, set())]
+            eff_ends += [(n, e, t) for e in having.get(n, set()) - effs]
+            having[n] = effs
     if fx_starts:
         mfx = [(n, w, t) for k, n, s, w, t in memb if k == "MF"]
         fdelay = []
@@ -141,6 +148,25 @@ def main():
                 fdelay.append(min(later))
         print(f"script effects started {len(fx_starts)} ({', '.join(sorted({f for n, f, t in fx_starts}))}), on the copy {len(fdelay)}"
               + (f", delay median {statistics.median(fdelay):.0f} ms max {max(fdelay):.0f} ms" if fdelay else ""))
+    # status effects on the leader's monster (LF "!e") and on its copy (ME type, "!type" not taken, "-type" taken off)
+    if eff_starts:
+        me = [(n, w, t) for k, n, s, w, t in memb if k == "ME"]
+        on, off, refused = [], [], []
+        for n, e, t in eff_starts:
+            later = [mt - t for mn, mw, mt in me if mn == n and mw == e and -100 <= mt - t <= 2000]
+            if later:
+                on.append(min(later))
+            elif [1 for mn, mw, mt in me if mn == n and mw == "!" + e and -100 <= mt - t <= 2000]:
+                refused.append(e)
+        for n, e, t in eff_ends:
+            later = [mt - t for mn, mw, mt in me if mn == n and mw == "-" + e and -100 <= mt - t <= 2000]
+            if later:
+                off.append(min(later))
+        print(f"status effects {len(eff_starts)} ({', '.join(sorted({e for n, e, t in eff_starts}, key=int))}), on the copy {len(on)}"
+              + (f", delay median {statistics.median(on):.0f} ms max {max(on):.0f} ms" if on else "")
+              + (f"; not taken {len(refused)} ({', '.join(refused)})" if refused else "")
+              + f"; ended {len(eff_ends)}, taken off {len(off)}"
+              + (f", delay median {statistics.median(off):.0f} ms max {max(off):.0f} ms" if off else ""))
     # the copy hidden while its monster is invisible (in the effects above as "!hidden"), and how far from the leader's
     # monster it reappeared ("!shown/m")
     shown = [w.split("/")[1] for k, n, s, w, t in memb if k == "MF" and w.startswith("!shown/")]

@@ -8,7 +8,9 @@ the party leader's world is the one that counts:
 - Monsters are shared: everyone fights the leader's monsters. They walk, run, attack, cast,
   dodge, taunt and shoot along with the leader's monsters (the same attack or spell, with the
   same animation). Your hits count in the leader's world, their attacks reach
-  you (dodge them as usual), and they die for everyone.
+  you (dodge them as usual), and they die for everyone. Your Axii and Yrden hold them in the
+  leader's world too. A monster that burns, is frozen,
+  knocked down, blinded or dazed by Axii looks that way for everyone.
 - Quest progress is shared through the journal: objectives the leader reaches show up in your
   journal too (only forward; nothing you finished is undone). The quest the leader tracks becomes
   your tracked quest when the leader switches it.
@@ -17,7 +19,8 @@ the party leader's world is the one that counts:
   in the same dialogue (also if you get there a few seconds later), and when the leader skips a
   line or cutscene, it is skipped for you too.
 - You see each other's signs, not only the casting gesture: Igni's fire, Aard's wave, Axii,
-  Yrden's trap on the ground and Quen's shield.
+  Yrden's trap on the ground and Quen's shield. Bombs and crossbow bolts fly and explode for
+  everyone too.
 - Farther than about 60 m from the leader, your own world's monsters take over again.
 - Everyone sees each other's horse: ridden, and standing where its rider left it.
 - The hidden quest facts the leader's game sets during the session are shared too (also only

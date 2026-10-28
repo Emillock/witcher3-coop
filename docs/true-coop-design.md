@@ -452,6 +452,47 @@ True Co-op rule).
   - Damage over time stays in the member's world: its effect ticks with the member's skills and the ticks are
     claimed. On the leader, damage over time from a ghost is always dropped.
   - See Open questions: in the test games no status effect takes hold, so only the messages are verified.
+  - Effects a member puts straight on a puppet, not through a hit (2026-10-28), stayed in the member's world: Axii
+    confuses (and staggers) its target with `AddEffectCustom`, Yrden slows whoever stands in it, 0.1 s at a time.
+    A member's Axii dazed only its copy, while the leader's monster went on attacking. The `AddEffectCustom` and
+    `AddEffectDefault` wraps now send each one this player put on a puppet and that took hold, as an effect-only
+    hit with its length (`type:seconds` among the hit's effects; the leader adds it with that length, its monster's
+    resistances decide). Ones added while a damage action is processed are left out (they go with that hit). The
+    same effect on the same puppet goes at most every 0.5 s, lasting at least 0.6 s, so Yrden's slowdown holds
+    while the monster stands in it and ends shortly after. Axii's puppet skill (`EET_AxiiGuardMe`, a human fights
+    for the caster) stays in the caster's world. `member_combat` now also casts Axii: its confusion and stagger went to the leader alone, and the leader's drowner was confused.
+- **Status effects on the leader's monster show on its copies** (2026-10-28). Before, a copy showed only the hit
+  reaction: when the leader set its monster on fire, knocked it down with Aard or froze it, members saw it standing
+  as before. The leader now lists its monsters' effects that show (`CoopShowsEffect`: burning, frozen, knockdowns,
+  staggers, ragdoll, blindness, Axii's confusion and its slowdown, immobilized, paralyzed, tangled, poison, bleeding,
+  Yrden's and frost slowdown, Moon Dust) with its script effects, `!e<type>:<seconds>` each (the length as applied),
+  sent at once when the list changes. The member puts each on the copy with that length (`AddEffectCustom`, source
+  `W3CoopShown`, the copy as its creator) and takes it off when it leaves the list, not forced, so a knockdown's
+  animation finishes as it would. One the member's own hit put there already stays as it is; their damage over time
+  on the copy is dropped like any not the member's, and a released twin loses them.
+  - `enemy_effects`: the leader gives its immortal drowner burning, knockdown, frozen, blindness, confusion and
+    bleeding, 6 s apart. All five the drowner took (it refused bleeding) were on the copy a median 23 ms later
+    (max 32 ms) and were taken off 26 ms after they ended there. Screenshots show the copy burning, lying knocked
+    down and frozen in ice, as the leader's drowner.
+- **Other players' bombs and crossbow bolts** (2026-10-28). Witcher Online showed only the throw or aim animation
+  on a remote player's character; the bomb, its explosion and the bolt were seen by the thrower alone. Each player's
+  game now sends its own bombs (`W3Petard.ThrowProjectile` with this player as owner: the item, where it left the
+  hand, where it goes) and shots (a projectile this player fired, caught by the projectile wraps: its template,
+  start, target, angle, speed and range; a shot at a bone goes to that bone) on a channel of its own, `pt epoch n
+  {seq kind what from to angle speed range}`: those of the last 1.5 s, at once. Once none is left the message goes
+  out empty, so that a stale one never plays for a player who comes near later. Every other game near that player
+  throws a copy from their character there: a bomb from its own inventory item (`GetDeploymentItemEntity`, the
+  character its owner), a shot from the template, as for monster projectiles. A copy's hits are dropped everywhere
+  (the attacker a player's character, the causer a throwable or projectile): the real ones reach the leader as the
+  thrower's claims, and their effects show on the copies through the leader's monster (above). Blocked abilities
+  (Moon Dust, Dimeritium) are not damage, so a copy exploding at the leader's monster blocks them there too.
+  Cluster bomblets (an alchemy skill) spawn only in the thrower's world.
+  - `member_combat` now also throws a Dancing Star and shoots a bodkin bolt at the copy: both hits were claimed and
+    applied (the bolt for 56 of 882 health), and the leader's game threw a copy of each (6 of 6 in a longer run, none
+    failed) whose damage it dropped. The leader's screenshots show the copy's fire burst at its drowner.
+  - Test gotcha: an immortal monster drained to nothing lies unconscious, and bolts pass it by (`CanCollideWithVictim`);
+    the burning ticks claimed in `member_combat` drained it within seconds, so its leader now heals it below half
+    health. A bolt also stops at once if it starts inside its shooter.
 - **Matching an encounter that exists in both worlds.** Unmatched local hostiles near a member are hidden and
   idle. When the leader's copy of one appears, the member's own monster is found (same template, within 10 m),
   shown again and made the puppet. No duplicate is spawned.
@@ -695,7 +736,8 @@ account, and traffic flowed both ways.
 ## Open questions
 
 - Members' damage. Real sword swings and Igni/Aard casts on a puppet are claimed and applied (`member_combat`,
-  2026-10-20). Bombs and the crossbow go through the same `OnTakeDamage` path but are untested.
+  2026-10-20), and so are a bomb's and a crossbow bolt's (2026-10-28, thrown and shot by the test bot from its
+  inventory as the game does; a real player's aimed throw and shot are untested).
 - Status effects: solved 2026-10-21. No status effect took hold in the test games because of a Steam Workshop
   mod the owner had subscribed to, not because of the test setup or Witcher Online:
   - "Consumables Balanced" (Workshop item 3252471752, `modConsumablesBalanced`) ships its own

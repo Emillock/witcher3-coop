@@ -271,6 +271,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "enemy_effects")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_EffectsLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_EffectsMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "enemy_projectiles")
     {
         if(ghosts < 1)
@@ -743,7 +756,8 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     hp = coop.PuppetHostHp(index);
     W3T_Log("ENEMY member puppet hp=" + FloatToStringPrec(hp, 4) + " local=" + FloatToStringPrec(puppet.GetHealthPercents(), 4)
         + " alive=" + coop.PuppetAlive(index) + " spawned=" + coop.PuppetSpawned(index) + " pending=" + coop.PendingHitCount()
-        + " pos=" + W3T_VecStr(puppet.GetWorldPosition()));
+        + " pos=" + W3T_VecStr(puppet.GetWorldPosition()) + " xp=" + GetWitcherPlayer().levelManager.GetPointsTotal(EExperiencePoint)
+        + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));
 
     // scenarioCount: hits confirmed so far (0-3), then 5 once the death was seen; scenarioFlag: a hit in flight
     if(bot.scenarioCount < 3)
@@ -801,7 +815,8 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
             W3T_Quit(1);
             return false;
         }
-        W3T_Log("ENEMY member saw the drowner die; no duplicate");
+        // (with the kill's experience, as for any monster killed within 20 m of this player)
+        W3T_Log("ENEMY member saw the drowner die; no duplicate; xp=" + GetWitcherPlayer().levelManager.GetPointsTotal(EExperiencePoint));
         bot.scenarioCount = 5;
     }
     return bot.scenarioCount >= 5;
@@ -1819,8 +1834,8 @@ function W3T_SignVisualsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
 }
 
 // member_combat, leader: the drowner of enemy_attacks, immortal so it takes every kind of hit. Passes once members'
-// hits did damage and their effects were added to its hits (whether they take hold is logged: in the test games no
-// effect does, members' or not; see sign_check).
+// hits did damage and their effects were added to its hits (whether they take hold is logged), copies of the
+// member's bomb and bolt flew here (their own damage dropped), and the member's Axii confused it (scenarioStep 1).
 function W3T_CombatLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var monster : CNewNPC;
@@ -1840,17 +1855,28 @@ function W3T_CombatLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remote
     {
         bot.scenarioFlag = true;
     }
+    // (drained to nothing, an immortal monster lies unconscious, and bolts pass it by)
+    if(monster.GetHealthPercents() < 0.5)
+    {
+        monster.SetHealthPerc(1.0);
+    }
+    if(monster.HasBuff(EET_Confusion))
+    {
+        bot.scenarioStep = 1;
+    }
     W3T_Log("COMBAT leader hitsApplied=" + coop.hitsApplied + " effects=" + coop.hitEffectsApplied + " held=" + coop.hitEffectsHeld + " hp="
         + FloatToStringPrec(monster.GetHealthPercents(), 3) + " burning=" + monster.HasBuff(EET_Burning)
         + " knockedDown=" + (monster.HasBuff(EET_Knockdown) || monster.HasBuff(EET_HeavyKnockdown))
-        + " stagger=" + monster.HasBuff(EET_Stagger) + " everBurned=" + bot.scenarioFlag);
-    return coop.hitsApplied >= 3 && coop.hitEffectsApplied >= 2;
+        + " stagger=" + monster.HasBuff(EET_Stagger) + " everBurned=" + bot.scenarioFlag + " throwCopies=" + coop.throwCopies
+        + " copyFailures=" + coop.throwCopyFailures + " copyDamageDropped=" + coop.throwDamageDropped + " everConfused=" + (bot.scenarioStep == 1)
+        + " lastError=" + coop.lastError);
+    return coop.hitsApplied >= 3 && coop.hitEffectsApplied >= 2 && coop.throwCopies >= 2 && bot.scenarioStep == 1;
 }
 
-// member_combat, member: walks up to the puppet and fights it as a player: three sword swings, Igni, Aard, then a fire
-// hit and a knockdown carried by this player's damage actions (on 5.01 the player's signs carry no effects: their
-// skills' effect names are missing from the game's effect list), over and over (scenarioCount: steps done). Passes
-// once its sword and its signs sent hits and effects went out.
+// member_combat, member: walks up to the puppet and fights it as a player: three sword swings, Igni, Aard, a fire hit
+// and a knockdown carried by this player's damage actions, a bomb, a crossbow bolt and Axii, over and over
+// (scenarioCount: steps done). Passes once its sword, signs, bomb and bolt sent hits, effects went out, and Axii's
+// confusion (put straight on the puppet, no hit) went out alone.
 function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     var puppet : CNewNPC;
@@ -1880,8 +1906,22 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     W3T_LookAt(puppet.GetWorldPosition());
     thePlayer.GoToCombatIfNeeded(puppet);
 
-    step = bot.scenarioCount % 7;
-    if(step < 3)
+    step = bot.scenarioCount % 10;
+    if(step == 7)
+    {
+        W3T_ThrowBomb(puppet);
+    }
+    else if(step == 8)
+    {
+        W3T_ShootBolt(puppet);
+    }
+    else if(step == 9)
+    {
+        GetWitcherPlayer().SetEquippedSign(ST_Axii);
+        thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
+        thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
+    }
+    else if(step < 3)
     {
         thePlayer.SetupCombatAction(EBAT_LightAttack, BS_Pressed);
     }
@@ -1918,10 +1958,141 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     bot.scenarioCount += 1;
 
     W3T_Log("COMBAT member step=" + step + " hitsSent=" + coop.hitsSent + " melee=" + coop.meleeHitsSent + " sign="
-        + coop.signHitsSent + " effects=" + coop.hitEffectsSent + " puppetBurning=" + puppet.HasBuff(EET_Burning) + " puppetDown="
+        + coop.signHitsSent + " effects=" + coop.hitEffectsSent + " bomb=" + coop.bombHitsSent + " bolt=" + coop.boltHitsSent
+        + " ownEffects=" + coop.ownEffectsSent + " puppetConfused=" + puppet.HasBuff(EET_Confusion) + " throwsSent=" + coop.throwsSent + " lastThrow=" + coop.lastThrow + " puppetBurning=" + puppet.HasBuff(EET_Burning) + " puppetDown="
         + (puppet.HasBuff(EET_Knockdown) || puppet.HasBuff(EET_HeavyKnockdown) || puppet.HasBuff(EET_Stagger) || puppet.HasBuff(EET_LongStagger)) + " dist="
         + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));
-    return coop.meleeHitsSent >= 3 && coop.signHitsSent >= 1 && coop.hitEffectsSent >= 2;
+    return coop.meleeHitsSent >= 3 && coop.signHitsSent >= 1 && coop.hitEffectsSent >= 2 && coop.bombHitsSent >= 1 && coop.boltHitsSent >= 1
+        && coop.ownEffectsSent >= 1;
+}
+
+// a Dancing Star thrown at the target as the player's throw does (its item and arc from the inventory)
+function W3T_ThrowBomb(target : CActor)
+{
+    var ids : array<SItemUniqueId>;
+    var bomb : W3Petard;
+
+    ids = thePlayer.inv.AddAnItem('Dancing Star 1', 1);
+    bomb = (W3Petard)thePlayer.inv.GetDeploymentItemEntity(ids[0], thePlayer.GetWorldPosition() + Vector(0, 0, 1.7), thePlayer.GetWorldRotation());
+    bomb.Initialize(thePlayer, ids[0]);
+    bomb.ThrowProjectile(target.GetWorldPosition() + Vector(0, 0, 1));
+    W3T_Log("COMBAT member threw a bomb");
+}
+
+// a bodkin bolt shot at the target as the player's crossbow does, from where a crossbow holds it (in front of the
+// player: from inside its own body the bolt stopped there)
+function W3T_ShootBolt(target : CActor)
+{
+    var ids : array<SItemUniqueId>;
+    var crossbow : SItemUniqueId;
+    var bolt : W3BoltProjectile;
+    var from : Vector;
+
+    ids = thePlayer.inv.AddAnItem('Bodkin Bolt', 1);
+    GetWitcherPlayer().GetItemEquippedOnSlot(EES_RangedWeapon, crossbow);
+    from = thePlayer.GetWorldPosition() + VecNormalize2D(target.GetWorldPosition() - thePlayer.GetWorldPosition()) * 0.8;
+    from.Z += 1.4;
+    bolt = (W3BoltProjectile)thePlayer.inv.GetDeploymentItemEntity(ids[0], from, thePlayer.GetWorldRotation());
+    bolt.InitializeCrossbow(thePlayer, ids[0], crossbow);
+    bolt.ThrowProjectile(target.GetWorldPosition() + Vector(0, 0, 1));
+    W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
+        + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
+        + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// the status effects enemy_effects gives (W3T_EFFECTS: EEffectType numbers, "18,9"; default burning, knockdown,
+// frozen, blindness, confusion, bleeding)
+function W3T_TestEffects() : array<EEffectType>
+{
+    var effects : array<EEffectType>;
+    var text, piece : string;
+
+    text = W3T_GetEnv("W3T_EFFECTS");
+    if(text == "")
+    {
+        effects.PushBack(EET_Burning);
+        effects.PushBack(EET_Knockdown);
+        effects.PushBack(EET_Frozen);
+        effects.PushBack(EET_Blindness);
+        effects.PushBack(EET_Confusion);
+        effects.PushBack(EET_Bleeding);
+        return effects;
+    }
+    while(text != "")
+    {
+        piece = text;
+        text = "";
+        if(StrFindFirst(piece, ",") >= 0)
+        {
+            text = StrAfterFirst(piece, ",");
+            piece = StrBeforeFirst(piece, ",");
+        }
+        effects.PushBack((EEffectType)StringToInt(piece, 0));
+    }
+    return effects;
+}
+
+// enemy_effects, leader: the drowner of enemy_attacks, immortal, gets this Geralt's status effects one after another,
+// 6 s apart. Passes once all were given and the last had 8 s to end.
+function W3T_EffectsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+    var effects : array<EEffectType>;
+    var type : EEffectType;
+    var result : EEffectInteract;
+    var given : int;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(bot.scenarioCount == 1)
+        {
+            ((CNewNPC)bot.scenarioEntity).SetImmortalityMode(AIM_Immortal, AIC_Default);
+            bot.scenarioTime = bot.ElapsedS();
+        }
+        return false;
+    }
+    monster = (CNewNPC)bot.scenarioEntity;
+    W3T_LookAt(monster.GetWorldPosition());
+    effects = W3T_TestEffects();
+    given = bot.scenarioCount - 1;
+    if(given < effects.Size() && bot.ElapsedS() - bot.scenarioTime >= 6)
+    {
+        type = effects[given];
+        result = monster.AddEffectDefault(type, thePlayer, "W3Test");
+        W3T_Log("EFFECTS leader gave " + (int)type + " (" + EffectTypeToName(type) + ") result=" + (int)result + " held="
+            + monster.HasBuff(type));
+        bot.scenarioCount += 1;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    W3T_Log("EFFECTS leader listed=" + coop.effectsListed + " fx=" + coop.lastFx + " hp=" + FloatToStringPrec(monster.GetHealthPercents(), 3));
+    return given >= effects.Size() && bot.ElapsedS() - bot.scenarioTime >= 8;
+}
+
+// enemy_effects, member: each status effect on the leader's drowner shows on its copy while it lasts there and goes
+// with it. Passes once 4 were on the copy and as many ended.
+function W3T_EffectsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet : CNewNPC;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() < 1)
+    {
+        return false;
+    }
+    puppet = coop.PuppetAt(0);
+    W3T_LookAt(puppet.GetWorldPosition());
+    W3T_Log("EFFECTS member mirrored=" + coop.effectsMirrored + " held=" + coop.effectsMirrorHeld + " ended=" + coop.effectsMirrorEnded
+        + " burning=" + puppet.HasBuff(EET_Burning) + " down=" + (puppet.HasBuff(EET_Knockdown) || puppet.HasBuff(EET_HeavyKnockdown))
+        + " frozen=" + puppet.HasBuff(EET_Frozen) + " blind=" + puppet.HasBuff(EET_Blindness) + " confused=" + puppet.HasBuff(EET_Confusion)
+        + " bleeding=" + puppet.HasBuff(EET_Bleeding) + " hp=" + FloatToStringPrec(puppet.GetHealthPercents(), 3));
+    return coop.effectsMirrorHeld >= 4 && coop.effectsMirrorEnded >= 4;
 }
 
 // enemy_projectiles, leader: the monster of enemy_attacks (a Baron's bandit with a bow unless W3T_MONSTER) shoots at
