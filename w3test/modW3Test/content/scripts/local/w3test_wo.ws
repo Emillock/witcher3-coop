@@ -2699,7 +2699,11 @@ function W3T_ReactionsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Rem
 {
     var drowner : CNewNPC;
     var action : W3DamageAction;
+    var hits : int;
+    var reaction : EHitReactionType;
 
+    // W3T_REACT_HITS: how many hits of this Geralt (default 2; light and heavy in turn), to measure reactions
+    hits = StringToInt(W3T_GetEnv("W3T_REACT_HITS"), 2);
     if(bot.scenarioCount == 0)
     {
         W3T_EnemyAttacksLeader(bot, coop, member);
@@ -2714,13 +2718,22 @@ function W3T_ReactionsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Rem
         return false;
     }
 
-    // scenarioCount: 1 spawned, 2-3 after this Geralt's hits, 4 after the bleeding hit, 5 done
-    if(bot.scenarioCount < 4 && bot.ElapsedS() - bot.scenarioTime >= 3)
+    // scenarioCount: 1 spawned, 2..hits+1 after this Geralt's hits, hits+2 after the bleeding hit, hits+3 done
+    if(bot.scenarioCount < hits + 2 && bot.ElapsedS() - bot.scenarioTime >= 3)
     {
-        if(bot.scenarioCount < 3)
+        if(bot.scenarioCount < hits + 1)
         {
+            reaction = EHRT_Light;
+            if(bot.scenarioCount % 2 == 0)
+            {
+                reaction = EHRT_Heavy;
+            }
+            if(drowner.GetHealthPercents() < 0.3)
+            {
+                drowner.SetHealthPerc(1.0);
+            }
             action = new W3DamageAction in theGame.damageMgr;
-            action.Initialize(thePlayer, drowner, thePlayer, "W3T", EHRT_Light, CPS_Undefined, true, false, false, false);
+            action.Initialize(thePlayer, drowner, thePlayer, "W3T", reaction, CPS_Undefined, true, false, false, false);
             action.AddDamage(theGame.params.DAMAGE_NAME_DIRECT, 0.05 * drowner.GetMaxHealth());
             theGame.damageMgr.ProcessAction(action);
             delete action;
@@ -2739,11 +2752,11 @@ function W3T_ReactionsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Rem
         bot.scenarioCount += 1;
         bot.scenarioTime = bot.ElapsedS();
     }
-    if(bot.scenarioCount == 4 && bot.ElapsedS() - bot.scenarioTime >= 5)
+    if(bot.scenarioCount == hits + 2 && bot.ElapsedS() - bot.scenarioTime >= 5)
     {
-        bot.scenarioCount = 5;
+        bot.scenarioCount = hits + 3;
     }
-    return bot.scenarioCount == 5;
+    return bot.scenarioCount == hits + 3;
 }
 
 // reactions, member: the leader's two hits must be replayed on the puppet, and the drowner's bleeding hit must

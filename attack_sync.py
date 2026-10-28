@@ -148,6 +148,34 @@ def main():
                 fdelay.append(min(later))
         print(f"script effects started {len(fx_starts)} ({', '.join(sorted({f for n, f, t in fx_starts}))}), on the copy {len(fdelay)}"
               + (f", delay median {statistics.median(fdelay):.0f} ms max {max(fdelay):.0f} ms" if fdelay else ""))
+    # hit reactions: each hit the leader's monster took (LH, by hit seq) and whether it entered a hit animation within
+    # 0.6 s (LR), the copy's replay (MH) and its hit animation (MR)
+    lh = [(n, t) for k, n, s, w, t in lead if k == "LH"]
+    if lh:
+        lr = [(n, t) for k, n, s, w, t in lead if k == "LR"]
+        mh = [(n, t) for k, n, s, w, t in memb if k == "MH"]
+        mr = [(n, t) for k, n, s, w, t in memb if k == "MR"]
+
+        def flinched(hit, anims):
+            return any(an == hit[0] and 0 <= at - hit[1] <= 600 for an, at in anims)
+
+        lead_flinch = [h for h in lh if flinched(h, lr)]
+        # the copy's replay of a hit: the first MH of that monster within 1 s after it
+        both = copy_only = copy_any = 0
+        delays = []
+        for h in lh:
+            replay = [m for m in mh if m[0] == h[0] and 0 <= m[1] - h[1] <= 1000]
+            copy = bool(replay) and flinched(replay[0], mr)
+            copy_any += copy
+            both += copy and h in lead_flinch
+            copy_only += copy and h not in lead_flinch
+            if copy and h in lead_flinch:
+                lt = min(at for an, at in lr if an == h[0] and 0 <= at - h[1] <= 600)
+                ct = min(at for an, at in mr if an == h[0] and 0 <= at - replay[0][1] <= 600)
+                delays.append(ct - lt)
+        print(f"hits {len(lh)}: the leader's monster flinched at {len(lead_flinch)}, replayed {len(mh)}, the copy flinched at "
+              f"{copy_any} ({both} with the leader's, {copy_only} where it didn't)"
+              + (f"; the copy's flinch median {statistics.median(delays):.0f} ms after the leader's, max {max(delays):.0f} ms" if delays else ""))
     # status effects on the leader's monster (LF "!e") and on its copy (ME type, "!type" not taken, "-type" taken off)
     if eff_starts:
         me = [(n, w, t) for k, n, s, w, t in memb if k == "ME"]

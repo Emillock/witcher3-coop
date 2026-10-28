@@ -605,7 +605,10 @@ True Co-op rule).
     fought at the test spot, not even hit (`W3T_VIEW_PROVOKE`) or with a leader that can be hit; the offset spawns
     of two bosses (Dettlaff, the toad) weren't tried;
   - moves that are not behavior-tree tasks (scripted encounter animations);
-  - hit reactions are best effort: one of two mirrored hits showed `IsInHitAnim` in the test.
+  - (hit reactions, best effort at first: one of two mirrored hits showed `IsInHitAnim` in the 2026-10-19 test.
+    Measured again 2026-10-28 with `W3T_REACT_HITS=16 run_test.py reactions`, light and heavy hits in turn while the
+    drowner attacked: the leader's drowner flinched at all 16 and its copy at the same 16, none other, a median 50 ms
+    after the leader's (max 76 ms; `attack_sync.py` matches LR/MR to each hit).)
 
 Tests (2026-10-19, 2 clients on one PC):
 - `enemy_attacks`: PASS. The puppet started all 5 attacks, and the member took 1735 damage in 3 hits.
