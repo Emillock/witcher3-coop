@@ -9,6 +9,7 @@ function W3T_EndScenario(bot : W3T_Bot)
     var i : int;
     var client : r_MultiplayerClient;
     var coop : r_CoopEnemies;
+    var quen : W3QuenEntity;
 
     W3T_EndEntity(bot.scenarioEntity);
     for(i = 0; i < bot.scenarioEntities.Size(); i += 1)
@@ -27,6 +28,12 @@ function W3T_EndScenario(bot : W3T_Bot)
     }
     W3T_EndEntity(thePlayer.GetHorseWithInventory());
     thePlayer.SetImmortalityMode(AIM_None, AIC_Cheat, true);
+    // a Quen shield (sign_visuals) outlives its buff and keeps fire off the next scenario's player
+    quen = (W3QuenEntity)GetWitcherPlayer().GetSignEntity(ST_Quen);
+    if(quen)
+    {
+        quen.ForceFinishQuen(true);
+    }
     thePlayer.RemoveAllNonAutoBuffs();
     thePlayer.ForceSetStat(BCS_Vitality, thePlayer.GetStatMax(BCS_Vitality));
     coop = client.getCoopEnemies();
@@ -1968,6 +1975,8 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     var rot : EulerAngles;
     var step : int;
     var action : W3DamageAction;
+    var away : Vector;
+    var dist : float;
 
     if(!client.getInParty())
     {
@@ -1981,16 +1990,27 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
         return false;
     }
     puppet = coop.PuppetAt(0);
-    if(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()) > 2.5)
+    // 1.8 m off for swings; 3 m for Axii and Yrden (with the puppet in its face, the casts got interrupted)
+    step = bot.scenarioCount % 11;
+    dist = VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition());
+    if(dist > 2.5 || (step >= 9 && (dist < 2.5 || dist > 3.5)))
     {
-        spot = puppet.GetWorldPosition() + VecNormalize(thePlayer.GetWorldPosition() - puppet.GetWorldPosition()) * 1.8;
+        away = VecNormalize(thePlayer.GetWorldPosition() - puppet.GetWorldPosition());
+        if(dist < 0.3)
+        {
+            away = VecFromHeading(puppet.GetHeading());
+        }
+        spot = puppet.GetWorldPosition() + away * 1.8;
+        if(step >= 9)
+        {
+            spot = puppet.GetWorldPosition() + away * 3.0;
+        }
         rot.Yaw = VecHeading(puppet.GetWorldPosition() - spot);
         thePlayer.TeleportWithRotation(spot, rot);
     }
     W3T_LookAt(puppet.GetWorldPosition());
     thePlayer.GoToCombatIfNeeded(puppet);
 
-    step = bot.scenarioCount % 11;
     if(step == 7)
     {
         W3T_ThrowBomb(puppet);
