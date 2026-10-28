@@ -700,6 +700,9 @@ leader's immortal drowner kills it, the death screen's respawn loads the save) f
   member's own snapshot field `isAlive`), sends no hurts for it and drops those still waiting, and a member drops
   any that arrive while it is dead. In the test 1 hurt was dropped, the member respawned with 5140 health and
   fought on.
+- The leader's death needed nothing new (`leader_death`): its game pauses on the death screen, so its snapshots stop
+  and members let go of its monsters 8 s later (their own take over); after the leader's respawn its new monsters
+  are shared again, and the member stayed in the party throughout.
 
 ## Presence on 5.01: horses, chat, emotes (2026-10-28)
 

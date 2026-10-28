@@ -271,6 +271,15 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "leader_death")
+    {
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_LeaderDeathLeader(bot, client.getCoopEnemies(), players);
+        }
+        return W3T_LeaderDeathMember(bot, client, client.getCoopEnemies(), players);
+    }
+
     if(scenario == "member_death")
     {
         if(W3T_GetEnv("W3T_ROLE") == "mover")
@@ -2007,6 +2016,85 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// leader_death, leader: spawns the drowner of enemy_attacks; once the member has its copy, dies (the death screen
+// respawns it from its save, which has no drowner) and spawns a new one when back (scenarioCount: 1 drowner, 2 dead,
+// 3 alive again, 4 new drowner). Passes once the new drowner is shared (the member is still in the party).
+function W3T_LeaderDeathLeader(bot : W3T_Bot, coop : r_CoopEnemies, players : array<r_RemotePlayer>) : bool
+{
+    if(players.Size() < 1)
+    {
+        return bot.scenarioCount >= 4;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        if(players[0].ghost)
+        {
+            W3T_EnemyAttacksLeader(bot, coop, players[0]);
+            bot.scenarioTime = bot.ElapsedS();
+        }
+        return false;
+    }
+    if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 10)
+    {
+        W3T_Log("DEATH leader dies");
+        bot.scenarioCount = 2;
+        thePlayer.SetImmortalityMode(AIM_None, AIC_Cheat, true);
+        thePlayer.SetImmortalityMode(AIM_None, AIC_Default, true);
+        thePlayer.Kill('W3T', true);
+    }
+    else if(bot.scenarioCount == 2 && thePlayer.IsAlive())
+    {
+        W3T_Log("DEATH leader alive again");
+        bot.scenarioCount = 3;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    else if(bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime >= 5 && players[0].ghost)
+    {
+        bot.scenarioCount = 0;
+        W3T_EnemyAttacksLeader(bot, coop, players[0]);
+        bot.scenarioCount = 4;
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("DEATH leader spawned a new drowner");
+    }
+    W3T_Log("DEATH leader step=" + bot.scenarioCount + " alive=" + thePlayer.IsAlive() + " role=" + coop.GetRole() + " enemies="
+        + coop.HostEnemyCount());
+    return bot.scenarioCount == 4 && coop.HostEnemyCount() > 0 && coop.GetRole() == 1 && bot.ElapsedS() - bot.scenarioTime >= 5;
+}
+
+// leader_death, member: has a copy of the leader's drowner; while the leader is dead (its snapshots stop) lets go of
+// it within 8 s, and copies the drowner the leader spawns after its respawn (scenarioCount: 1 copy, 2 let go, 3 new
+// copy).
+function W3T_LeaderDeathMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, players : array<r_RemotePlayer>) : bool
+{
+    if(!client.getInParty())
+    {
+        if(players.Size() > 0 && bot.scenarioCount == 0)
+        {
+            W3T_Log("PARTY join " + players[0].username);
+            thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+            client.joinParty(players[0].username);
+        }
+        return false;
+    }
+    if(bot.scenarioCount == 0 && coop.PuppetCount() > 0)
+    {
+        bot.scenarioCount = 1;
+    }
+    else if(bot.scenarioCount == 1 && coop.PuppetCount() == 0)
+    {
+        W3T_Log("DEATH member let go of the leader's monsters");
+        bot.scenarioCount = 2;
+    }
+    else if(bot.scenarioCount == 2 && coop.PuppetCount() > 0)
+    {
+        W3T_Log("DEATH member copies the leader's new drowner");
+        bot.scenarioCount = 3;
+    }
+    W3T_Log("DEATH member step=" + bot.scenarioCount + " puppets=" + coop.PuppetCount() + " role=" + coop.GetRole() + " inParty="
+        + client.getInParty());
+    return bot.scenarioCount == 3;
 }
 
 // member_death, leader: the drowner of enemy_attacks, immortal, fights the member's character until the member dies;
