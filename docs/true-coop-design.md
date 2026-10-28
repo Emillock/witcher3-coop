@@ -762,6 +762,21 @@ Witcher Online's own presence features, first tested on the port with `horse_rid
   0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
   stays as `prevEmote`).
 
+## Latest suite (2026-10-28)
+
+`run_suite.py`, two game clients on one PC, 27 scenarios: 26 passed in the full run (a session of 20, then 7 in fresh
+games); facts_sync didn't start because the leader's game crashed while loading (an access violation before any
+script ran) and passed when run again. Since then member_combat and player_effects had test fixes (casting Axii and
+Yrden from 3 m; the cleanup ends a Quen shield that kept the next scenario's burning off) and pass, also against the
+installed 0.3.1 build (shared_enemy, enemy_attacks, member_combat, enemy_effects, sign_visuals, player_effects,
+trade, enemy_crowd, member_death). Over real Steam the suite last ran 2026-10-20 (16/16, the scenarios of that day).
+
+| In the session | | Fresh games | |
+|---|---|---|---|
+| see_each_other, movement, horse_ride, social, trade, player_effects | PASS | quest_sync, dialog_sync, real_encounter, attack_view | PASS |
+| shared_enemy, enemy_attacks, reactions, twin_match, encounter_mismatch, handoff, puppet_walk | PASS | facts_sync | PASS on the rerun |
+| enemy_projectiles, member_combat, enemy_effects, sign_visuals, enemy_spells, enemy_moves, enemy_crowd | PASS | member_death, leader_death | PASS |
+
 ## Verification (2026-10-19, all milestones)
 
 `run_suite.py` with two game clients on one PC; every scenario is pass/fail by the in-game bots.
