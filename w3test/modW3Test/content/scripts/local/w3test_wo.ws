@@ -1952,7 +1952,7 @@ function W3T_CombatLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remote
         + FloatToStringPrec(monster.GetHealthPercents(), 3) + " burning=" + monster.HasBuff(EET_Burning)
         + " knockedDown=" + (monster.HasBuff(EET_Knockdown) || monster.HasBuff(EET_HeavyKnockdown))
         + " stagger=" + monster.HasBuff(EET_Stagger) + " everBurned=" + bot.scenarioFlag + " throwCopies=" + coop.throwCopies
-        + " copyFailures=" + coop.throwCopyFailures + " copyDamageDropped=" + coop.throwDamageDropped + " everConfused=" + ((bot.scenarioStep & 1) != 0) + " everSlowed=" + ((bot.scenarioStep & 2) != 0)
+        + " copyFailures=" + coop.throwCopyFailures + " copyDamageDropped=" + coop.throwDamageDropped + " heavy=" + coop.heavyClaims + " everConfused=" + ((bot.scenarioStep & 1) != 0) + " everSlowed=" + ((bot.scenarioStep & 2) != 0)
         + " lastError=" + coop.lastError);
     return coop.hitsApplied >= 3 && coop.hitEffectsApplied >= 2 && coop.throwCopies >= 2 && bot.scenarioStep == 3;
 }
@@ -2012,9 +2012,13 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
         thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
         thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
     }
-    else if(step < 3)
+    else if(step < 2)
     {
         thePlayer.SetupCombatAction(EBAT_LightAttack, BS_Pressed);
+    }
+    else if(step == 2)
+    {
+        thePlayer.SetupCombatAction(EBAT_HeavyAttack, BS_Released);
     }
     else if(step >= 5)
     {

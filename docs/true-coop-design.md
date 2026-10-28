@@ -452,6 +452,10 @@ True Co-op rule).
   - Damage over time stays in the member's world: its effect ticks with the member's skills and the ticks are
     claimed. On the leader, damage over time from a ghost is always dropped.
   - See Open questions: in the test games no status effect takes hold, so only the messages are verified.
+  - A member's hit carries its hit reaction (2026-10-28; `r:<type>` among its effects, which an older leader takes
+    for no effect): the leader's monster reacts as hit there, a heavy blow heavily and a burning tick not at all
+    (every claim was a light hit before), and other members' copies replay that. `member_combat` swings heavily once
+    a round: the leader applied 2 heavy hits.
   - Effects a member puts straight on a puppet, not through a hit (2026-10-28), stayed in the member's world: Axii
     confuses (and staggers) its target with `AddEffectCustom`, Yrden slows whoever stands in it, 0.1 s at a time.
     A member's Axii dazed only its copy, while the leader's monster went on attacking. The `AddEffectCustom` and
