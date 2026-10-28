@@ -688,9 +688,11 @@ reached the choices.
 
 ## Many monsters at once (2026-10-28)
 
-The leader shares at most 24 monsters. `enemy_crowd` spawns that many drowners around the member's character: the
-member copied all 24 and both games kept full speed; the leader's snapshot was at most 2.7 KB (about 110 bytes a
-monster). The server and the client read each datagram into 8192 bytes, and co-op messages are sent whole, so one
+The leader shared at most 24 monsters; a member hides its own monsters the leader doesn't share, so in a bigger fight
+some were invisible to the member while they fought the leader. `enemy_crowd` spawned 24 drowners around the
+member's character: the member copied all 24 and both games kept full speed, and the leader's snapshot was at most
+2.7 KB (about 110 bytes a monster). The limit is 48 now (as many as its search finds near each player); with 40
+drowners all 40 were copied, the snapshot was at most 3.8 KB, and both games kept full speed. The server and the client read each datagram into 8192 bytes, and co-op messages are sent whole, so one
 over 8 KB was cut; that takes nearly every monster in the middle of an attack with effects and a projectile in the
 air at once. Both now read up to 64 KB (`server_coop_test.py` sends a 20 KB message through the server). The Steam
 relay already took 64 KB.

@@ -2044,7 +2044,7 @@ function W3T_ShootBolt(target : CActor)
         + FloatToStringPrec(target.GetHealthPercents(), 3));
 }
 
-// enemy_crowd, leader: W3T_CROWD (default 24, the most it shares) immortal drowners in a ring 6-12 m around the
+// enemy_crowd, leader: W3T_CROWD (default 40; it shares up to 48) immortal drowners in a ring 6-12 m around the
 // member's character, neutral to this Geralt. Passes 10 s after the last, with all of them shared.
 function W3T_CrowdLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
@@ -2054,7 +2054,7 @@ function W3T_CrowdLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemoteP
     var rot : EulerAngles;
     var wanted, i : int;
 
-    wanted = StringToInt(W3T_GetEnv("W3T_CROWD"), 24);
+    wanted = StringToInt(W3T_GetEnv("W3T_CROWD"), 40);
     if(coop.GetRole() != 1 || !member.ghost)
     {
         return false;
@@ -2089,7 +2089,7 @@ function W3T_CrowdMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_C
 {
     var wanted : int;
 
-    wanted = StringToInt(W3T_GetEnv("W3T_CROWD"), 24);
+    wanted = StringToInt(W3T_GetEnv("W3T_CROWD"), 40);
     if(!client.getInParty())
     {
         W3T_Log("PARTY join " + leader.username);
