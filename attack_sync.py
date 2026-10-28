@@ -141,6 +141,11 @@ def main():
                 fdelay.append(min(later))
         print(f"script effects started {len(fx_starts)} ({', '.join(sorted({f for n, f, t in fx_starts}))}), on the copy {len(fdelay)}"
               + (f", delay median {statistics.median(fdelay):.0f} ms max {max(fdelay):.0f} ms" if fdelay else ""))
+    # the copy hidden while its monster is invisible (in the effects above as "!hidden"), and how far from the leader's
+    # monster it reappeared ("!shown/m")
+    shown = [w.split("/")[1] for k, n, s, w, t in memb if k == "MF" and w.startswith("!shown/")]
+    if shown:
+        print(f"copy shown again {len(shown)} times, at {', '.join(shown[:8])} m from the leader's monster")
     # effects put straight on the member's ghost (LD) and applied to the member (MD: type/result), hit effects (MW)
     ld = [w for k, n, s, w, t in lead if k == "LD"]
     md = [w for k, n, s, w, t in memb if k == "MD"]

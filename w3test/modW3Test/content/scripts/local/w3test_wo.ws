@@ -799,7 +799,7 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     var npc : CNewNPC;
     var rot : EulerAngles;
     var action : W3DamageAction;
-    var keep : float;
+    var keep, hide : float;
     var spot, away : Vector;
 
     if(bot.scenarioCount == 0)
@@ -835,6 +835,21 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
     npc = (CNewNPC)bot.scenarioEntity;
     W3T_LookAt(npc.GetWorldPosition());
     W3T_Counter(bot, npc);
+    // W3T_VIEW_HIDE=N: every N s in a fight its monster vanishes for 1.5 s and reappears 4 m aside, as a teleport with
+    // forceInvisible does (no tested monster vanished by itself): its copy must hide and follow
+    hide = StringToFloat(W3T_GetEnv("W3T_VIEW_HIDE"), 0);
+    if(hide > 0 && !npc.GetVisibility() && bot.ElapsedS() - bot.scenarioFarSince >= 1.5)
+    {
+        npc.SetVisibility(true);
+        W3T_Log("VIEW shown");
+    }
+    else if(hide > 0 && W3T_Fighting(npc) && npc.GetVisibility() && bot.ElapsedS() - bot.scenarioFarSince >= hide)
+    {
+        bot.scenarioFarSince = bot.ElapsedS();
+        npc.SetVisibility(false);
+        npc.Teleport(npc.GetWorldPosition() + VecFromHeading(npc.GetHeading() + 90) * 4.0);
+        W3T_Log("VIEW hidden");
+    }
     // it stays on the leader (stood off, the member's character can come nearer, and it switched to that one)
     if(W3T_Fighting(npc) && npc.GetTarget() != thePlayer && bot.ElapsedS() - bot.scenarioSeenAt >= 2)
     {
@@ -1017,8 +1032,6 @@ function W3T_SwingAt(bot : W3T_Bot, monster : CNewNPC)
 function W3T_EnemySpellsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var monster : CNewNPC;
-    var spot : Vector;
-    var rot : EulerAngles;
 
     if(bot.scenarioCount == 0)
     {
@@ -1041,21 +1054,7 @@ function W3T_EnemySpellsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
         return false;
     }
     monster = (CNewNPC)bot.scenarioEntity;
-    if(FloorF(bot.ElapsedS() / 6) % 2 == 0)
-    {
-        W3T_SwingAt(bot, monster);
-    }
-    else
-    {
-        W3T_LookAt(monster.GetWorldPosition());
-        if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) < W3T_KiteDistance() - 3
-            && theGame.GetWorld().NavigationFindSafeSpot(monster.GetWorldPosition()
-            + VecNormalize2D(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * W3T_KiteDistance(), 0.5, 3.0, spot))
-        {
-            rot.Yaw = VecHeading(monster.GetWorldPosition() - spot);
-            thePlayer.TeleportWithRotation(spot, rot);
-        }
-    }
+    W3T_SwingOrKite(bot, monster);
     if(coop.lastAttackTask != "" && StrFindFirst(bot.scenarioText, " " + coop.lastAttackTask + " ") < 0)
     {
         bot.scenarioText += " " + coop.lastAttackTask + " ";
@@ -1077,6 +1076,28 @@ function W3T_HasCombatData(actor : CActor) : bool
         return true;
     }
     return false;
+}
+
+// enemy_spells, enemy_summons: 6 s swinging at the monster, then 6 s standing off (W3T_KiteDistance), in turn (monsters
+// cast and summon at range, up close they only swing)
+function W3T_SwingOrKite(bot : W3T_Bot, monster : CNewNPC)
+{
+    var spot : Vector;
+    var rot : EulerAngles;
+
+    if(FloorF(bot.ElapsedS() / 6) % 2 == 0)
+    {
+        W3T_SwingAt(bot, monster);
+        return;
+    }
+    W3T_LookAt(monster.GetWorldPosition());
+    if(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()) < W3T_KiteDistance() - 3
+        && theGame.GetWorld().NavigationFindSafeSpot(monster.GetWorldPosition()
+        + VecNormalize2D(thePlayer.GetWorldPosition() - monster.GetWorldPosition()) * W3T_KiteDistance(), 0.5, 3.0, spot))
+    {
+        rot.Yaw = VecHeading(monster.GetWorldPosition() - spot);
+        thePlayer.TeleportWithRotation(spot, rot);
+    }
 }
 
 // enemy_spells: how far the leader stands off (W3T_KITE, 11 m by default)
@@ -1128,7 +1149,7 @@ function W3T_EnemySpellsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
 }
 
 // enemy_summons, leader: a summoner (a noonwraith unless W3T_MONSTER: it calls up doppelgangers), immortal, next to
-// the member's ghost and hostile to both players; this Geralt swings at it every 2 s. Passes once another monster
+// the member's ghost and hostile to both players; this Geralt swings at it and stands off in turn (W3T_SwingOrKite). Passes once another monster
 // (a summoned one) is among its shared monsters.
 function W3T_EnemySummonsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
@@ -1150,7 +1171,7 @@ function W3T_EnemySummonsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         return false;
     }
     monster = (CNewNPC)bot.scenarioEntity;
-    W3T_SwingAt(bot, monster);
+    W3T_SwingOrKite(bot, monster);
     for(i = 0; i < coop.HostEnemyCount(); i += 1)
     {
         other = coop.HostEnemyAt(i);

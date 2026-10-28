@@ -273,7 +273,10 @@ True Co-op rule).
       meanwhile, moving it straight to the leader's spot. `attack_view` and `enemy_attacks` with a fugas and
       `W3T_COUNTER=4` (its vomit is a counter-attack): 5 of 5 vomits on the puppet, 14-44 ms behind. A wraith
       (`wraith_lvl1`, the leader standing off at 14 m) teleported twice: its vanishing and reappearing effects played on
-      the puppet, 4 of 4, 42 ms behind; it never turned invisible, so `!hidden` is untested.
+      the puppet, 4 of 4, 42 ms behind; it never turned invisible. Teleports with `forceInvisible` do (the leshen's
+      crows, Hym, the witches), but none came in tests, so `W3T_VIEW_HIDE=5` does what they do: every 5 s the leader's
+      monster turns invisible for 1.5 s and reappears 4 m aside. A drowner's puppet hid 26 of 26 times, 13 ms after
+      the leader's monster (42 ms at most), and reappeared 0-0.5 m from it (`!shown/m` in the log).
     - Attacks on the graph alone (2026-10-27): a 3-state attack whose task only raises a graph event, loops, then sets
       `AttackEnd` (a fugas' vomit; `CBTTask3StateAttack` and the subclasses that keep its `Main`) has no animation
       event scripts see before its end, so nothing could name its start or loop for the slot. The leader sends its
@@ -533,10 +536,11 @@ True Co-op rule).
     now goes out with the next frame's snapshot: Shaelmaar's rain of rocks (2026-10-27, at 40% health) came 187 for
     187.
 - **Summons.** A summoned creature is a hostile NPC near the leader like any other, so the leader collects it and
-  members get a copy. Untested: `enemy_summons` (a noonwraith, or `--monster` a leshen, immortal, swung at every
-  2 s) saw no summon in 1-4 minutes in Novigrad (2026-10-21); the doppelganger summon is decided in the
-  noonwraith's tree, likely at a health threshold. A Novigrad guard who joined the fight was collected and copied.
-  A puppet never starts its own summon task (its gate, above).
+  members get a copy. Verified 2026-10-28: `enemy_summons --monster ...lessog_lvl1.w2ent` (the leader swings at the
+  leshen for 6 s, then stands off at 11 m for 6 s, in turn: up close it only swung, 140 times in 5 minutes) summoned
+  wolves (`wolf_lvl1__summon`) after 3 minutes; 4 s later the leader shared 3 of them and the member had 3 wolf
+  copies. A Novigrad guard who joined the fight was collected and copied too. A puppet never starts its own summon
+  task (its gate, above).
 - **Not done:**
   - Shaelmaar's swings play on its puppet now (2026-10-27, `attack_view`: 12 of 12 with the leader's animation,
     0.26-0.58 s late: its swings show nothing before a RotateEvent or their hit window, and its two shoulder swings
