@@ -859,8 +859,9 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
             W3T_Quit(1);
             return false;
         }
-        // (with the kill's experience, as for any monster killed within 20 m of this player)
-        W3T_Log("ENEMY member saw the drowner die; no duplicate; xp=" + GetWitcherPlayer().levelManager.GetPointsTotal(EExperiencePoint));
+        // (with the kill's experience: this player hit it, so it is this player's kill too)
+        W3T_Log("ENEMY member saw the drowner die; no duplicate; xp=" + GetWitcherPlayer().levelManager.GetPointsTotal(EExperiencePoint)
+            + " credited=" + coop.killsCredited);
         bot.scenarioCount = 5;
     }
     return bot.scenarioCount >= 5;
@@ -1815,7 +1816,7 @@ function W3T_SignVisualsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     var ownYrden : string;
     var igni : W3IgniEntity;
     var aard : W3AardEntity;
-    var seen : int;
+    var seen, sign : int;
 
     if(!client.getInParty())
     {
@@ -1852,7 +1853,14 @@ function W3T_SignVisualsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
         }
         // back on the spot it joined at: the drowner's hits push it around (off the quay, out of the leader's view)
         thePlayer.TeleportWithRotation(bot.scenarioVec, rot);
-        switch(bot.scenarioCount % 5)
+        // after two rounds only Quen: the other signs now hold the leader's drowner too (Axii dazes it, Yrden slows it,
+        // Igni and Aard burn and fell it), and it must get to hit the shield
+        sign = bot.scenarioCount % 5;
+        if(bot.scenarioCount >= 10)
+        {
+            sign = 4;
+        }
+        switch(sign)
         {
             case 0: GetWitcherPlayer().SetEquippedSign(ST_Igni); break;
             case 1: GetWitcherPlayer().SetEquippedSign(ST_Aard); break;
@@ -1879,7 +1887,8 @@ function W3T_SignVisualsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
 
 // member_combat, leader: the drowner of enemy_attacks, immortal so it takes every kind of hit. Passes once members'
 // hits did damage and their effects were added to its hits (whether they take hold is logged), copies of the
-// member's bomb and bolt flew here (their own damage dropped), and the member's Axii confused it (scenarioStep 1).
+// member's bomb and bolt flew here (their own damage dropped), and the member's Axii confused it and its Yrden slowed
+// it (scenarioStep bits 1 and 2).
 function W3T_CombatLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
     var monster : CNewNPC;
@@ -1904,23 +1913,28 @@ function W3T_CombatLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remote
     {
         monster.SetHealthPerc(1.0);
     }
-    if(monster.HasBuff(EET_Confusion))
+    // (as they took hold: the next hit, a burning tick too, ends Axii's confusion within a second)
+    if(coop.effectTypesHeld.Contains((int)EET_Confusion))
     {
-        bot.scenarioStep = 1;
+        bot.scenarioStep = bot.scenarioStep | 1;
+    }
+    if(coop.effectTypesHeld.Contains((int)EET_Slowdown))
+    {
+        bot.scenarioStep = bot.scenarioStep | 2;
     }
     W3T_Log("COMBAT leader hitsApplied=" + coop.hitsApplied + " effects=" + coop.hitEffectsApplied + " held=" + coop.hitEffectsHeld + " hp="
         + FloatToStringPrec(monster.GetHealthPercents(), 3) + " burning=" + monster.HasBuff(EET_Burning)
         + " knockedDown=" + (monster.HasBuff(EET_Knockdown) || monster.HasBuff(EET_HeavyKnockdown))
         + " stagger=" + monster.HasBuff(EET_Stagger) + " everBurned=" + bot.scenarioFlag + " throwCopies=" + coop.throwCopies
-        + " copyFailures=" + coop.throwCopyFailures + " copyDamageDropped=" + coop.throwDamageDropped + " everConfused=" + (bot.scenarioStep == 1)
+        + " copyFailures=" + coop.throwCopyFailures + " copyDamageDropped=" + coop.throwDamageDropped + " everConfused=" + ((bot.scenarioStep & 1) != 0) + " everSlowed=" + ((bot.scenarioStep & 2) != 0)
         + " lastError=" + coop.lastError);
-    return coop.hitsApplied >= 3 && coop.hitEffectsApplied >= 2 && coop.throwCopies >= 2 && bot.scenarioStep == 1;
+    return coop.hitsApplied >= 3 && coop.hitEffectsApplied >= 2 && coop.throwCopies >= 2 && bot.scenarioStep == 3;
 }
 
 // member_combat, member: walks up to the puppet and fights it as a player: three sword swings, Igni, Aard, a fire hit
-// and a knockdown carried by this player's damage actions, a bomb, a crossbow bolt and Axii, over and over
+// and a knockdown carried by this player's damage actions, a bomb, a crossbow bolt, Axii and Yrden, over and over
 // (scenarioCount: steps done). Passes once its sword, signs, bomb and bolt sent hits, effects went out, and Axii's
-// confusion (put straight on the puppet, no hit) went out alone.
+// confusion and Yrden's slowdown (put straight on the puppet, no hit) went out alone.
 function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     var puppet : CNewNPC;
@@ -1950,7 +1964,7 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     W3T_LookAt(puppet.GetWorldPosition());
     thePlayer.GoToCombatIfNeeded(puppet);
 
-    step = bot.scenarioCount % 10;
+    step = bot.scenarioCount % 11;
     if(step == 7)
     {
         W3T_ThrowBomb(puppet);
@@ -1959,9 +1973,16 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     {
         W3T_ShootBolt(puppet);
     }
-    else if(step == 9)
+    else if(step >= 9)
     {
-        GetWitcherPlayer().SetEquippedSign(ST_Axii);
+        if(step == 9)
+        {
+            GetWitcherPlayer().SetEquippedSign(ST_Axii);
+        }
+        else
+        {
+            GetWitcherPlayer().SetEquippedSign(ST_Yrden);
+        }
         thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
         thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
     }
@@ -2003,7 +2024,7 @@ function W3T_CombatMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
 
     W3T_Log("COMBAT member step=" + step + " hitsSent=" + coop.hitsSent + " melee=" + coop.meleeHitsSent + " sign="
         + coop.signHitsSent + " effects=" + coop.hitEffectsSent + " bomb=" + coop.bombHitsSent + " bolt=" + coop.boltHitsSent
-        + " ownEffects=" + coop.ownEffectsSent + " puppetConfused=" + puppet.HasBuff(EET_Confusion) + " throwsSent=" + coop.throwsSent + " lastThrow=" + coop.lastThrow + " puppetBurning=" + puppet.HasBuff(EET_Burning) + " puppetDown="
+        + " ownEffects=" + coop.ownEffectsSent + " localDropped=" + coop.localEffectsDropped + " puppetConfused=" + puppet.HasBuff(EET_Confusion) + " throwsSent=" + coop.throwsSent + " lastThrow=" + coop.lastThrow + " puppetBurning=" + puppet.HasBuff(EET_Burning) + " puppetDown="
         + (puppet.HasBuff(EET_Knockdown) || puppet.HasBuff(EET_HeavyKnockdown) || puppet.HasBuff(EET_Stagger) || puppet.HasBuff(EET_LongStagger)) + " dist="
         + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));
     return coop.meleeHitsSent >= 3 && coop.signHitsSent >= 1 && coop.hitEffectsSent >= 2 && coop.bombHitsSent >= 1 && coop.boltHitsSent >= 1

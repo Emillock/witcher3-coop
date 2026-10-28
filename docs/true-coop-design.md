@@ -460,7 +460,17 @@ True Co-op rule).
     resistances decide). Ones added while a damage action is processed are left out (they go with that hit). The
     same effect on the same puppet goes at most every 0.5 s, lasting at least 0.6 s, so Yrden's slowdown holds
     while the monster stands in it and ends shortly after. Axii's puppet skill (`EET_AxiiGuardMe`, a human fights
-    for the caster) stays in the caster's world. `member_combat` now also casts Axii: its confusion and stagger went to the leader alone, and the leader's drowner was confused.
+    for the caster) stays in the caster's world. `member_combat` now also casts Axii and Yrden: their confusion,
+    stagger and slowdown went to the leader alone, and the leader's drowner was confused and slowed (each kind is
+    recorded as it takes hold: the next hit, a burning tick too, ends Axii's confusion within a second, so a 1 s
+    check missed it).
+  - The leader's world decides which effects show on a copy (2026-10-28): one of the member's own on it that the
+    leader's monster doesn't have, resisted or already ended there, goes after a second (not forced). The copy had
+    stayed dazed by the member's Axii while the leader's monster, hit by a burning tick, fought on. Only with a leader
+    that lists its effects (a newer version: it sends its own with `hz`). `member_combat`: 5 dropped.
+  - A member who hit a shared monster is its killer when the copy dies (`Kill` with this player as attacker), so
+    the kill's experience comes as for its own kill, wherever it stands. Before, as for anyone's kill, only within
+    20 m of it (`ShouldGiveExp`). `shared_enemy` logs it.
 - **Status effects on the leader's monster show on its copies** (2026-10-28). Before, a copy showed only the hit
   reaction: when the leader set its monster on fire, knocked it down with Aard or froze it, members saw it standing
   as before. The leader now lists its monsters' effects that show (`CoopShowsEffect`: burning, frozen, knockdowns,

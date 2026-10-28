@@ -28,14 +28,21 @@ New in v0.3.0: monster copies play the leader's monsters' exact attack and move 
 milliseconds behind (the same swing, throw, charge, spell or sign, so spells' area effects show for members too), and
 dodge, taunt, jump back and parry when they do. Effects a monster's attack plays from its script show on the copy, and
 effects it applies without a hit (a fugas' burning vomit, a wraith's blinding aura) reach members.
-Not released yet (after v0.3.0): attacks that run on the monster's animation graph alone (a fugas' vomit, a troll's
-rage) play their body animation on the copy too; a monster burning, frozen, knocked down, blinded or dazed by Axii
-looks that way on its copies too (before, only its hit reaction showed); a player's bombs and crossbow bolts fly and
-explode for the other players too (harmless copies: the hit counts once, through the thrower), and a burning, frozen or
-knocked-down player looks that way to the others; a member's Axii and
-Yrden now hold the leader's monster too, not only its copy; and a player's horse
-stays in sight for the others where they left it (Witcher Online showed it only while ridden; the host needs this
-version's server). v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
+Not released yet (after v0.3.0; the host needs this version's server):
+- Attacks that run on the monster's animation graph alone (a fugas' vomit, a troll's rage) play their body
+  animation on the copy too.
+- A monster burning, frozen, knocked down, blinded or dazed by Axii looks that way on its copies (before, only its
+  hit reaction showed); a burning, frozen or knocked-down player looks that way to the others.
+- A player's bombs and crossbow bolts fly and explode for the other players too (harmless copies: the hit counts
+  once, through the thrower).
+- A member's Axii and Yrden hold the leader's monster too, not only its copy; a member who hit a shared monster gets
+  the kill's experience wherever it stands.
+- A member killed in a shared fight respawns from its save as usual and is back in the fight: the leader's monsters
+  no longer keep hitting its character meanwhile (those hits all landed on the respawn and killed it again).
+- Up to 48 monsters are shared at once (was 24; past that a member didn't see the rest).
+- A player's horse stays in sight for the others where they left it (Witcher Online showed it only while ridden).
+
+v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
 | | |
 |---|---|
@@ -118,8 +125,8 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py player_effects` | The member burns, is knocked down, frozen and poisoned in turn; the leader checks that its character shows each and loses it again. |
 | `python run_test.py member_death` | The member (little health, mortal) is killed by the leader's drowner and respawns from its save as the death screen does: it must be back in the party with its copy of the drowner, without the hits that were aimed at its character meanwhile. |
 | `python run_test.py leader_death` | The leader dies and respawns from its save: the member lets go of its monsters meanwhile, stays in the party and copies the leader's new drowner. |
-| `python run_test.py member_combat` | The member fights the leader's (immortal) drowner's copy with real sword swings, Igni, Aard, Axii, a bomb and a crossbow bolt: the leader applies the hits and the effects they carry (Axii's confusion, put on without a hit, too), and throws harmless copies of the bomb and bolt from the member's character. |
-| `python run_test.py sign_visuals` | The member fights the leader's drowner and casts all five signs: its own Igni and Aard play their effects, and the leader shows each sign at the member's character (Igni's fire, Aard's wave, Axii, Yrden's trap, Quen's shield), with the member's own Yrden range and duration and its Quen's hit bursts. `W3T_OLD_SIGNS=1` ignores the sign fields of the member's snapshots, as from an older version. |
+| `python run_test.py member_combat` | The member fights the leader's (immortal) drowner's copy with real sword swings, Igni, Aard, Axii, Yrden, a bomb and a crossbow bolt: the leader applies the hits and the effects they carry (Axii's confusion and Yrden's slowdown, put on without a hit, too), and throws harmless copies of the bomb and bolt from the member's character. |
+| `python run_test.py sign_visuals` | The member fights the leader's drowner and casts all five signs (after two rounds only Quen, so that the drowner, dazed and slowed by the others, gets to hit the shield): its own Igni and Aard play their effects, and the leader shows each sign at the member's character (Igni's fire, Aard's wave, Axii, Yrden's trap, Quen's shield), with the member's own Yrden range and duration and its Quen's hit bursts. `W3T_OLD_SIGNS=1` ignores the sign fields of the member's snapshots, as from an older version. |
 | `python run_test.py sign_check --bots 1` | One game, no co-op needed: the game's effect definitions and what Igni/Aard do to a drowner (a diagnostic: with a mod that replaces the game's effect list, no status effect takes hold). |
 | `python run_test.py enemy_projectiles [--monster PATH]` | The leader's archer (a Baron's bandit with a bow by default) shoots at the member's ghost: copies of its arrows fly on the member's side, and a hit lands on the member. |
 | `python run_test.py enemy_moves [--monster PATH]` | The leader swings at its monster (a sword bandit by default, made to dodge every swing and taunt every 6 s), which dodges, parries or taunts; the puppet must show the same dodges and parries (the leader's animation on its slot; with `W3T_SLOT_MOVES=0` made by its own AI) for 3 of 4 of at least 8. Taunts and moves of its own are logged. |
