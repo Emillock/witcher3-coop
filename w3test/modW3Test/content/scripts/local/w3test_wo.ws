@@ -419,6 +419,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_QuestMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "encounter_mismatch")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_TwinLeader(bot, client.getCoopEnemies());
+        }
+        return W3T_MismatchMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "reactions" || scenario == "twin_match")
     {
         if(ghosts < 1)
@@ -2795,6 +2808,56 @@ function W3T_TwinLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
         bot.scenarioCount = 4;
     }
     return bot.scenarioCount == 4;
+}
+
+// encounter_mismatch, member: after joining, spawns a nekker where the leader spawns its drowner (this world's encounter
+// came out differently). Passes once the leader's drowner is here as a spawned copy while this world's nekker is
+// hidden and not a copy (the leader's world has no such nekker, so this player doesn't see one).
+function W3T_MismatchMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var mine : CNewNPC;
+    var rot : EulerAngles;
+    var spawnedDrowner, minePuppet : bool;
+    var i : int;
+
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioVec = thePlayer.GetWorldPosition();
+        bot.scenarioCount = 1;
+        return false;
+    }
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(bot.scenarioCount == 1)
+    {
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\nekker_lvl1.w2ent", true);
+        bot.scenarioEntity = theGame.CreateEntity(template, W3T_TwinSpot(bot.scenarioVec), rot, true, false, false, PM_DontPersist);
+        W3T_Log("MISMATCH member spawned this world's nekker at " + W3T_VecStr(W3T_TwinSpot(bot.scenarioVec)));
+        bot.scenarioCount = 2;
+        return false;
+    }
+    mine = (CNewNPC)bot.scenarioEntity;
+    for(i = 0; i < coop.PuppetCount(); i += 1)
+    {
+        if(coop.PuppetAt(i) == mine)
+        {
+            minePuppet = true;
+        }
+        else if(StrFindFirst(coop.PuppetAt(i).GetReadableName(), "drowner_lvl1") >= 0 && coop.PuppetSpawned(i))
+        {
+            spawnedDrowner = true;
+        }
+    }
+    W3T_Log("MISMATCH member puppets=" + coop.PuppetCount() + " spawnedDrowner=" + spawnedDrowner + " nekkerIsCopy=" + minePuppet
+        + " suppressed=" + coop.SuppressedCount() + " nekkerVisible=" + mine.GetVisibility() + " nekkerAlive=" + mine.IsAlive()
+        + " hurtsApplied=" + coop.hurtsApplied);
+    return spawnedDrowner && !minePuppet && !mine.GetVisibility();
 }
 
 // twin_match, member: after joining, spawn this world's drowner at the same spot (hidden while unmatched); when

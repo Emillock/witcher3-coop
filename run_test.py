@@ -26,7 +26,7 @@ GAME_ARGS = os.environ.get("W3T_GAME_ARGS", "-windowed -width 640 -height 360 -d
 # scenarios where the leader waits for the member to load and join before acting
 LONG_SCENARIOS = ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync",
                   "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide", "enemy_moves", "enemy_summons", "enemy_spells", "real_encounter",
-                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade")
+                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade", "encounter_mismatch")
 
 
 def default_duration(scenario):

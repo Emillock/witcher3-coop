@@ -801,7 +801,9 @@ account, and traffic flowed both ways.
   - Effect forwarding then works both ways: in `member_combat` the member's Igni and Aard hits carried 6 effects
     to the leader's drowner, 3 held, and it burned; in `reactions` the leader's drowner's bleeding hit made the
     member bleed.
-- Encounter matching is tested with script-spawned twins and one real nest (nekkers). Encounters whose spawns
-  differ between the two worlds (random sets, other monster types) are untested.
+- Encounter matching is tested with script-spawned twins and one real nest (nekkers). An encounter that came out
+  differently in the member's world (`encounter_mismatch`, 2026-10-28: a nekker there, a drowner in the leader's at
+  the same spot): the member's nekker stayed hidden and idle, not a copy, and the leader's drowner came as a spawned
+  copy. Random sets in real encounters are still untested.
 - The facts layout is from 5.01; a game patch that changes it turns fact sync off (logged as the reason) until
   the layout is checked again.
