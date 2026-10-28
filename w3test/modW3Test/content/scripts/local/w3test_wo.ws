@@ -2539,10 +2539,13 @@ function W3T_EffectsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remot
 }
 
 // enemy_effects, member: each status effect on the leader's drowner shows on its copy while it lasts there and goes
-// with it. Passes once 4 were on the copy and as many ended.
+// with it. Then this world alone confuses the copy (not this player's, so not sent): with no effect on the leader's
+// drowner, the copy must lose it again (the leader's world decides). Passes once 4 were on the copy, as many ended,
+// and the lone confusion went.
 function W3T_EffectsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     var puppet : CNewNPC;
+    var params : SCustomEffectParams;
 
     if(!client.getInParty())
     {
@@ -2557,11 +2560,20 @@ function W3T_EffectsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
     }
     puppet = coop.PuppetAt(0);
     W3T_LookAt(puppet.GetWorldPosition());
-    W3T_Log("EFFECTS member mirrored=" + coop.effectsMirrored + " held=" + coop.effectsMirrorHeld + " ended=" + coop.effectsMirrorEnded
+    if(!bot.scenarioFlag && coop.effectsMirrorEnded >= 5 && !puppet.HasBuff(EET_Confusion))
+    {
+        params.effectType = EET_Confusion;
+        params.sourceName = "W3Test";
+        params.duration = 10;
+        W3T_Log("EFFECTS member confuses the copy here only, for 10 s: result=" + (int)puppet.AddEffectCustom(params));
+        bot.scenarioFlag = true;
+    }
+    W3T_Log("EFFECTS member localDropped=" + coop.localEffectsDropped + " mirrored=" + coop.effectsMirrored + " held=" + coop.effectsMirrorHeld + " ended=" + coop.effectsMirrorEnded
         + " burning=" + puppet.HasBuff(EET_Burning) + " down=" + (puppet.HasBuff(EET_Knockdown) || puppet.HasBuff(EET_HeavyKnockdown))
         + " frozen=" + puppet.HasBuff(EET_Frozen) + " blind=" + puppet.HasBuff(EET_Blindness) + " confused=" + puppet.HasBuff(EET_Confusion)
         + " bleeding=" + puppet.HasBuff(EET_Bleeding) + " hp=" + FloatToStringPrec(puppet.GetHealthPercents(), 3));
-    return coop.effectsMirrorHeld >= 4 && coop.effectsMirrorEnded >= 4;
+    return coop.effectsMirrorHeld >= 4 && coop.effectsMirrorEnded >= 4 && bot.scenarioFlag && coop.localEffectsDropped >= 1
+        && !puppet.HasBuff(EET_Confusion);
 }
 
 // enemy_projectiles, leader: the monster of enemy_attacks (a Baron's bandit with a bow unless W3T_MONSTER) shoots at
