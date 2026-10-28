@@ -714,6 +714,17 @@ over 8 KB was cut; that takes nearly every monster in the middle of an attack wi
 air at once. Both now read up to 64 KB (`server_coop_test.py` sends a 20 KB message through the server). The Steam
 relay already took 64 KB.
 
+## A member on horseback (2026-10-28)
+
+Monsters go for a rider's horse. In the leader's world a riding member sits on Witcher Online's horse for remote
+riders, which Witcher Online keeps out of gameplay (`SetGameplayVisibility(false)`): the leader's drowner made that
+horse its target and then stood by it, 0 attacks in 3 minutes (`mounted_fight`), so a riding member could not be
+hurt at all. Now, while a party member rides, the leader shows its horse to gameplay; a shared monster's hit on it
+goes to the member as a hurt (the horse here takes none), and a swing that strikes both the horse and the rider in
+the same moment lands once (a hit on the horse and one on the rider, same attack, within 0.1 s; two rocks of a
+volley still both land). `mounted_fight`: the drowner attacked the riding member, 2 swings struck horse and rider,
+and the member took 2 hurts.
+
 ## A member's death (2026-10-28)
 
 A member killed by a shared monster gets the game's own death screen and loads its last save, as in single player

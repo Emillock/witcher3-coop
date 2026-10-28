@@ -278,6 +278,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "mounted_fight")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_MountedLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_MountedMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "trade")
     {
         if(players.Size() < 1)
@@ -2113,6 +2126,56 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// mounted_fight, leader: once the member sits on its horse, the drowner of enemy_attacks goes for it. Passes once two
+// of its hits on the mounted member were captured.
+function W3T_MountedLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    if(!member.ghost)
+    {
+        return false;
+    }
+    if(bot.scenarioCount == 0 && !member.isMounted)
+    {
+        W3T_Log("MOUNTED leader waits for the member to mount");
+        return false;
+    }
+    W3T_EnemyAttacksLeader(bot, coop, member);
+    W3T_Log("MOUNTED leader memberMounted=" + member.isMounted + " hurtsCaptured=" + coop.hurtsCaptured + " horseHits=" + coop.horseHitsSeen + " merged=" + coop.hurtsMerged);
+    return bot.scenarioCount >= 1 && coop.hurtsCaptured >= 2;
+}
+
+// mounted_fight, member: joins the party (invulnerable), calls and mounts its horse and stays on it. Passes once two
+// hurts landed while it was mounted (scenarioValue: hurts applied when it mounted).
+function W3T_MountedMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(!thePlayer.IsUsingHorse())
+    {
+        if(bot.ElapsedS() - bot.scenarioTime >= 5.0)
+        {
+            bot.scenarioTime = bot.ElapsedS();
+            InstantMountPlayer('None', EVT_Horse, false, false);
+            W3T_Log("MOUNTED member mounts");
+        }
+        W3T_Log("MOUNTED member on foot puppets=" + coop.PuppetCount() + " hurtsApplied=" + coop.hurtsApplied);
+        return false;
+    }
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioValue = coop.hurtsApplied;
+    }
+    W3T_Log("MOUNTED member riding puppets=" + coop.PuppetCount() + " hurtsApplied=" + coop.hurtsApplied + " sinceMounted="
+        + (coop.hurtsApplied - (int)bot.scenarioValue));
+    return coop.hurtsApplied - (int)bot.scenarioValue >= 2;
 }
 
 // trade, leader: gets a Dwarven spirit and offers it to the member for 10 crowns (Witcher Online's trade: the bot answers
