@@ -718,6 +718,14 @@ Witcher Online's own presence features, first tested on the port with `horse_rid
   loads its rider's AI when the rider mounts it (as Witcher Online's own spawn does), so the rider still sits on it.
   The server keeps up to 8 co-op channels per player (was 4: a leader already used en, hurt, jr, fx). `horse_ride`:
   the rider gets off and walks 6 m away; the watcher sees the horse where it was left within 1 s, the rider 6 m off.
+- **A player's own effects** (2026-10-28). Witcher Online showed nothing of them: a burning or frozen player looked
+  as always to the others, and a knocked-down one stood. Each player now sends its effects that show (the same set
+  as for monsters, `type:seconds` each, `-` for none) with its horse's place on `hz` (`hz seq flag x y z yaw
+  effects`, the horse fields zero without one): at once when they change. The others put each on that player's
+  character as long as it lasts there (source `W3CoopShown`, the character its creator, so its damage over time is
+  dropped like any a player's character deals), and take it off when it ended (not forced). `player_effects`: the
+  member burns, is knocked down, frozen and poisoned in turn; on the leader all four were on its character and
+  ended with it, and screenshots show the fire, the knockdown and the frozen look.
 - **Chat and emotes.** A chat line showed over the sender's copy within 0.2 s; a wave and a bow played on it
   0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
   stays as `prevEmote`).

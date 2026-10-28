@@ -14,7 +14,7 @@ sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
 
 # enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
-SCENARIOS = ["see_each_other", "movement", "horse_ride", "social", "shared_enemy", "enemy_attacks", "reactions", "twin_match", "handoff", "quest_sync",
+SCENARIOS = ["see_each_other", "movement", "horse_ride", "social", "player_effects", "shared_enemy", "enemy_attacks", "reactions", "twin_match", "handoff", "quest_sync",
              "dialog_sync", "facts_sync", "puppet_walk", "real_encounter", "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "attack_view",
              "enemy_spells", "enemy_moves", "member_death", "leader_death"]  # puppet_walk also checks what puppet_follow does
 # over Steam only the transport differs: these cover connecting, movement, the co-op channel both ways and the snapshot

@@ -271,6 +271,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "player_effects")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_PlayerEffectsWatcher(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_PlayerEffectsTaker(bot, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "leader_death")
     {
         if(W3T_GetEnv("W3T_ROLE") == "mover")
@@ -2016,6 +2029,78 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// player_effects, member: puts burning, a knockdown, frozen and poison on itself, 6 s apart (invulnerable, so only
+// their look and animation count). Passes 8 s after the last.
+function W3T_PlayerEffectsTaker(bot : W3T_Bot, coop : r_CoopEnemies, other : r_RemotePlayer) : bool
+{
+    var effects : array<EEffectType>;
+    var given : int;
+
+    effects.PushBack(EET_Burning);
+    effects.PushBack(EET_Knockdown);
+    effects.PushBack(EET_Frozen);
+    effects.PushBack(EET_Poison);
+    if(bot.scenarioCount == 0)
+    {
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    given = bot.scenarioCount - 1;
+    if(given < effects.Size() && bot.ElapsedS() - bot.scenarioTime >= 6)
+    {
+        W3T_Log("PEFFECTS taker gave itself " + EffectTypeToName(effects[given]) + " result="
+            + (int)thePlayer.AddEffectDefault(effects[given], thePlayer, "W3Test") + " sends " + coop.ownShownText);
+        bot.scenarioCount += 1;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    W3T_Log("PEFFECTS taker sends " + coop.ownShownText + " (" + coop.parkedSent + " sent)");
+    return given >= effects.Size() && bot.ElapsedS() - bot.scenarioTime >= 8;
+}
+
+// player_effects, leader: watches the member's character; passes once 3 of its effects showed on it and as many were
+// taken off again (scenarioStep: kinds seen on it, as bits).
+function W3T_PlayerEffectsWatcher(bot : W3T_Bot, coop : r_CoopEnemies, other : r_RemotePlayer) : bool
+{
+    var ghost : CActor;
+    var spot : Vector;
+    var rot : EulerAngles;
+
+    ghost = other.ghost;
+    if(!ghost)
+    {
+        return false;
+    }
+    // in view: 5 m behind the member's character as the camera looks (screenshots)
+    if(VecDistance2D(thePlayer.GetWorldPosition() + theCamera.GetCameraForwardOnHorizontalPlane() * 5.0, ghost.GetWorldPosition()) > 1.5
+        && theGame.GetWorld().NavigationFindSafeSpot(ghost.GetWorldPosition() - theCamera.GetCameraForwardOnHorizontalPlane() * 5.0, 0.5, 3.0, spot))
+    {
+        rot.Yaw = theCamera.GetCameraHeading();
+        thePlayer.TeleportWithRotation(spot, rot);
+    }
+    if(ghost.HasBuff(EET_Burning))
+    {
+        bot.scenarioStep = bot.scenarioStep | 1;
+    }
+    if(ghost.HasBuff(EET_Knockdown))
+    {
+        bot.scenarioStep = bot.scenarioStep | 2;
+    }
+    if(ghost.HasBuff(EET_Frozen))
+    {
+        bot.scenarioStep = bot.scenarioStep | 4;
+    }
+    if(ghost.HasBuff(EET_Poison))
+    {
+        bot.scenarioStep = bot.scenarioStep | 8;
+    }
+    W3T_Log("PEFFECTS watcher shown=" + coop.ghostEffectsShown + " ended=" + coop.ghostEffectsEnded + " seen=" + bot.scenarioStep
+        + " burning=" + ghost.HasBuff(EET_Burning) + " down=" + ghost.HasBuff(EET_Knockdown) + " frozen=" + ghost.HasBuff(EET_Frozen)
+        + " poison=" + ghost.HasBuff(EET_Poison) + " heard=" + coop.parkedHeard);
+    return coop.ghostEffectsShown >= 3 && coop.ghostEffectsEnded >= 3;
 }
 
 // leader_death, leader: spawns the drowner of enemy_attacks; once the member has its copy, dies (the death screen

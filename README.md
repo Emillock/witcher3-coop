@@ -31,7 +31,8 @@ effects it applies without a hit (a fugas' burning vomit, a wraith's blinding au
 Not released yet (after v0.3.0): attacks that run on the monster's animation graph alone (a fugas' vomit, a troll's
 rage) play their body animation on the copy too; a monster burning, frozen, knocked down, blinded or dazed by Axii
 looks that way on its copies too (before, only its hit reaction showed); a player's bombs and crossbow bolts fly and
-explode for the other players too (harmless copies: the hit counts once, through the thrower); a member's Axii and
+explode for the other players too (harmless copies: the hit counts once, through the thrower), and a burning, frozen or
+knocked-down player looks that way to the others; a member's Axii and
 Yrden now hold the leader's monster too, not only its copy; and a player's horse
 stays in sight for the others where they left it (Witcher Online showed it only while ridden; the host needs this
 version's server). v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
@@ -113,6 +114,7 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py enemy_spells [--monster PATH]` | The leader fights a spell caster (a leshen by default), close for 6 s and 11 m off for 6 s. The copy must make the leader's attack tasks (two thirds the same task) and cast its spell (the leshen's roots spawn on the member's side) at the leader, never at the member. |
 | `python run_test.py real_encounter` | Both bots go to the nearest active monster nest (from the map pins). The member's own encounter monsters there must become copies of the leader's, never fight beside them, and die when the leader kills its monsters. |
 | `python run_test.py enemy_effects` | The leader burns, knocks down, freezes, blinds and confuses its (immortal) drowner one after another; the member checks that its copy gets each effect and loses it when it ends on the leader's drowner. |
+| `python run_test.py player_effects` | The member burns, is knocked down, frozen and poisoned in turn; the leader checks that its character shows each and loses it again. |
 | `python run_test.py member_death` | The member (little health, mortal) is killed by the leader's drowner and respawns from its save as the death screen does: it must be back in the party with its copy of the drowner, without the hits that were aimed at its character meanwhile. |
 | `python run_test.py leader_death` | The leader dies and respawns from its save: the member lets go of its monsters meanwhile, stays in the party and copies the leader's new drowner. |
 | `python run_test.py member_combat` | The member fights the leader's (immortal) drowner's copy with real sword swings, Igni, Aard, Axii, a bomb and a crossbow bolt: the leader applies the hits and the effects they carry (Axii's confusion, put on without a hit, too), and throws harmless copies of the bomb and bolt from the member's character. |
