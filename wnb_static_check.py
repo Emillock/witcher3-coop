@@ -1,4 +1,5 @@
-# Offline replay of WitcherNativeBridge's binding logic (src/NativeBridge.cpp @ 415e1c1) against a witcher3.exe on disk.
+# Offline replay of WitcherNativeBridge's binding logic (src/NativeBridge.cpp @ 4c9f6f4) against a witcher3.exe on disk.
+# Usage: wnb_static_check.py <witcher3.exe>
 # Read-only: maps file bytes to RVAs via the PE section table, no code from the exe or the bridge is executed.
 import struct
 import sys
@@ -14,7 +15,7 @@ REG_SIG = ("BA F8 00 00 00 48 8D 4D F0 41 B8 10 00 00 00 E8 ?? ?? ?? ?? "
 STRING_SIG = ("8B 15 ?? ?? ?? ?? 33 C9 41 B9 0E 00 00 00 89 54 24 ?? "
               "41 B8 01 00 00 00 48 C7 44 24 20 00 00 00 00 E8 ?? ?? ?? ?? 44 8B 44 24 ?? 48 8B C8 "
               "48 8B 15 ?? ?? ?? ?? 48 89 44 24 ?? E8 ?? ?? ?? ??")
-# Pre-5.01 variant (the line the 5.01 commit replaced), to tell which build the exe resembles.
+# The short form: 5.00, and again 5.0.0.1090142 (2026-10-29); the bridge tries it when the 5.01 one doesn't match.
 STRING_SIG_500 = ("8B 15 ?? ?? ?? ?? 33 C9 41 B9 0E 00 00 00 89 54 24 ?? "
                   "41 B8 01 00 00 00 E8 ?? ?? ?? ?? 44 8B 44 24 ?? 48 8B C8 "
                   "48 8B 15 ?? ?? ?? ?? 48 89 44 24 ?? E8 ?? ?? ?? ??")
@@ -133,9 +134,13 @@ def main(path):
                 nonzero = sum(1 for e in entries if e)
                 print(f"  opcode table entries: nonzero={nonzero}/32 inside_text={inside}")
         region = code[:0xC0]
-        for label, sig in (("5.01 string pattern (current bridge)", STRING_SIG), ("5.00 string pattern (pre-5.01 bridge)", STRING_SIG_500)):
+        counts = []
+        for label, sig in (("5.01 string pattern", STRING_SIG), ("short string pattern (5.00, 5.0.0.1090142)", STRING_SIG_500)):
             n = len(list(to_regex(sig).finditer(region)))
-            print(f"  {label}: {n} match(es) in LogChannel[0:0xC0] (bridge needs exactly 1)")
+            counts.append(n)
+            print(f"  {label}: {n} match(es) in LogChannel[0:0xC0]")
+        ok = counts[0] == 1 or (counts[0] != 1 and counts[1] == 1)
+        print(f"  strings resolve (one of the two matches exactly once, the 5.01 one first): {ok}")
 
 
 if __name__ == "__main__":
