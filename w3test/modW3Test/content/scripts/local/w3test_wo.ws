@@ -37,6 +37,7 @@ function W3T_EndScenario(bot : W3T_Bot)
     thePlayer.RemoveAllNonAutoBuffs();
     thePlayer.ForceSetStat(BCS_Vitality, thePlayer.GetStatMax(BCS_Vitality));
     coop = client.getCoopEnemies();
+    coop.versionOverride = "";
     coop.ResetDiagnostics();
     // facing as at the start too: scenarios spawn monsters ahead of the player (after a ride a drowner landed on a ledge)
     if(bot.homeSet)
@@ -276,6 +277,15 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_CombatLeader(bot, client.getCoopEnemies(), players[0]);
         }
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "version_check")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        return W3T_VersionCheck(bot, client.getCoopEnemies(), W3T_GetEnv("W3T_ROLE") == "mover");
     }
 
     if(scenario == "mounted_fight")
@@ -2137,6 +2147,38 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// version_check, both: for 10 s both run the same version and nobody is told anything; at 20 s (the member may begin
+// a few seconds later) the leader sends 0.0.9 as its version: both must be told once (the leader of the member's
+// other version, the member of the leader's). scenarioValue: warnings when it began.
+function W3T_VersionCheck(bot : W3T_Bot, coop : r_CoopEnemies, leader : bool) : bool
+{
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioValue = coop.versionWarnings;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        return false;
+    }
+    if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 10)
+    {
+        if(coop.versionWarnings != (int)bot.scenarioValue)
+        {
+            W3T_Log("FAIL told about another version while both run " + CoopVersion());
+            W3T_Quit(1);
+            return false;
+        }
+        bot.scenarioCount = 2;
+    }
+    if(bot.scenarioCount == 2 && leader && bot.ElapsedS() - bot.scenarioTime >= 20)
+    {
+        coop.versionOverride = "0.0.9";
+        W3T_Log("VERSION leader now sends 0.0.9");
+        bot.scenarioCount = 3;
+    }
+    W3T_Log("VERSION warnings=" + (coop.versionWarnings - (int)bot.scenarioValue) + " step=" + bot.scenarioCount);
+    return bot.scenarioCount >= 2 && coop.versionWarnings - (int)bot.scenarioValue >= 1;
 }
 
 // mounted_fight, leader: once the member sits on its horse, the drowner of enemy_attacks goes for it. Passes once two

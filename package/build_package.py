@@ -1,6 +1,7 @@
 # Builds the player package: a folder with the game's layout (copy its contents into the Witcher 3 folder) and a zip.
 # Usage: build_package.py <version>
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,8 +41,19 @@ def source_zip(repo, out_zip, *paths):
                 z.write(path, rel)
 
 
+def script_version():
+    """The version the mod's scripts tell other players (CoopVersion() in coopEnemies.ws)."""
+    path = os.path.join(WO, "witcher", "mods", "modWitcherOnline", "content", "scripts", "local", "coopEnemies.ws")
+    text = open(path, encoding="utf-8").read()
+    m = re.search(r'function CoopVersion\(\) : string\s*\{\s*return "([^"]+)";', text)
+    return m.group(1) if m else None
+
+
 def main():
     version = sys.argv[1]
+    told = script_version()
+    if told != version:
+        sys.exit(f"the scripts say version {told} (CoopVersion in coopEnemies.ws); set it to {version} first")
     out = os.path.join(WORK, "dist", f"W3Coop-{version}")
     if os.path.exists(out):
         shutil.rmtree(out)

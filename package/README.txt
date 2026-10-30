@@ -25,6 +25,8 @@ the party leader's world is the one that counts:
 - If you die, load your save as usual: you stay in the party, and the leader's monsters leave
   your character alone until you are back.
 - Everyone sees each other's horse: ridden, and standing where its rider left it.
+- If a friend near you runs another W3Coop version, both of you get a message: install the same
+  version (other versions work only in part).
 - A player who burns, is frozen, poisoned or knocked down looks that way to the others too.
 - The hidden quest facts the leader's game sets during the session are shared too (also only
   forward), so your quests can follow the leader's progress. Loot stays per player.

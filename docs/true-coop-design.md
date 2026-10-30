@@ -775,6 +775,10 @@ Witcher Online's own presence features, first tested on the port with `horse_rid
   the member through its item popup and price slider (10 crowns), the member's game showed the offer and accepted
   it; the leader had one spirit less and 10 crowns more, the member one more and 10 crowns less. The bot answers the
   popups as they open (`w3test.ws`), so how they look is not checked.
+- **Versions** (2026-10-30). Each player's W3Coop version (`CoopVersion()`, which `build_package.py` checks against
+  the version it packages) goes last in its `hz` message; a player near running another one, or none (older than
+  0.3.1), is named on screen once per version, in a party or not. `version_check`: same versions, nothing for 10 s;
+  then the leader sent 0.0.9 and both were told.
 - **Chat and emotes.** A chat line showed over the sender's copy within 0.2 s; a wave and a bow played on it
   0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
   stays as `prevEmote`).
