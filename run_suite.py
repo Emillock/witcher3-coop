@@ -17,13 +17,13 @@ from run_test import missing_test_build  # noqa: E402
 # enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "version_check", "party_hud", "horse_ride", "social", "trade", "player_effects", "shared_enemy", "enemy_attacks", "mounted_fight", "reactions", "twin_match", "encounter_mismatch", "handoff", "quest_sync",
              "dialog_sync", "facts_sync", "puppet_walk", "real_encounter", "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "attack_view",
-             "enemy_spells", "enemy_moves", "enemy_crowd", "member_death", "leader_death"]  # puppet_walk also checks what puppet_follow does
+             "enemy_spells", "enemy_moves", "enemy_crowd", "member_death", "leader_death", "follow_travel"]  # puppet_walk also checks what puppet_follow does
 # over Steam only the transport differs: these cover connecting, movement, the co-op channel both ways and the snapshot
 STEAM_SCENARIOS = ["movement", "shared_enemy", "member_combat", "sign_visuals"]
 # need fresh games: they change the save's quests and facts, join late on purpose, travel 1 km to a nest, or (attack_view)
 # need the leader's monster to go for the leader alone, which leftovers of other scenarios upset, or (member_death)
 # reload a save (member_death, leader_death)
-FRESH = ["quest_sync", "dialog_sync", "facts_sync", "real_encounter", "attack_view", "member_death", "leader_death"]
+FRESH = ["quest_sync", "dialog_sync", "facts_sync", "real_encounter", "attack_view", "member_death", "leader_death", "follow_travel"]
 
 
 def plan(scenarios, sessions):

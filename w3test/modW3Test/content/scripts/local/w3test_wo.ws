@@ -288,9 +288,22 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         }
         if(W3T_GetEnv("W3T_ROLE") == "mover")
         {
-            return W3T_PartyHudLeader(bot, client.getCoopEnemies(), players[0]);
+            return W3T_PartyHudLeader(bot, client, players[0]);
         }
-        return W3T_PartyHudMember(bot, client, client.getCoopEnemies(), players[0]);
+        return W3T_PartyHudMember(bot, client, players[0]);
+    }
+
+    if(scenario == "follow_travel")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_FollowTravelLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_FollowTravelMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
     if(scenario == "version_check")
@@ -2163,25 +2176,47 @@ function W3T_ShootBolt(target : CActor)
         + FloatToStringPrec(target.GetHealthPercents(), 3));
 }
 
-// party_hud, leader: its HUD's companion bar shows the member with the member's health, 0.6 and then 0.3
-// (scenarioStep bits: 1 saw 0.6, 2 saw 0.3).
-function W3T_PartyHudLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+// What Witcher Online's party HUD (companion bars, updateCompanionIcons) shows: "name:health,..."
+function W3T_PartyText(client : r_MultiplayerClient) : string
 {
-    if(StrFindFirst(coop.partyHudText, member.username + ":0.6") >= 0)
+    var party : array<r_RemotePlayer>;
+    var text : string;
+    var i : int;
+
+    party = client.getPartyMembers();
+    for(i = 0; i < party.Size(); i += 1)
+    {
+        if(text != "")
+        {
+            text += ",";
+        }
+        text += party[i].username + ":" + FloatToStringPrec(party[i].health, 2);
+    }
+    return text;
+}
+
+// party_hud, leader: its party HUD shows the member with the member's health, 0.6 and then 0.3
+// (scenarioStep bits: 1 saw 0.6, 2 saw 0.3).
+function W3T_PartyHudLeader(bot : W3T_Bot, client : r_MultiplayerClient, member : r_RemotePlayer) : bool
+{
+    var text : string;
+
+    text = W3T_PartyText(client);
+    if(StrFindFirst(text, member.username + ":0.6") >= 0)
     {
         bot.scenarioStep = bot.scenarioStep | 1;
     }
-    if(StrFindFirst(coop.partyHudText, member.username + ":0.3") >= 0)
+    if(StrFindFirst(text, member.username + ":0.3") >= 0)
     {
         bot.scenarioStep = bot.scenarioStep | 2;
     }
-    W3T_Log("PARTYHUD leader shows " + coop.partyHudText + " seen=" + bot.scenarioStep);
+    W3T_Log("PARTYHUD leader shows " + text + " seen=" + bot.scenarioStep);
     return bot.scenarioStep == 3;
 }
 
 // party_hud, member: joins the party, its health at 60% for 10 s and then at 30% (invulnerable meanwhile); its own HUD
 // must show the leader.
-function W3T_PartyHudMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+function W3T_PartyHudMember(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
 {
     var share : float;
 
@@ -2199,8 +2234,118 @@ function W3T_PartyHudMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : 
         share = 0.3;
     }
     thePlayer.ForceSetStat(BCS_Vitality, thePlayer.GetStatMax(BCS_Vitality) * share);
-    W3T_Log("PARTYHUD member health=" + FloatToStringPrec(thePlayer.GetHealthPercents(), 2) + " shows " + coop.partyHudText);
-    return share < 0.5 && StrFindFirst(coop.partyHudText, leader.username + ":") >= 0;
+    W3T_Log("PARTYHUD member health=" + FloatToStringPrec(thePlayer.GetHealthPercents(), 2) + " shows " + W3T_PartyText(client));
+    return share < 0.5 && StrFindFirst(W3T_PartyText(client), leader.username + ":") >= 0;
+}
+
+// follow_travel: the nearest signpost of this world at least minDist away (W = 0 if none)
+function W3T_FarSignpost(minDist : float, out label : string) : Vector
+{
+    var manager : CCommonMapManager;
+    var pins : array<SEntityMapPinInfo>;
+    var best : Vector;
+    var bestDist, d : float;
+    var i : int;
+
+    manager = theGame.GetCommonMapManager();
+    pins = manager.GetEntityMapPins(theGame.GetWorld().GetDepotPath());
+    bestDist = 100000;
+    for(i = 0; i < pins.Size(); i += 1)
+    {
+        if(pins[i].entityType != 'RoadSign')
+        {
+            continue;
+        }
+        d = VecDistance2D(pins[i].entityPosition, thePlayer.GetWorldPosition());
+        if(d >= minDist && d < bestDist)
+        {
+            bestDist = d;
+            best = pins[i].entityPosition;
+            best.W = 1;
+            label = NameToString(pins[i].entityName) + ", " + FloatToStringPrec(d, 0) + " m away";
+        }
+    }
+    if(best.W == 0)
+    {
+        label = "none of " + pins.Size() + " map pins";
+    }
+    return best;
+}
+
+// follow_travel, leader: 5 s after the member joined its party, goes to the nearest signpost at least 300 m away (as
+// a fast travel there would) and stays; passes once the member stands within 15 m.
+function W3T_FollowTravelLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var spot : Vector;
+    var label : string;
+    var d : float;
+
+    if(coop.GetRole() != 1)
+    {
+        return false;
+    }
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioTime = bot.ElapsedS();
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        return false;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        if(bot.ElapsedS() - bot.scenarioTime < 5)
+        {
+            return false;
+        }
+        spot = W3T_FarSignpost(300, label);
+        if(spot.W == 0)
+        {
+            W3T_Log("FAIL no signpost 300 m away: " + label);
+            W3T_Quit(1);
+            return false;
+        }
+        W3T_Log("TRAVEL leader goes to signpost " + label);
+        spot.W = 1;
+        thePlayer.Teleport(spot + Vector(0, 0, 1));
+        bot.scenarioVec = spot;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 10;
+        return false;
+    }
+    W3T_HoldAt(bot.scenarioVec);
+    if(!W3T_SettleAtNest(bot, Vector(2, 0, 0)))
+    {
+        return false;
+    }
+    d = VecDistance(member.pos, thePlayer.GetWorldPosition());
+    W3T_Log("TRAVEL leader at " + W3T_VecStr(thePlayer.GetWorldPosition()) + ", member " + FloatToStringPrec(d, 1) + " m away");
+    return d < 15;
+}
+
+// follow_travel, member: joins the party and stays; when the leader is gone, W3Coop asks (the bot answers yes) and
+// it travels there. Passes asked once, gone once and within 15 m of the leader.
+function W3T_FollowTravelMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var pos : Vector;
+    var d : float;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    // a long teleport can land before the ground's collision has loaded: back up to the leader when far below it
+    pos = thePlayer.GetWorldPosition();
+    if(coop.travelGone > 0 && pos.Z < leader.pos.Z - 25)
+    {
+        W3T_Log("TRAVEL member fell through the ground; back to the leader");
+        thePlayer.Teleport(leader.pos + Vector(0, 0, 1));
+    }
+    d = VecDistance(leader.pos, thePlayer.GetWorldPosition());
+    W3T_Log("TRAVEL member offers=" + coop.travelOffers + " gone=" + coop.travelGone + " leader " + FloatToStringPrec(d, 1) + " m away");
+    return coop.travelOffers == 1 && coop.travelGone == 1 && d < 15;
 }
 
 // version_check, both: for 10 s both run the same version and nobody is told anything; at 20 s (the member may begin

@@ -189,6 +189,18 @@ function ShowProgressDialog( messageId : int, title : string, message : string, 
         HideUserDialog(messageId);
         W3T_Log("DIALOG answered OK");
     }
+    else if(type == UDB_YesNo && messageId == W3CoopTravelMessageId() && W3T_CurrentScenario() != "follow_travel")
+    {
+        // W3Coop's offer to follow the leader: only follow_travel takes it (other tests move the bots themselves)
+        UserDialogCallback(messageId, UMA_No);
+        HideUserDialog(messageId);
+        W3T_Log("DIALOG answered No");
+    }
+    else if(type == UDB_YesNo && messageId == W3CoopTravelMessageId() && W3T_GetEnv("W3T_HOLD_DIALOG") != "")
+    {
+        // for screenshots of it; the dialog pauses the game, the bot's loop too, so the run doesn't get further
+        W3T_Log("DIALOG left open (W3T_HOLD_DIALOG)");
+    }
     else if(type == UDB_YesNo)
     {
         UserDialogCallback(messageId, UMA_Yes);

@@ -13,7 +13,7 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
   - The **player package** builder.
   - The **test harness** that runs two game copies on one PC with an in-game bot.
 
-## Status: v0.3.0 pre-release
+## Status: v0.3.1 pre-release
 
 Players see each other in their own worlds, and each keeps their own save. Since v0.2.0 (branch
 `shared-enemies`), when players are in a Witcher Online party:
@@ -28,7 +28,9 @@ New in v0.3.0: monster copies play the leader's monsters' exact attack and move 
 milliseconds behind (the same swing, throw, charge, spell or sign, so spells' area effects show for members too), and
 dodge, taunt, jump back and parry when they do. Effects a monster's attack plays from its script show on the copy, and
 effects it applies without a hit (a fugas' burning vomit, a wraith's blinding aura) reach members.
-Not released yet (after v0.3.0; the host needs this version's server):
+
+New in v0.3.1 (everyone needs it, and the host its server; 0.3.0 and older crash at startup on the game's update of
+2026-10-29):
 - Runs on the game's update of 2026-10-29 (build 5.0.0.1090142): every earlier package crashed at startup there,
   because one code signature the native bridge looks for changed (fixed in the bundled bridge, which now accepts
   both forms; its source is in the package). Should a later patch break it again, the bridge says so in a message
@@ -48,20 +50,22 @@ Not released yet (after v0.3.0; the host needs this version's server):
 - Up to 48 monsters are shared at once (was 24; past that a member didn't see the rest).
 - A player's horse stays in sight for the others where they left it (Witcher Online showed it only while ridden).
 - Players see a message when someone near runs another W3Coop version (other versions work only in part).
-- Party members' health on the HUD: the companion bar the game uses for Ciri and others shows up to two party
-  members near, with their name and their health (not while a quest shows its own companion).
+
+Not released yet (after v0.3.1):
+- A member left behind when the leader fast-travels (to another region, or 200 m or more at once) is asked whether
+  to follow, and travels to the leader on yes.
 
 v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
 | | |
 |---|---|
-| Tested | Two game copies on one PC: presence, movement, riding, chat and emotes, trading, a player's death, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
+| Tested | Two game copies on one PC: presence, movement, riding, chat and emotes, trading, following the leader's fast travel, a player's death, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
 | Not tested yet | Two different PCs over the internet. Three or more players (a third game needs more graphics memory than the test PC has). Real encounters beyond one monster nest and one bandit camp (others are spawned by script). |
-| Known limits | Copies follow the leader's monsters a few dozen milliseconds behind (most swings 16-56 ms; the water hag's and the bear's about 0.1 s, then caught up). Untested moves: Shaelmaar's charges, the fairytale witch's and the black mage's spells (they never fought in tests), scripted encounter animations. At most 48 monsters are shared at once; a member's own copies of any more stay hidden. Finishers and dismemberment on a shared monster are not mirrored (others see it die normally). Axii's puppet skill (a human fighting for the caster) works in the caster's world only. A mod that replaces the game's effect list, like the Workshop mod "Consumables Balanced", leaves no burning, bleeding or knockdown at all, also without co-op. Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. Gwent duels between players are off (Remastered rebuilt Gwent). |
+| Known limits | **Known bug:** if a member's character in the leader's world ends up somewhere else (seen once: it fell off a pier into the water below while the member stood on the pier), the leader's monsters fight it there and can't hit the member; it isn't put back while it is only a few metres off. Walking away and back, or leaving and rejoining the party, may help (untested). Copies follow the leader's monsters a few dozen milliseconds behind (most swings 16-56 ms; the water hag's and the bear's about 0.1 s, then caught up). Untested moves: Shaelmaar's charges, the fairytale witch's and the black mage's spells (they never fought in tests), scripted encounter animations. At most 48 monsters are shared at once; a member's own copies of any more stay hidden. Finishers and dismemberment on a shared monster are not mirrored (others see it die normally). Axii's puppet skill (a human fighting for the caster) works in the caster's world only. A mod that replaces the game's effect list, like the Workshop mod "Consumables Balanced", leaves no burning, bleeding or knockdown at all, also without co-op. Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. Gwent duels between players are off (Remastered rebuilt Gwent). |
 
 ## Playing
 
-Download `W3Coop-0.3.0.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
+Download `W3Coop-0.3.1.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
 its contents into your Witcher 3 folder. `W3Coop\README.txt` inside covers hosting, joining and uninstalling.
 The host needs Java 21 or newer.
 
@@ -108,10 +112,10 @@ cd build\classes && jar cfm ..\WitcherServer.jar ..\..\src\META-INF\MANIFEST.MF 
 cd <root>\witcher3-coop
 relay\build.cmd
 w3test\build.cmd
-python package\build_package.py 0.3.0
+python package\build_package.py 0.3.1
 ```
 
-The last step writes `<root>\work\dist\W3Coop-0.3.0` and its zip. [config.py](config.py) finds the game
+The last step writes `<root>\work\dist\W3Coop-0.3.1` and its zip. [config.py](config.py) finds the game
 through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
 
 ## Testing
@@ -132,7 +136,8 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py real_encounter` | Both bots go to the nearest active monster nest (from the map pins). The member's own encounter monsters there must become copies of the leader's, never fight beside them, and die when the leader kills its monsters. `W3T_PIN_TYPE=BanditCamp` (or another map pin kind): a bandit camp instead. |
 | `python run_test.py enemy_effects` | The leader burns, knocks down, freezes, blinds and confuses its (immortal) drowner one after another; the member checks that its copy gets each effect and loses it when it ends on the leader's drowner. |
 | `python run_test.py encounter_mismatch` | The member's world has a nekker where the leader's has a drowner: the member's nekker must stay hidden (not a copy) and the leader's drowner come as a spawned copy. |
-| `python run_test.py party_hud` | The member's health goes to 60% and then 30%: the leader's HUD companion bar must show the member with each; the member's shows the leader. |
+| `python run_test.py party_hud` | The member's health goes to 60% and then 30%: Witcher Online's party HUD (the companion bars) must show the member with each on the leader's side; the member's shows the leader. |
+| `python run_test.py follow_travel` | The leader goes to the nearest signpost at least 300 m away: the member must be asked once whether to follow, travel there on yes, and stand within 15 m of the leader. |
 | `python run_test.py version_check` | Both run the same version for 10 s and are told nothing; then the leader says it runs 0.0.9 and both must be told once; then it sends no presence messages (as an older W3Coop or server) and the member must be told that too. |
 | `python run_test.py trade` | The leader sells the member a Dwarven spirit for 10 crowns through Witcher Online's trade popups (the bots answer them): the item and the money must move. |
 | `python run_test.py enemy_crowd` | The leader shares 40 drowners around the member (it shares up to 48); the member must copy every one. `W3T_CROWD=N` for another number. |

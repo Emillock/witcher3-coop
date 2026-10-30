@@ -698,6 +698,15 @@ another world would bypass that world's quest graph. Within a scene:
   immediately when they change. Members follow when the leader changes them, for quests active for them;
   in between, a member can track something else.
 
+- **Following the leader** (2026-10-30). A member left behind when the leader fast-travels (another region, or
+  200 m or more between two samples a second apart) gets a Yes/No dialog (`ShowUserDialogAdv`, answered through
+  `CR4GuiManager.UserDialogCallback`) once the leader's new place held 3 s and the member is free: alive, not in
+  combat, a scene, a menu or another dialog; dropped after a minute or if the member is already within 100 m. Yes
+  dismounts and travels as Witcher Online's `teleport` command does (a teleport in the same region, a world change
+  otherwise). Test `follow_travel`: the leader went to a signpost 310 m away; the member was asked 6 s later ("BotA
+  traveled 309 m away. Travel to them?", the game's own [ENTER] Yes / [ESC] No dialog, which pauses the member's
+  game), answered yes and stood at the leader's spot. Other tests answer no. Not in a release yet.
+
 Test `dialog_sync` (the bots drive the HUD dialogue module directly, inside a scene name set for the test):
 the leader tracks two quests in turn, skips twice, and picks choice B; the member reaches the same choices 6 s
 later. PASS: both tracking switches followed, both skips replayed, and the pick was applied 2 s after the member
@@ -782,11 +791,10 @@ Witcher Online's own presence features, first tested on the port with `horse_rid
   older W3Coop, or the host's server is older (4 co-op channels drop the newer messages, `hz` among them): it is
   named on screen with that advice once (not while dead or loading: then its game sends nothing). `version_check`
   then has the leader stop sending `hz`: the member was told 21 s later.
-- **Party members' health** (2026-10-30). Each player's snapshot already carried its health (Witcher Online sent it,
-  unused). Up to two party members near now show on the HUD's companion bar (`CR4HudModuleCompanion`, the one quests
-  use for Ciri and others): their character here gets a tag and the health their game reports, the bar their name
-  (an added method sets the Flash name). Only while no quest shows its own companion; taken down when they leave.
-  `party_hud`: the member's health went to 60% and 30%, the leader's bar showed each; screenshots show the bars.
+- **Party members' health** (2026-10-30). Witcher Online already shows the party on the HUD's companion bars
+  (`updateCompanionIcons`: names, the leader marked, portraits and the health each snapshot carries, every 0.25 s).
+  A second writer to those bars, added the same day, only fought it and was reverted. `party_hud`: the member's
+  health went to 60% and 30%, the leader's party HUD showed each; screenshots show the bars.
 - **Chat and emotes.** A chat line showed over the sender's copy within 0.2 s; a wave and a bow played on it
   0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
   stays as `prevEmote`).
@@ -837,6 +845,19 @@ account, and traffic flowed both ways.
 
 ## Open questions
 
+- **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in
+  the leader's world is in the wrong place.** The leader's monsters fight the member's character in the leader's
+  world (Witcher Online's ghost), not the member itself. In the 23:14 suite run that ghost fell off the Novigrad pier
+  into the water below (z 0.95, later 0.48; the member stood on the pier at z 3.61, 5 m away) and stayed there. Both
+  bots stand on the same spot between scenarios (same save, same home), so the ghost was likely pushed off the edge by
+  the leader's own character. From `enemy_effects` on, the leader's drowner was spawned by that ghost and attacked it
+  down there, so on the member's screen its copy swung at empty air below the pier (`hurtsApplied` stayed at 1). In
+  the earlier runs of that day the ghost was always on the pier (z 3.6). Nothing since 0.3.1 changed how ghosts move,
+  so this is Witcher Online's ghost behavior, in 0.3.1 too, not a regression. The ghost isn't put back while it is a few
+  metres off. Fix to try: snap a party member's ghost to the position its game reports when it is more than about
+  1.5 m off in height (or 3 m in all) for a second, and keep the test bots apart at home. The same run's
+  `enemy_effects` failure is a test flake on top: the member's own confusion on its copy ended by itself before W3Coop
+  dropped it, and the test applies it only once (`localEffectsDropped` stayed 0).
 - Members' damage. Real sword swings and Igni/Aard casts on a puppet are claimed and applied (`member_combat`,
   2026-10-20), and so are a bomb's and a crossbow bolt's (2026-10-28, thrown and shot by the test bot from its
   inventory as the game does; a real player's aimed throw and shot are untested).
