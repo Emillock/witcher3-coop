@@ -29,6 +29,9 @@ milliseconds behind (the same swing, throw, charge, spell or sign, so spells' ar
 dodge, taunt, jump back and parry when they do. Effects a monster's attack plays from its script show on the copy, and
 effects it applies without a hit (a fugas' burning vomit, a wraith's blinding aura) reach members.
 Not released yet (after v0.3.0; the host needs this version's server):
+- Runs on the game's update of 2026-10-29 (build 5.0.0.1090142): every earlier package crashed at startup there,
+  because one code signature the native bridge looks for changed (fixed in the bundled bridge, which now accepts
+  both forms; its source is in the package).
 - Attacks that run on the monster's animation graph alone (a fugas' vomit, a troll's rage) play their body
   animation on the copy too.
 - A monster burning, frozen, knocked down, blinded or dazed by Axii looks that way on its copies (before, only its
@@ -77,7 +80,8 @@ Put the repos side by side:
 <root>\witcher3-coop            this repo (any folder name)
 <root>\WitcherOnline            Emillock/WitcherOnline, branch shared-enemies (remastered-5.01 for v0.1.0); without it,
                                 the tools use this repo's WitcherOnline submodule (git submodule update --init)
-<root>\WitcherNativeBridge      rejuvenate7/WitcherNativeBridge (master supports 5.01)
+<root>\WitcherNativeBridge      rejuvenate7/WitcherNativeBridge (master supports 5.01; the 5.0.0.1090142 fix is a local
+                                commit, its source in the package's W3Coop\source\WitcherNativeBridge.zip)
 <root>\deps\ultimate-asi-loader-9.7.4\dinput8.dll and LICENSE
                                 from Ultimate-ASI-Loader-NoPDB_x64.zip, ThirteenAG/Ultimate-ASI-Loader v9.7.4
 ```

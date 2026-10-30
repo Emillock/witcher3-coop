@@ -83,6 +83,9 @@ def main():
     branch = subprocess.run(["git", "-C", WO, "branch", "--show-current"], capture_output=True, text=True, check=True).stdout.strip()
     source_zip(WO, os.path.join(docs, "source", f"WitcherOnline-{branch}.zip"), "client", "server", "witcher/mods", "LICENSE", "README.md")
     git_archive(TOOLS, os.path.join(docs, "source", "w3relay.zip"), "relay")
+    # the bridge carries a fix for game build 5.0.0.1090142 (its string helper signature)
+    source_zip(BRIDGE, os.path.join(docs, "source", "WitcherNativeBridge.zip"), "src", "include", "LICENSE.txt", "README.md",
+               "WitcherNativeBridge.sln", "WitcherNativeBridge.vcxproj")
 
     zip_path = out + ".zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:

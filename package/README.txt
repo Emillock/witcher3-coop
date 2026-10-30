@@ -33,7 +33,8 @@ Gwent duels between players are switched off in this version.
 
 What you need
 -------------
-- The Witcher 3: Wild Hunt Remastered (patch 5.01) on Steam, and Steam running.
+- The Witcher 3: Wild Hunt Remastered (patch 5.01, also its update of 2026-10-29, build 5.0.0.1090142)
+  on Steam, and Steam running. Earlier versions of this package crash at startup on that update.
 - Your friends in your Steam friends list.
 - The host only: Java 21 or newer (https://adoptium.net). Joining players don't need it.
 
