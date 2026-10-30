@@ -2142,12 +2142,20 @@ function W3T_MountedLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remot
         return false;
     }
     W3T_EnemyAttacksLeader(bot, coop, member);
+    // its target is the rider's horse, as for anyone riding (a passer-by drew it off once)
+    if(bot.scenarioCount >= 1 && member.horse && (CNewNPC)bot.scenarioEntity
+        && ((CNewNPC)bot.scenarioEntity).GetTarget() != member.horse && bot.ElapsedS() - bot.scenarioActAt >= 2)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        ((CNewNPC)bot.scenarioEntity).SignalGameplayEventParamObject('ForceTarget', member.horse);
+    }
     W3T_Log("MOUNTED leader memberMounted=" + member.isMounted + " hurtsCaptured=" + coop.hurtsCaptured + " horseHits=" + coop.horseHitsSeen + " merged=" + coop.hurtsMerged);
     return bot.scenarioCount >= 1 && coop.hurtsCaptured >= 2;
 }
 
-// mounted_fight, member: joins the party (invulnerable), calls and mounts its horse and stays on it. Passes once two
-// hurts landed while it was mounted (scenarioValue: hurts applied when it mounted).
+// mounted_fight, member: joins the party (invulnerable), calls and mounts its horse and stays on it (again when its
+// horse threw it). Passes once two hurts landed while it was mounted, the swings that struck its horse on its own
+// horse here (scenarioValue: hurts applied when it mounted).
 function W3T_MountedMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     if(!client.getInParty())
@@ -2174,8 +2182,9 @@ function W3T_MountedMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
         bot.scenarioValue = coop.hurtsApplied;
     }
     W3T_Log("MOUNTED member riding puppets=" + coop.PuppetCount() + " hurtsApplied=" + coop.hurtsApplied + " sinceMounted="
-        + (coop.hurtsApplied - (int)bot.scenarioValue));
-    return coop.hurtsApplied - (int)bot.scenarioValue >= 2;
+        + (coop.hurtsApplied - (int)bot.scenarioValue) + " onHorse=" + coop.horseHurtsApplied + " hp="
+        + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0));
+    return coop.hurtsApplied - (int)bot.scenarioValue >= 2 && coop.horseHurtsApplied >= 1;
 }
 
 // trade, leader: gets a Dwarven spirit and offers it to the member for 10 crowns (Witcher Online's trade: the bot answers
