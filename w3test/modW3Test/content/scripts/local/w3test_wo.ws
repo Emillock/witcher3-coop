@@ -2142,28 +2142,62 @@ function W3T_MountedLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remot
         return false;
     }
     W3T_EnemyAttacksLeader(bot, coop, member);
-    // its target is the rider's horse, as for anyone riding (a passer-by drew it off once)
-    if(bot.scenarioCount >= 1 && member.horse && (CNewNPC)bot.scenarioEntity
-        && ((CNewNPC)bot.scenarioEntity).GetTarget() != member.horse && bot.ElapsedS() - bot.scenarioActAt >= 2)
+    // its target is the rider's horse, as for anyone riding, and the member once off (a passer-by drew it off once)
+    if(bot.scenarioCount >= 1 && member.horse && (CNewNPC)bot.scenarioEntity && bot.ElapsedS() - bot.scenarioActAt >= 2)
     {
-        bot.scenarioActAt = bot.ElapsedS();
-        ((CNewNPC)bot.scenarioEntity).SignalGameplayEventParamObject('ForceTarget', member.horse);
+        if(member.isMounted && ((CNewNPC)bot.scenarioEntity).GetTarget() != member.horse)
+        {
+            bot.scenarioActAt = bot.ElapsedS();
+            ((CNewNPC)bot.scenarioEntity).SignalGameplayEventParamObject('ForceTarget', member.horse);
+        }
+        else if(!member.isMounted && ((CNewNPC)bot.scenarioEntity).GetTarget() != member.ghost)
+        {
+            bot.scenarioActAt = bot.ElapsedS();
+            ((CNewNPC)bot.scenarioEntity).SignalGameplayEventParamObject('ForceTarget', member.ghost);
+        }
     }
-    W3T_Log("MOUNTED leader memberMounted=" + member.isMounted + " hurtsCaptured=" + coop.hurtsCaptured + " horseHits=" + coop.horseHitsSeen + " merged=" + coop.hurtsMerged);
+    W3T_Log("MOUNTED leader memberMounted=" + member.isMounted + " target=" + ((CNewNPC)bot.scenarioEntity).GetTarget() + " hurtsCaptured=" + coop.hurtsCaptured + " horseHits=" + coop.horseHitsSeen + " merged=" + coop.hurtsMerged);
     return bot.scenarioCount >= 1 && coop.hurtsCaptured >= 2;
 }
 
 // mounted_fight, member: joins the party (invulnerable), calls and mounts its horse and stays on it (again when its
-// horse threw it). Passes once two hurts landed while it was mounted, the swings that struck its horse on its own
-// horse here (scenarioValue: hurts applied when it mounted).
+// horse threw it) until two hurts landed while it was mounted, the swings that struck its horse on its own horse here
+// (scenarioValue: hurts applied when it mounted). Then it gets off and walks 6 m away: passes once a hurt landed on it
+// on foot and none more on the horse (scenarioCount: 1 got off, 2 walked away; scenarioVec: hurts and horse hurts
+// then).
 function W3T_MountedMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
+    var horse : CNewNPC;
+    var rot : EulerAngles;
+
     if(!client.getInParty())
     {
         W3T_Log("PARTY join " + leader.username);
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         client.joinParty(leader.username);
         return false;
+    }
+    if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 1.0)
+    {
+        // (a frame after getting off: teleporting in the same one took the horse along)
+        horse = thePlayer.GetHorseWithInventory();
+        if(horse)
+        {
+            rot = horse.GetWorldRotation();
+            thePlayer.TeleportWithRotation(horse.GetWorldPosition() + VecFromHeading(rot.Yaw + 90) * 6.0, rot);
+        }
+        bot.scenarioVec.X = coop.hurtsApplied;
+        bot.scenarioVec.Y = coop.horseHurtsApplied;
+        bot.scenarioCount = 2;
+        W3T_Log("MOUNTED member walked away from its horse");
+        return false;
+    }
+    if(bot.scenarioCount >= 1)
+    {
+        W3T_Log("MOUNTED member off the horse onFoot=" + (coop.hurtsApplied - (int)bot.scenarioVec.X) + " horseSince="
+            + (coop.horseHurtsApplied - (int)bot.scenarioVec.Y) + " riding=" + thePlayer.IsUsingHorse());
+        return bot.scenarioCount == 2 && !thePlayer.IsUsingHorse() && coop.hurtsApplied - (int)bot.scenarioVec.X >= 1
+            && coop.horseHurtsApplied == (int)bot.scenarioVec.Y;
     }
     if(!thePlayer.IsUsingHorse())
     {
@@ -2184,7 +2218,14 @@ function W3T_MountedMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
     W3T_Log("MOUNTED member riding puppets=" + coop.PuppetCount() + " hurtsApplied=" + coop.hurtsApplied + " sinceMounted="
         + (coop.hurtsApplied - (int)bot.scenarioValue) + " onHorse=" + coop.horseHurtsApplied + " hp="
         + FloatToStringPrec(thePlayer.GetStat(BCS_Vitality), 0));
-    return coop.hurtsApplied - (int)bot.scenarioValue >= 2 && coop.horseHurtsApplied >= 1;
+    if(coop.hurtsApplied - (int)bot.scenarioValue >= 2 && coop.horseHurtsApplied >= 1)
+    {
+        W3T_Log("MOUNTED member gets off");
+        thePlayer.DismountVehicle(thePlayer.GetHorseCurrentlyMounted(), DT_instant);
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    return false;
 }
 
 // trade, leader: gets a Dwarven spirit and offers it to the member for 10 crowns (Witcher Online's trade: the bot answers
