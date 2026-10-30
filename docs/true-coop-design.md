@@ -724,6 +724,12 @@ goes to the member as a hurt (the horse here takes none), and a swing that strik
 the same moment lands once (a hit on the horse and one on the rider, same attack, within 0.1 s; two rocks of a
 volley still both land). `mounted_fight`: the drowner attacked the riding member, 2 swings struck horse and rider,
 and the member took 2 hurts.
+- A hit on the horse lands on the member's own horse (2026-10-30; an `h` entry with the hurt), as a hit on a ridden
+  horse does in the game: it panics and can throw its rider, the rider's health untouched. `mounted_fight`: both hurts
+  on the horse, the member's health stayed at 5965.
+- The horse is a target only while ridden: once its rider got off it stayed visible to gameplay, so the leader's
+  monsters kept going for it where it was left, and their hits went to the member on foot. `mounted_fight` now has the
+  member get off and walk 6 m away: the drowner went for the member, a hit landed on it on foot, none on the horse.
 
 ## A member's death (2026-10-28)
 
