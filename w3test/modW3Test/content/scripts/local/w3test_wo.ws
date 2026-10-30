@@ -1175,6 +1175,17 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
         {
             return false;
         }
+        // W3T_VIEW_RIDE=1: the leader fights from its horse (mounted first)
+        if(W3T_GetEnv("W3T_VIEW_RIDE") == "1" && !thePlayer.IsUsingHorse())
+        {
+            if(bot.ElapsedS() - bot.scenarioTime >= 5)
+            {
+                bot.scenarioTime = bot.ElapsedS();
+                InstantMountPlayer('None', EVT_Horse, false, false);
+                W3T_Log("VIEW leader mounts");
+            }
+            return false;
+        }
         template = (CEntityTemplate)LoadResource(W3T_MonsterPath(), true);
         // W3T_VIEW_MORTAL=1: hit but never killed (some animals may not go for an invulnerable target)
         if(W3T_GetEnv("W3T_VIEW_MORTAL") == "1")
