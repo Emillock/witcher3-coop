@@ -31,7 +31,8 @@ effects it applies without a hit (a fugas' burning vomit, a wraith's blinding au
 Not released yet (after v0.3.0; the host needs this version's server):
 - Runs on the game's update of 2026-10-29 (build 5.0.0.1090142): every earlier package crashed at startup there,
   because one code signature the native bridge looks for changed (fixed in the bundled bridge, which now accepts
-  both forms; its source is in the package).
+  both forms; its source is in the package). Should a later patch break it again, the bridge says so in a message
+  and the game reports the mod's missing functions, instead of crashing at startup.
 - Attacks that run on the monster's animation graph alone (a fugas' vomit, a troll's rage) play their body
   animation on the copy too.
 - A monster burning, frozen, knocked down, blinded or dazed by Axii looks that way on its copies (before, only its
