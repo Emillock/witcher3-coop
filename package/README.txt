@@ -65,6 +65,11 @@ If something goes wrong
   Steam friends. Or ask the host for the lobby number shown in their window and run
   Join co-op.cmd --lobby NUMBER from a command prompt in bin\w3coop.
 - A "Script Compilation Errors" window at startup: another mod clashes; remove it and retry.
+  If the errors name WO_ functions (WO_Send, WO_Str, ...) and a "WitcherNativeBridge" message
+  came first: a game update changed what the mod needs. Look for a newer W3Coop release; until
+  then, uninstall it (below) to play without it.
+- The game crashes right at startup after a game update: the same; an older W3Coop than 0.3.1
+  crashes this way on the update of 2026-10-29.
 - Igni never sets anything on fire, nothing bleeds or gets knocked down: another mod replaced
   the game's effect list. The Steam Workshop mod "Consumables Balanced" does; unsubscribe from it
   (this happens without co-op too).
