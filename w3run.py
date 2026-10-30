@@ -194,6 +194,10 @@ def main():
     a = ap.parse_args()
     env = dict(os.environ, SteamAppId="292030", SteamGameId="292030")
     if a.sandbox:
+        # only w3test.asi points the game at the sandbox; without it the game would use the owner's Documents
+        if not os.path.exists(os.path.join(os.path.dirname(EXE), "w3test.asi")):
+            print(f"[{a.tag}] w3test.asi is not deployed: not started", flush=True)
+            return 3
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from sandbox import make_sandbox
         make_sandbox(a.sandbox)

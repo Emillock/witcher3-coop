@@ -12,6 +12,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
+from run_test import missing_test_build  # noqa: E402
 
 # enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "version_check", "party_hud", "horse_ride", "social", "trade", "player_effects", "shared_enemy", "enemy_attacks", "mounted_fight", "reactions", "twin_match", "encounter_mismatch", "handoff", "quest_sync",
@@ -43,6 +44,10 @@ def main():
     if not a.scenarios:
         a.scenarios = STEAM_SCENARIOS if a.steam_box and not a.all else SCENARIOS
 
+    missing = missing_test_build()
+    if missing:
+        print(f"the test build is not deployed ({', '.join(missing)} missing; compile.sh deploys it)")
+        return 2
     label = "steam" if a.steam_box else "local"
     os.makedirs(os.path.join(WORK, "runs"), exist_ok=True)
     rows = []
@@ -66,6 +71,9 @@ def main():
             m = re.search(r"RESULT: (PASS|FAIL) \((.*)\)", text)
             rows.append((run, m.group(1) if m else "ERROR", int(time.time() - t0), m.group(2) if m else "no result line"))
             print(f"{run:16} {rows[-1][1]:5} {rows[-1][2]:4}s  {rows[-1][3][:110]}", flush=True)
+        if "the owner's Documents changed" in text or "the test build is not deployed" in text:
+            print("stopping the suite: see " + out, flush=True)
+            break
 
     passed = sum(r[1] == "PASS" for r in rows)
     print(f"{label}: {passed}/{len(rows)} passed")

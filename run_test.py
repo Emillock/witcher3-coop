@@ -14,7 +14,7 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import WO, WORK  # noqa: E402
+from config import GAME, USER_W3_DOCS, WO, WORK  # noqa: E402
 from sandbox import make_sandbox  # noqa: E402
 from w3run import BITMAPINFOHEADER, EXE, arrange, capture_window, game_window, gdi32, user32, windows_of, wt  # noqa: E402
 
@@ -41,6 +41,23 @@ def segment(log, scenario):
 
 def bot_name(i):
     return "Bot" + "ABCDEFGH"[i]
+
+
+def missing_test_build():
+    # without w3test.asi nothing points a game at its sandbox: it would use (and write) the owner's Documents
+    files = (r"bin\x64_dx12\dinput8.dll", r"bin\x64_dx12\w3test.asi", r"mods\modW3Test")
+    return [f for f in files if not os.path.exists(os.path.join(GAME, f))]
+
+
+def owner_docs_state():
+    # the owner's Documents\The Witcher 3 and its saves, which no test instance may write
+    state = {}
+    for d in (USER_W3_DOCS, os.path.join(USER_W3_DOCS, "gamesaves")):
+        if os.path.isdir(d):
+            for e in os.scandir(d):
+                if e.is_file():
+                    state[e.path] = (e.stat().st_size, e.stat().st_mtime_ns)
+    return state
 
 
 class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
@@ -284,6 +301,12 @@ def main():
     ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
                                         "Sandboxie box, whose Steam is logged in to a second account")
     a = ap.parse_args()
+    missing = missing_test_build()
+    if missing:
+        print(f"the test build is not deployed ({', '.join(missing)} missing; compile.sh deploys it): the games would "
+              "use the owner's Documents. Nothing started.")
+        print("RESULT: FAIL (the test build is not deployed)")
+        return 2
     if a.steam_box:
         a.relay = True
     game_args = list(GAME_ARGS)
@@ -332,6 +355,7 @@ def main():
     if session:
         open(control, "w").write("go 0")
     results = []  # a session's (scenario, ok, why)
+    owner_before, owner_touched = owner_docs_state(), []
     go_at = time.time()
     t0 = time.time()
     try:
@@ -361,6 +385,13 @@ def main():
         next_stats = 0
         shooter = None
         while time.time() - t0 < a.timeout:
+            owner_now = owner_docs_state()
+            owner_touched = sorted(os.path.basename(f) for f in set(owner_before) | set(owner_now)
+                                   if owner_before.get(f) != owner_now.get(f))
+            if owner_touched:
+                print(f"[{time.time() - t0:6.1f}s] STOP: the owner's Documents changed ({', '.join(owner_touched)}): "
+                      "a game is not using its sandbox", flush=True)
+                break
             # side by side, in bot order, so no window covers another
             arrange([p.pid for p in procs])
             if a.shots > 0 and len(procs) == a.bots and not shooter:
@@ -404,7 +435,7 @@ def main():
                         if text and seen.get(hwnd) != key:
                             seen[hwnd] = key
                             print(f"[{time.time() - t0:6.1f}s] {bot_name(i)} window {text!r}", flush=True)
-                            if "Error" in text or "error" in text:
+                            if "Error" in text or "error" in text or cls == "#32770":
                                 for kc, kt in kids:
                                     if kt:
                                         print(f"      {kc}: {kt[:600]!r}", flush=True)
@@ -460,6 +491,8 @@ def main():
         ok, why = passed == len(session), f"{passed}/{len(session)} scenarios passed"
     else:
         ok, why = check(a.scenario, logs, a.bots)
+    if owner_touched:
+        ok, why = False, f"the owner's Documents changed: {', '.join(owner_touched)}"
     print(f"RESULT: {'PASS' if ok else 'FAIL'} ({why})")
     return 0 if ok else 1
 
