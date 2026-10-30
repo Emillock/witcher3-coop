@@ -778,7 +778,10 @@ Witcher Online's own presence features, first tested on the port with `horse_rid
 - **Versions** (2026-10-30). Each player's W3Coop version (`CoopVersion()`, which `build_package.py` checks against
   the version it packages) goes last in its `hz` message; a player near running another one, or none (older than
   0.3.1), is named on screen once per version, in a party or not. `version_check`: same versions, nothing for 10 s;
-  then the leader sent 0.0.9 and both were told.
+  then the leader sent 0.0.9 and both were told. A player near that sends snapshots but no `hz` for 15 s runs an
+  older W3Coop, or the host's server is older (4 co-op channels drop the newer messages, `hz` among them): it is
+  named on screen with that advice once (not while dead or loading: then its game sends nothing). `version_check`
+  then has the leader stop sending `hz`: the member was told 21 s later.
 - **Chat and emotes.** A chat line showed over the sender's copy within 0.2 s; a wave and a bow played on it
   0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
   stays as `prevEmote`).
