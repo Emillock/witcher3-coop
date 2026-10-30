@@ -280,6 +280,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_CombatMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "party_hud")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_PartyHudLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_PartyHudMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "version_check")
     {
         if(players.Size() < 1)
@@ -2148,6 +2161,46 @@ function W3T_ShootBolt(target : CActor)
     W3T_Log("COMBAT member shot a bolt at " + W3T_VecStr(target.GetWorldPosition()) + " from " + W3T_VecStr(bolt.GetWorldPosition())
         + " alive=" + target.IsAlive() + " unconscious=" + target.IsKnockedUnconscious() + " hp="
         + FloatToStringPrec(target.GetHealthPercents(), 3));
+}
+
+// party_hud, leader: its HUD's companion bar shows the member with the member's health, 0.6 and then 0.3
+// (scenarioStep bits: 1 saw 0.6, 2 saw 0.3).
+function W3T_PartyHudLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    if(StrFindFirst(coop.partyHudText, member.username + ":0.6") >= 0)
+    {
+        bot.scenarioStep = bot.scenarioStep | 1;
+    }
+    if(StrFindFirst(coop.partyHudText, member.username + ":0.3") >= 0)
+    {
+        bot.scenarioStep = bot.scenarioStep | 2;
+    }
+    W3T_Log("PARTYHUD leader shows " + coop.partyHudText + " seen=" + bot.scenarioStep);
+    return bot.scenarioStep == 3;
+}
+
+// party_hud, member: joins the party, its health at 60% for 10 s and then at 30% (invulnerable meanwhile); its own HUD
+// must show the leader.
+function W3T_PartyHudMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var share : float;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    share = 0.6;
+    if(bot.ElapsedS() - bot.scenarioTime >= 10)
+    {
+        share = 0.3;
+    }
+    thePlayer.ForceSetStat(BCS_Vitality, thePlayer.GetStatMax(BCS_Vitality) * share);
+    W3T_Log("PARTYHUD member health=" + FloatToStringPrec(thePlayer.GetHealthPercents(), 2) + " shows " + coop.partyHudText);
+    return share < 0.5 && StrFindFirst(coop.partyHudText, leader.username + ":") >= 0;
 }
 
 // version_check, both: for 10 s both run the same version and nobody is told anything; at 20 s (the member may begin

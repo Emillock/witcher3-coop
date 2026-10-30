@@ -25,6 +25,8 @@ the party leader's world is the one that counts:
 - If you die, load your save as usual: you stay in the party, and the leader's monsters leave
   your character alone until you are back.
 - Everyone sees each other's horse: ridden, and standing where its rider left it.
+- In a party, the health of up to two party members near you shows under your own health bar
+  (where the game shows a companion such as Ciri; a quest's companion goes first).
 - If a friend near you runs another W3Coop version, both of you get a message: install the same
   version (other versions work only in part). A message that someone "sends no W3Coop updates"
   means an older W3Coop on their side, or an older server on the host's.

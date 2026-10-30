@@ -782,6 +782,11 @@ Witcher Online's own presence features, first tested on the port with `horse_rid
   older W3Coop, or the host's server is older (4 co-op channels drop the newer messages, `hz` among them): it is
   named on screen with that advice once (not while dead or loading: then its game sends nothing). `version_check`
   then has the leader stop sending `hz`: the member was told 21 s later.
+- **Party members' health** (2026-10-30). Each player's snapshot already carried its health (Witcher Online sent it,
+  unused). Up to two party members near now show on the HUD's companion bar (`CR4HudModuleCompanion`, the one quests
+  use for Ciri and others): their character here gets a tag and the health their game reports, the bar their name
+  (an added method sets the Flash name). Only while no quest shows its own companion; taken down when they leave.
+  `party_hud`: the member's health went to 60% and 30%, the leader's bar showed each; screenshots show the bars.
 - **Chat and emotes.** A chat line showed over the sender's copy within 0.2 s; a wave and a bow played on it
   0.17-0.18 s after they were made (Witcher Online resets the emote number to -1 once played; the number played
   stays as `prevEmote`).

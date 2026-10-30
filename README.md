@@ -48,6 +48,8 @@ Not released yet (after v0.3.0; the host needs this version's server):
 - Up to 48 monsters are shared at once (was 24; past that a member didn't see the rest).
 - A player's horse stays in sight for the others where they left it (Witcher Online showed it only while ridden).
 - Players see a message when someone near runs another W3Coop version (other versions work only in part).
+- Party members' health on the HUD: the companion bar the game uses for Ciri and others shows up to two party
+  members near, with their name and their health (not while a quest shows its own companion).
 
 v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
@@ -130,6 +132,7 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python run_test.py real_encounter` | Both bots go to the nearest active monster nest (from the map pins). The member's own encounter monsters there must become copies of the leader's, never fight beside them, and die when the leader kills its monsters. `W3T_PIN_TYPE=BanditCamp` (or another map pin kind): a bandit camp instead. |
 | `python run_test.py enemy_effects` | The leader burns, knocks down, freezes, blinds and confuses its (immortal) drowner one after another; the member checks that its copy gets each effect and loses it when it ends on the leader's drowner. |
 | `python run_test.py encounter_mismatch` | The member's world has a nekker where the leader's has a drowner: the member's nekker must stay hidden (not a copy) and the leader's drowner come as a spawned copy. |
+| `python run_test.py party_hud` | The member's health goes to 60% and then 30%: the leader's HUD companion bar must show the member with each; the member's shows the leader. |
 | `python run_test.py version_check` | Both run the same version for 10 s and are told nothing; then the leader says it runs 0.0.9 and both must be told once; then it sends no presence messages (as an older W3Coop or server) and the member must be told that too. |
 | `python run_test.py trade` | The leader sells the member a Dwarven spirit for 10 crowns through Witcher Online's trade popups (the bots answer them): the item and the money must move. |
 | `python run_test.py enemy_crowd` | The leader shares 40 drowners around the member (it shares up to 48); the member must copy every one. `W3T_CROWD=N` for another number. |
