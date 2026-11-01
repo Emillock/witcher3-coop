@@ -846,18 +846,21 @@ account, and traffic flowed both ways.
 ## First real session: two players, two PCs (2026-10-31)
 
 The owner hosted W3Coop 0.3.1 and a friend joined from another PC over the internet: the first run outside the
-test harness and the first on two machines. The connection itself held (both saw each other, moved, fought, and
-damage was registered in both directions). What the friend reported, with what the code says about each.
+test harness and the first on two machines. The connection held, they formed a party (through the console
+commands below, the menu being empty), shared monsters, and damage was registered in both directions. What the
+friend reported, with what the code says about each.
 
 - **The player menu is empty, so nobody can join a party.** Walking up to the other player and interacting opens
-  Witcher Online's radial menu with no entries at all ("Join party", "Trade", "Emotes", "Play Gwent"). This blocks
-  everything a party does, so the whole shared-monster half of the mod was unreachable in that session; what they
-  saw of each other was presence only.
+  Witcher Online's radial menu with no entries at all ("Join party", "Trade", "Emotes", "Play Gwent"). Nothing in
+  the mod's own screens offers another way in, so without a console the party, and with it everything a party
+  does, is out of reach. These two got in through the console and played on from there.
   - The entries are inventory items (`wo_joinParty`, `wo_trade`, `wo_ride`, `wo_chat*`, `wo_emote*`, `wo_morph*`,
     category `potion`) defined in `dlc\dlc_mpmod\data\items\wo_def_items.xml` inside the DLC bundle, which
     `dlc_mpmod.reddlc` mounts together with `data\items_plus\` and `data\gameplay\gui_new\` (a Scaleform mounter).
     `client.ws createMenu` builds a `CInventoryComponent`, adds those items and opens `CR4ItemSelectionPopup` with
     `selectionMode = EISPM_RadialMenuSilverOil`; `anno.ws OnConfigUI` fills the Flash array `repair.grid.player`.
+    The same menu carries trading, the emotes and chat wheels, riding along and the Gwent invite, so all of those
+    are out of reach too.
   - So an empty menu means either the item definitions are not loaded (then `AddAnItem` adds nothing) or the
     Remastered UI no longer renders that popup the way the mod fills it. The ghosts and their appearances come
     from the same DLC and do show, so the DLC itself is mounted; the owner's settings also have
@@ -866,20 +869,35 @@ damage was registered in both directions). What the friend reported, with what t
   - Workaround shipped to the two players meanwhile: `w3coopParty.ws` adds the console commands `coopjoin(<leader>)`
     and `coopleave()` (the game's console needs `-debugscripts`). Witcher Online's own `teleport(<player>)` works
     the same way.
-  - Fix to build: ask through the game's own message dialog instead of the radial menu. `ShowUserDialogAdv` with
-    `UDB_YesNo` is known to render correctly on this build (the follow-the-leader offer uses it, with a screenshot),
-    so interacting with a player can ask "Join <name>'s party?" without any Flash content of the mod's own.
+  - Fixed: interacting with a player now asks in the game's own message dialog ("Join <name>'s party?", and
+    "Leave <name>'s party?" when already in theirs), which this build renders correctly — the follow-the-leader
+    offer already proved that. No Flash content of the mod's own is involved. `party_invite` drives the same entry
+    point the interact key does and checks the dialog was asked, the party formed, and that interacting again
+    leaves it. The radial menu stays reachable with `coopmenu()`, which also reports whether the menu's entries are
+    items this game knows at all (`AddAnItem` returning nothing would mean the DLC's item definitions never
+    loaded), and `cooptrade()` trades with the nearest player meanwhile.
 - **The leader's monsters died for the leader, but their copies stayed standing, stuck in a walking animation, and
   could not be looted.** Not reproduced by the harness, where copies die with the leader's monster every run.
   - The leader keeps a dead monster in its snapshot for 4 s (`deadAt`) so members see the death, and drops a
     monster nobody has seen for 3 s. A member releases a puppet as soon as it is missing from a snapshot:
     `ReleasePuppet` destroys a spawned copy and gives a local twin its AI back.
-  - A puppet can therefore only be left standing if the member stops getting snapshots for it altogether (the
-    leader out of range, the party ending, or lost messages), because then nothing says it died and nothing says it
-    is gone either; it keeps the last animation it was given. "Could not be looted" fits that too: the copy is not
-    dead, and a spawned copy carries no loot of its own in any case.
-  - Fix to build: a member releases a puppet that no snapshot has mentioned for a few seconds, whatever the reason.
-    That turns every such case into "the copy disappears", which is what already happens when a party ends.
+  - Snapshots stopping altogether is already handled (`ReleaseAll` after 8 s without one), and a monster dropped
+    from a snapshot is released on the next one, so neither leaves anything standing. What is not handled is the
+    copy **outliving its own death**: `KillPuppet` takes its AI away and kills it, but the kill can fail to take in
+    the member's world (the monster is immortal there, as encounter and quest monsters often are until their quest
+    allows it, or it only drops unconscious, which this project has seen before with drowners). The copy is then
+    dead in W3Coop's books and skipped by every update, alive and AI-less in the world, and holding the pose it had
+    — the reported standing monster in a walking animation. It cannot be looted because it is not dead, and a
+    spawned copy carries no loot of its own anyway. `ReleasePuppet` also returns early for a puppet it believes
+    dead, so nothing ever gives the body back its AI.
+  - Two safety nets added, since the exact trigger is still unproven. A copy killed here that is still alive 2 s
+    later is let go: a spawned one is destroyed, a local twin becomes this world's own monster again with its AI
+    back (`FreeStuckPuppet`, counted as `puppetsFreed`). And a member drops a puppet no snapshot has named for 5 s
+    (`puppetsTimedOut`). Both write a line to the sync log, so the next session says whether either fires in real
+    play. Staging the first one in a test did not work: W3Coop's own kill passes `ignoreImmortalityMode`, so a copy
+    made immortal in the member's world dies all the same, and nothing was left standing. `puppet_timeout`
+    therefore tests what it can — the leader goes silent (`muteHost`, now checked inside `HostSend`, which every
+    snapshot goes through) and nothing of its monsters may be left in the member's world.
 - **The caster's hand gesture is missing: the sign's effect shows for both players, but the other player's
   character does not play the casting animation.** The effect is W3Coop's own work and is tested (`sign_visuals`);
   the gesture is Witcher Online's, queued on the ghost in `remotePlayer.ws` when the snapshot's `lastSign` changes,
@@ -897,8 +915,12 @@ damage was registered in both directions). What the friend reported, with what t
   does. Note that a member does hide its own hostile NPCs within 30 m while in a party (`SuppressUnmatched`), but
   that cannot hide a trader: the search is `FLAG_Attitude_Hostile`.
 - **Damage both ways was registered**, in both directions, and is not among the problems.
-- Still to clarify with the players: "enemies and time out of sync" (the time of day is synced to the party leader
-  within 90 s, `client.ws`), and whether the stuck monsters later disappeared.
+- **The time of day differed between the two games.** A member's clock does follow its leader's
+  (`SetGameTime` when they are more than 90 s apart), but only while the leader is near enough to be in the
+  member's near-player list and in the same region: the clock comes from the full snapshot (`day`, `hour`,
+  `minute`, `second`), and the global player record, which carries a player across regions, has no clock in it.
+  Apart, each world runs its own clock and they drift, and meditation jumps one of them. W3Coop could carry the
+  leader's clock in its own presence message (`hz`, every 2 s, no range limit) and keep the existing 90 s rule.
 
 ## Open questions
 

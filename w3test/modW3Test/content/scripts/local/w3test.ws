@@ -183,6 +183,10 @@ function ShowProgressDialog( messageId : int, title : string, message : string, 
     }
     W3T_Log("DIALOG id=" + messageId + " type=" + (int)type + " text=" + text);
 
+    if(theGame.w3t_bot)
+    {
+        theGame.w3t_bot.CountDialog();
+    }
     if(type == UDB_Ok || type == UDB_OkCancel)
     {
         UserDialogCallback(messageId, UMA_Ok);
@@ -330,6 +334,7 @@ statemachine class W3T_Bot
     public var scenarioFarSince : float; // since when its target has been out of reach
     public var scenarioPos : Vector;     // where it stood when it last moved (stuck checks)
     public var scenarioValue : float;
+    public var dialogsAnswered : int;    // system dialogs this bot answered (party_invite checks one was asked)
     public var scenarioName : name;
     public var scenarioText : string;
 
@@ -399,6 +404,11 @@ statemachine class W3T_Bot
         settleUntil = ElapsedS() + 5;
         begun = false;
         W3T_Log("SCENARIO " + next + " start");
+    }
+
+    public function CountDialog()
+    {
+        dialogsAnswered += 1;
     }
 
     public function ElapsedS() : float

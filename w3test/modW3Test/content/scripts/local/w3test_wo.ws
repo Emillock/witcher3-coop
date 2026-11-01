@@ -39,6 +39,7 @@ function W3T_EndScenario(bot : W3T_Bot)
     coop = client.getCoopEnemies();
     coop.versionOverride = "";
     coop.muteHz = false;
+    coop.muteHost = false;
     coop.ResetDiagnostics();
     // facing as at the start too: scenarios spawn monsters ahead of the player (after a ride a drowner landed on a ledge)
     if(bot.homeSet)
@@ -291,6 +292,32 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_PartyHudLeader(bot, client, players[0]);
         }
         return W3T_PartyHudMember(bot, client, players[0]);
+    }
+
+    if(scenario == "party_invite")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_PartyInviteLeader(bot, client, players[0]);
+        }
+        return W3T_PartyInviteMember(bot, client, players[0]);
+    }
+
+    if(scenario == "puppet_timeout")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_PuppetTimeoutLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_PuppetTimeoutMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
     if(scenario == "follow_travel")
@@ -2236,6 +2263,123 @@ function W3T_PartyHudMember(bot : W3T_Bot, client : r_MultiplayerClient, leader 
     thePlayer.ForceSetStat(BCS_Vitality, thePlayer.GetStatMax(BCS_Vitality) * share);
     W3T_Log("PARTYHUD member health=" + FloatToStringPrec(thePlayer.GetHealthPercents(), 2) + " shows " + W3T_PartyText(client));
     return share < 0.5 && StrFindFirst(W3T_PartyText(client), leader.username + ":") >= 0;
+}
+
+// party_invite, leader: waits for the member to be in its party (the member does the interacting).
+function W3T_PartyInviteLeader(bot : W3T_Bot, client : r_MultiplayerClient, member : r_RemotePlayer) : bool
+{
+    W3T_Log("INVITE leader inParty=" + member.inParty + " joined=" + member.joinedParty);
+    return member.inParty && member.joinedParty == client.getUsername();
+}
+
+// party_invite, member: interacting with the leader's character (what ghostPlayer.ws does on the interact key)
+// must ask in the game's own dialog, and answering yes must put it in the party. Interacting again must ask to
+// leave, and that must work too (scenarioCount: 1 asked to join, 2 in the party, 3 asked to leave).
+function W3T_PartyInviteMember(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
+{
+    var coop : r_CoopEnemies;
+
+    coop = client.getCoopEnemies();
+    if(!leader.ghost)
+    {
+        return false;
+    }
+    W3T_Log("INVITE member step=" + bot.scenarioCount + " inParty=" + client.getInParty() + "/" + client.getJoinedParty()
+        + " dialogs=" + bot.dialogsAnswered);
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioValue = bot.dialogsAnswered;
+        coop.OfferParty(leader.ghost);
+        bot.scenarioCount = 1;
+        return false;
+    }
+    if(bot.scenarioCount == 1)
+    {
+        if(bot.dialogsAnswered == (int)bot.scenarioValue)
+        {
+            W3T_Log("FAIL interacting asked nothing (no dialog)");
+            W3T_Quit(1);
+            return false;
+        }
+        if(!client.getInParty())
+        {
+            W3T_Log("FAIL said yes to the party question and did not join");
+            W3T_Quit(1);
+            return false;
+        }
+        bot.scenarioCount = 2;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    // in the party for 3 s (the leader must see it), then interacting again must offer to leave
+    if(bot.scenarioCount == 2)
+    {
+        if(bot.ElapsedS() - bot.scenarioTime < 3)
+        {
+            return false;
+        }
+        coop.OfferParty(leader.ghost);
+        bot.scenarioCount = 3;
+        return false;
+    }
+    if(client.getInParty())
+    {
+        W3T_Log("FAIL said yes to leaving and stayed in the party");
+        W3T_Quit(1);
+        return false;
+    }
+    return client.getJoinedParty() == "" || !client.getInParty();
+}
+
+// puppet_timeout, leader: shares a drowner and then stops sending anything at all (muteHost), as a leader whose
+// messages stop reaching a member does. scenarioCount 2 shared, 3 quiet.
+function W3T_PuppetTimeoutLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    if(bot.scenarioCount < 2)
+    {
+        if(!W3T_EnemyAttacksLeader(bot, coop, member))
+        {
+            return false;
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+        return false;
+    }
+    if(bot.scenarioCount == 2)
+    {
+        // the member needs a moment to copy it
+        if(bot.ElapsedS() - bot.scenarioTime < 8 || coop.HostEnemyCount() < 1)
+        {
+            return false;
+        }
+        W3T_Log("TIMEOUT leader goes quiet with " + coop.HostEnemyCount() + " monster(s) shared");
+        coop.muteHost = true;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 3;
+    }
+    return bot.ElapsedS() - bot.scenarioTime >= 20;
+}
+
+// puppet_timeout, member: copies the leader's drowner; once the leader goes quiet nothing of it may be left
+// standing in this world (the first two-PC session left monsters standing for good).
+function W3T_PuppetTimeoutMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() > 0)
+    {
+        bot.scenarioFlag = true;  // it had a copy
+        bot.scenarioTime = bot.ElapsedS();
+    }
+    W3T_Log("TIMEOUT member puppets=" + coop.PuppetCount() + " timedOut=" + coop.puppetsTimedOut + " freed="
+        + coop.puppetsFreed + " spawned=" + coop.puppetsSpawned);
+    // the copy went, and stayed gone for 6 s (nothing creeps back from a leader that says nothing)
+    return bot.scenarioFlag && coop.PuppetCount() == 0 && bot.ElapsedS() - bot.scenarioTime >= 6;
 }
 
 // follow_travel: the nearest signpost of this world at least minDist away (W = 0 if none)
