@@ -843,6 +843,63 @@ scenarios that share that spawn code were rerun and passed. Also passing: `serve
 co-op channel, no game) and `relay/selftest.py`. Over Steam, every run joined the host's lobby through the second
 account, and traffic flowed both ways.
 
+## First real session: two players, two PCs (2026-10-31)
+
+The owner hosted W3Coop 0.3.1 and a friend joined from another PC over the internet: the first run outside the
+test harness and the first on two machines. The connection itself held (both saw each other, moved, fought, and
+damage was registered in both directions). What the friend reported, with what the code says about each.
+
+- **The player menu is empty, so nobody can join a party.** Walking up to the other player and interacting opens
+  Witcher Online's radial menu with no entries at all ("Join party", "Trade", "Emotes", "Play Gwent"). This blocks
+  everything a party does, so the whole shared-monster half of the mod was unreachable in that session; what they
+  saw of each other was presence only.
+  - The entries are inventory items (`wo_joinParty`, `wo_trade`, `wo_ride`, `wo_chat*`, `wo_emote*`, `wo_morph*`,
+    category `potion`) defined in `dlc\dlc_mpmod\data\items\wo_def_items.xml` inside the DLC bundle, which
+    `dlc_mpmod.reddlc` mounts together with `data\items_plus\` and `data\gameplay\gui_new\` (a Scaleform mounter).
+    `client.ws createMenu` builds a `CInventoryComponent`, adds those items and opens `CR4ItemSelectionPopup` with
+    `selectionMode = EISPM_RadialMenuSilverOil`; `anno.ws OnConfigUI` fills the Flash array `repair.grid.player`.
+  - So an empty menu means either the item definitions are not loaded (then `AddAnItem` adds nothing) or the
+    Remastered UI no longer renders that popup the way the mod fills it. The ghosts and their appearances come
+    from the same DLC and do show, so the DLC itself is mounted; the owner's settings also have
+    `DlcEnabled_dlc_mpmod=1`. That points at the Flash side, which fits Remastered having rebuilt the UI (the same
+    reason Gwent between players is off).
+  - Workaround shipped to the two players meanwhile: `w3coopParty.ws` adds the console commands `coopjoin(<leader>)`
+    and `coopleave()` (the game's console needs `-debugscripts`). Witcher Online's own `teleport(<player>)` works
+    the same way.
+  - Fix to build: ask through the game's own message dialog instead of the radial menu. `ShowUserDialogAdv` with
+    `UDB_YesNo` is known to render correctly on this build (the follow-the-leader offer uses it, with a screenshot),
+    so interacting with a player can ask "Join <name>'s party?" without any Flash content of the mod's own.
+- **The leader's monsters died for the leader, but their copies stayed standing, stuck in a walking animation, and
+  could not be looted.** Not reproduced by the harness, where copies die with the leader's monster every run.
+  - The leader keeps a dead monster in its snapshot for 4 s (`deadAt`) so members see the death, and drops a
+    monster nobody has seen for 3 s. A member releases a puppet as soon as it is missing from a snapshot:
+    `ReleasePuppet` destroys a spawned copy and gives a local twin its AI back.
+  - A puppet can therefore only be left standing if the member stops getting snapshots for it altogether (the
+    leader out of range, the party ending, or lost messages), because then nothing says it died and nothing says it
+    is gone either; it keeps the last animation it was given. "Could not be looted" fits that too: the copy is not
+    dead, and a spawned copy carries no loot of its own in any case.
+  - Fix to build: a member releases a puppet that no snapshot has mentioned for a few seconds, whatever the reason.
+    That turns every such case into "the copy disappears", which is what already happens when a party ends.
+- **The caster's hand gesture is missing: the sign's effect shows for both players, but the other player's
+  character does not play the casting animation.** The effect is W3Coop's own work and is tested (`sign_visuals`);
+  the gesture is Witcher Online's, queued on the ghost in `remotePlayer.ws` when the snapshot's `lastSign` changes,
+  by animation name (`man_ger_sword_ignii_front_lp`, `man_geralt_quen_front_sword`, and so on, with branches for
+  in and out of combat and for the held item). The hook that sets `lastSign` (`@wrapMethod(W3PlayerWitcher)
+  CastSign`) is still the game's own cast path on this build, so the likeliest cause is those animation names not
+  existing on Remastered, which fails silently. No test covers the gesture.
+- **Monsters lost their sounds, and their attacks make no sound.** Copies are driven by slot animations
+  (`PlaySlotAnimationAsync`), and, as noted under the attack work, a slot animation's sound and footstep events
+  never reach scripts. Likely the same cause; not confirmed.
+- **Each player sees their own world's NPCs, so traders and others differ.** The owner could not see NPCs the
+  friend could. This is by design: only the journal, the quest facts and dialogue choices are shared, so anything a
+  player's own quest state decides (who stands where, who has moved on or died) stays their own. The owner's read
+  is right that only sharing the whole save state would make the worlds identical, which is not what this design
+  does. Note that a member does hide its own hostile NPCs within 30 m while in a party (`SuppressUnmatched`), but
+  that cannot hide a trader: the search is `FLAG_Attitude_Hostile`.
+- **Damage both ways was registered**, in both directions, and is not among the problems.
+- Still to clarify with the players: "enemies and time out of sync" (the time of day is synced to the party leader
+  within 90 s, `client.ws`), and whether the stuck monsters later disappeared.
+
 ## Open questions
 
 - **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in
