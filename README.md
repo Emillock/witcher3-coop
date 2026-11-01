@@ -13,7 +13,7 @@ Play The Witcher 3: Wild Hunt **Remastered (patch 5.01)** with friends over Stea
   - The **player package** builder.
   - The **test harness** that runs two game copies on one PC with an in-game bot.
 
-## Status: v0.3.1 pre-release
+## Status: v0.4.0 pre-release
 
 Players see each other in their own worlds, and each keeps their own save. Since v0.2.0 (branch
 `shared-enemies`), when players are in a Witcher Online party:
@@ -29,8 +29,12 @@ milliseconds behind (the same swing, throw, charge, spell or sign, so spells' ar
 dodge, taunt, jump back and parry when they do. Effects a monster's attack plays from its script show on the copy, and
 effects it applies without a hit (a fugas' burning vomit, a wraith's blinding aura) reach members.
 
-New in v0.3.1 (everyone needs it, and the host its server; 0.3.0 and older crash at startup on the game's update of
-2026-10-29):
+New in v0.4.0: joining a party works again (the menu it used shows nothing on Remastered, so interacting with a
+player now asks in the game's own dialog), no copy of a monster is left standing in a member's world, and a member
+left behind when the leader fast-travels is asked whether to follow.
+
+In v0.3.1 (everyone needs these too, and the host its server; 0.3.0 and older crash at startup on the game's update
+of 2026-10-29):
 - Runs on the game's update of 2026-10-29 (build 5.0.0.1090142): every earlier package crashed at startup there,
   because one code signature the native bridge looks for changed (fixed in the bundled bridge, which now accepts
   both forms; its source is in the package). Should a later patch break it again, the bridge says so in a message
@@ -51,9 +55,6 @@ New in v0.3.1 (everyone needs it, and the host its server; 0.3.0 and older crash
 - A player's horse stays in sight for the others where they left it (Witcher Online showed it only while ridden).
 - Players see a message when someone near runs another W3Coop version (other versions work only in part).
 
-Not released yet (after v0.3.1):
-- A member left behind when the leader fast-travels (to another region, or 200 m or more at once) is asked whether
-  to follow, and travels to the leader on yes.
 
 v0.1.0 was presence only. Gwent duels between players are switched off. Details: [docs/true-coop-design.md](docs/true-coop-design.md).
 
@@ -61,11 +62,11 @@ v0.1.0 was presence only. Gwent duels between players are switched off. Details:
 |---|---|
 | Tested | Two players on two PCs over the internet once (2026-10-31): they saw each other, formed a party (through the console, the menu being empty), fought shared monsters and damage counted both ways. Two game copies on one PC: presence, movement, riding, chat and emotes, trading, following the leader's fast travel, a player's death, and every shared-monster and journal scenario below. Over real Steam, two accounts on one PC (the second in a Sandboxie box): the joiner finds the host's lobby and game traffic flows both ways. |
 | Not tested yet | Three or more players (a third game needs more graphics memory than the test PC has). Real encounters beyond one monster nest and one bandit camp (others are spawned by script). |
-| Known limits | **Blocker (2026-10-31):** on Remastered the menu that opens when you interact with another player is empty, so there is no "Join party" to pick and no party can be formed. Until it is fixed, join from the game's console (start the game with `-debugscripts`, press `~`, type `coopjoin(LeaderName)`); `coopleave()` leaves. The same menu carries trading, emotes and the Gwent invite. **Known bug:** if a member's character in the leader's world ends up somewhere else (seen once: it fell off a pier into the water below while the member stood on the pier), the leader's monsters fight it there and can't hit the member; it isn't put back while it is only a few metres off. Walking away and back, or leaving and rejoining the party, may help (untested). Copies follow the leader's monsters a few dozen milliseconds behind (most swings 16-56 ms; the water hag's and the bear's about 0.1 s, then caught up). Untested moves: Shaelmaar's charges, the fairytale witch's and the black mage's spells (they never fought in tests), scripted encounter animations. At most 48 monsters are shared at once; a member's own copies of any more stay hidden. Finishers and dismemberment on a shared monster are not mirrored (others see it die normally). Axii's puppet skill (a human fighting for the caster) works in the caster's world only. A mod that replaces the game's effect list, like the Workshop mod "Consumables Balanced", leaves no burning, bleeding or knockdown at all, also without co-op. Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. Gwent duels between players are off (Remastered rebuilt Gwent). |
+| Known limits | **The player menu shows nothing on Remastered.** Joining a party no longer needs it (interacting asks in the game's own dialog), but trading, emotes and the Gwent invite still do: until that is fixed they need the game's console (`-debugscripts`, then `~`), where `cooptrade()`, `chat("...")` and the emote commands stand in. **Known bug:** if a member's character in the leader's world ends up somewhere else (seen once: it fell off a pier into the water below while the member stood on the pier), the leader's monsters fight it there and can't hit the member; it isn't put back while it is only a few metres off. Walking away and back, or leaving and rejoining the party, may help (untested). Copies follow the leader's monsters a few dozen milliseconds behind (most swings 16-56 ms; the water hag's and the bear's about 0.1 s, then caught up). Untested moves: Shaelmaar's charges, the fairytale witch's and the black mage's spells (they never fought in tests), scripted encounter animations. At most 48 monsters are shared at once; a member's own copies of any more stay hidden. Finishers and dismemberment on a shared monster are not mirrored (others see it die normally). Axii's puppet skill (a human fighting for the caster) works in the caster's world only. A mod that replaces the game's effect list, like the Workshop mod "Consumables Balanced", leaves no burning, bleeding or knockdown at all, also without co-op. Quest-fact sync reads the 5.01 game's memory layout and switches itself off if a patch changes it. Gwent duels between players are off (Remastered rebuilt Gwent). |
 
 ## Playing
 
-Download `W3Coop-0.3.1.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
+Download `W3Coop-0.4.0.zip` from [Releases](https://github.com/Emillock/witcher3-coop/releases) and copy
 its contents into your Witcher 3 folder. `W3Coop\README.txt` inside covers hosting, joining and uninstalling.
 The host needs Java 21 or newer.
 
@@ -112,10 +113,10 @@ cd build\classes && jar cfm ..\WitcherServer.jar ..\..\src\META-INF\MANIFEST.MF 
 cd <root>\witcher3-coop
 relay\build.cmd
 w3test\build.cmd
-python package\build_package.py 0.3.1
+python package\build_package.py 0.4.0
 ```
 
-The last step writes `<root>\work\dist\W3Coop-0.3.1` and its zip. [config.py](config.py) finds the game
+The last step writes `<root>\work\dist\W3Coop-0.4.0` and its zip. [config.py](config.py) finds the game
 through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
 
 ## Testing
