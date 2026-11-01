@@ -193,6 +193,14 @@ function ShowProgressDialog( messageId : int, title : string, message : string, 
         HideUserDialog(messageId);
         W3T_Log("DIALOG answered OK");
     }
+    else if(type == UDB_YesNo && messageId == W3CoopTradeMessageId() && W3T_CurrentScenario() != "trade")
+    {
+        // W3Coop's offer to trade with a party member: only the trade scenario takes it, the rest go on to the
+        // party question behind it
+        UserDialogCallback(messageId, UMA_No);
+        HideUserDialog(messageId);
+        W3T_Log("DIALOG answered No");
+    }
     else if(type == UDB_YesNo && messageId == W3CoopTravelMessageId() && W3T_CurrentScenario() != "follow_travel")
     {
         // W3Coop's offer to follow the leader: only follow_travel takes it (other tests move the bots themselves)

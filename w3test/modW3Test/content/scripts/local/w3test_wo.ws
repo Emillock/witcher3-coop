@@ -40,6 +40,7 @@ function W3T_EndScenario(bot : W3T_Bot)
     coop.versionOverride = "";
     coop.muteHz = false;
     coop.muteHost = false;
+    coop.muteWoClock = false;
     coop.ResetDiagnostics();
     // facing as at the start too: scenarios spawn monsters ahead of the player (after a ride a drowner landed on a ledge)
     if(bot.homeSet)
@@ -82,7 +83,8 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
     var scenario : string = bot.scenario;
     var client : r_MultiplayerClient = theGame.r_getMultiplayerClient();
     var coop : r_CoopEnemies;
-    var players : array<r_RemotePlayer>;
+    var players, globals : array<r_RemotePlayer>;
+    var other : r_RemotePlayer;
     var ghosts : int;
     var i : int;
 
@@ -292,6 +294,71 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_PartyHudLeader(bot, client, players[0]);
         }
         return W3T_PartyHudMember(bot, client, players[0]);
+    }
+
+    if(scenario == "sign_cast")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_SignCastLeader(bot);
+        }
+        return W3T_SignCastMember(bot, players[0]);
+    }
+
+    if(scenario == "sign_anim")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return true;  // the leader only has to stand there
+        }
+        return W3T_SignAnim(bot, players[0]);
+    }
+
+    if(scenario == "player_menu")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return true;  // the leader only has to stand there
+        }
+        return W3T_PlayerMenu(bot, client, players[0]);
+    }
+
+    if(scenario == "clock_sync")
+    {
+        // by name among all players: they stand a kilometre apart, where neither is a near player of the other
+        globals = client.getGlobalPlayers();
+        other = NULL;
+        for(i = 0; i < globals.Size(); i += 1)
+        {
+            if(globals[i])
+            {
+                if(globals[i].username != client.getUsername())
+                {
+                    other = globals[i];
+                }
+            }
+        }
+        if(!other)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_ClockLeader(bot, client, other);
+        }
+        return W3T_ClockMember(bot, client, client.getCoopEnemies(), other);
     }
 
     if(scenario == "party_invite")
@@ -2272,6 +2339,230 @@ function W3T_PartyHudMember(bot : W3T_Bot, client : r_MultiplayerClient, leader 
     return share < 0.5 && StrFindFirst(W3T_PartyText(client), leader.username + ":") >= 0;
 }
 
+// sign_cast, leader: casts Igni every 4 s with its sword drawn, and says what its own game recorded.
+function W3T_SignCastLeader(bot : W3T_Bot) : bool
+{
+    var witcher : W3PlayerWitcher;
+
+    witcher = GetWitcherPlayer();
+    if(bot.ElapsedS() - bot.scenarioActAt >= 4)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        bot.scenarioCount += 1;
+        witcher.SetEquippedSign(ST_Igni);
+        thePlayer.ForceSetStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));  // (a tired Geralt casts nothing)
+        // CastSign is what the sign key calls, and what the mod hooks to record the cast; CastSignSpecific
+        // bypasses that hook, which is how this test first showed nothing at all
+        W3T_Log("SIGNCAST leader casts Igni, cast=" + witcher.CastSign()
+            + " lastSignTime=" + FloatToStringPrec(theGame.r_getMultiplayerClient().getLastSignTime(), 2)
+            + " combat=" + thePlayer.IsInCombat());
+    }
+    return bot.scenarioCount >= 4;
+}
+
+// sign_cast, member: logs what the leader's character here is told about the cast (the fields the gesture hangs
+// on) and whether its animation component is playing anything.
+function W3T_SignCastMember(bot : W3T_Bot, leader : r_RemotePlayer) : bool
+{
+    var spot : Vector;
+    var rot : EulerAngles;
+
+    if(!leader.ghost)
+    {
+        return false;
+    }
+    // the caster 5 m ahead of the camera, as player_effects does, so the screenshots show it at all
+    if(VecDistance2D(thePlayer.GetWorldPosition() + theCamera.GetCameraForwardOnHorizontalPlane() * 5.0, leader.ghost.GetWorldPosition()) > 1.5
+        && theGame.GetWorld().NavigationFindSafeSpot(leader.ghost.GetWorldPosition() - theCamera.GetCameraForwardOnHorizontalPlane() * 5.0, 0.5, 3.0, spot))
+    {
+        rot.Yaw = theCamera.GetCameraHeading();
+        thePlayer.TeleportWithRotation(spot, rot);
+    }
+    W3T_Log("SIGNCAST member lastSign=" + FloatToStringPrec(leader.lastSign, 2) + " signType=" + (int)leader.signType
+        + " castSignType=" + (int)leader.castSignType + " signFx=" + leader.signFx + " channeling=" + leader.channeling
+        + " inCombat=" + leader.inCombat + " held='" + leader.heldItem + "'");
+    if(leader.lastSign > 0)
+    {
+        bot.scenarioFlag = true;
+    }
+    return bot.scenarioFlag && bot.ElapsedS() > 40;
+}
+
+// sign_anim, member: a sign's effect shows on the other player's character, but the hand that casts it does not.
+// Witcher Online plays that gesture on the ghost by animation name; this tries every name it uses on the leader's
+// character here and says which the game knows, with an emote's as a control.
+function W3T_SignAnim(bot : W3T_Bot, leader : r_RemotePlayer) : bool
+{
+    var comp : CAnimatedComponent;
+    var names : array<name>;
+    var text : string;
+    var i : int;
+
+    if(bot.scenarioCount > 0)
+    {
+        return true;
+    }
+    if(!leader.ghost)
+    {
+        return false;
+    }
+    comp = leader.ghost.GetRootAnimatedComponent();
+    if(!comp)
+    {
+        return false;
+    }
+    // in combat, sword drawn
+    names.PushBack('man_ger_sword_ignii_front_lp');
+    names.PushBack('man_ger_sword_aard_front_lp');
+    names.PushBack('man_ger_sword_axii_draw_lp');
+    names.PushBack('man_ger_sword_quen_front_lp');
+    names.PushBack('man_ger_sword_yrden_ground_lp');
+    // in combat, bare hands
+    names.PushBack('man_fistfight_ignii_front');
+    names.PushBack('man_fistfight_aard_front');
+    names.PushBack('man_fistfight_axii_release');
+    names.PushBack('man_fistfight_quen_front');
+    names.PushBack('man_fistfight_yrden_ground');
+    // out of combat, sword drawn
+    names.PushBack('man_geralt_ignii_front_sword');
+    names.PushBack('man_geralt_aard_front_sword');
+    names.PushBack('man_ger_sword_axii_release_lp_sword');
+    names.PushBack('man_geralt_quen_front_sword');
+    names.PushBack('man_geralt_yrden_ground_sword');
+    // an emote's, which does play on ghosts (social), and a name no game ever had
+    names.PushBack('man_work_greeting_with_hand_gesture_05');
+    names.PushBack('w3coop_no_such_animation');
+
+    for(i = 0; i < names.Size(); i += 1)
+    {
+        if(text != "")
+        {
+            text += ", ";
+        }
+        text += NameToString(names[i]) + "="
+            + comp.PlaySlotAnimationAsync(names[i], 'NPC_ANIM_SLOT', SAnimatedComponentSlotAnimationSettings(0.2, 0.2));
+    }
+    comp.PlaySlotAnimationAsync('', 'NPC_ANIM_SLOT');
+    W3T_Log("SIGNANIM " + text);
+    bot.scenarioCount = 1;
+    return true;
+}
+
+// player_menu, member: Witcher Online's radial player menu draws no entries on Remastered. Says whether its
+// entries exist as items in this game at all (the menu adds them to an inventory of its own), then opens the menu
+// and leaves it open for the screenshots. Passes once it has said so.
+function W3T_PlayerMenu(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
+{
+    var inventory : CInventoryComponent;
+    var ids : array<SItemUniqueId>;
+    var names : array<name>;
+    var text : string;
+    var i : int;
+
+    if(bot.scenarioCount > 0)
+    {
+        return true;
+    }
+    if(!leader.ghost)
+    {
+        return false;
+    }
+    names.PushBack('wo_joinParty');
+    names.PushBack('wo_trade');
+    names.PushBack('wo_ride');
+    names.PushBack('wo_emote1');
+    names.PushBack('wo_chat1');
+    names.PushBack('Dwarven spirit');  // a plain game item, to tell a dead inventory from missing definitions
+    for(i = 0; i < names.Size(); i += 1)
+    {
+        inventory = new CInventoryComponent in theGame;
+        inventory.AddAnItem(names[i], 1);
+        ids.Clear();
+        inventory.GetAllItems(ids);
+        if(text != "")
+        {
+            text += ", ";
+        }
+        text += NameToString(names[i]) + "=" + ids.Size();
+    }
+    W3T_Log("MENU items the player menu adds: " + text);
+    W3T_Log("MENU opening Witcher Online's player menu for " + leader.username);
+    client.createMenu(leader.ghost);
+    bot.scenarioCount = 1;
+    return true;
+}
+
+// clock_sync, leader: sets its clock a day and a half on, far from the member, and keeps it there.
+function W3T_ClockLeader(bot : W3T_Bot, client : r_MultiplayerClient, member : r_RemotePlayer) : bool
+{
+    var target : Vector;
+    var label : string;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(!member.inParty)
+        {
+            return false;  // (waiting for the member to join)
+        }
+        // a signpost a kilometre off, not a spot in the air: Witcher Online's own clock sync only reaches a member
+        // near enough to be a near player, and an offset in X dropped the leader through the world
+        target = W3T_FarSignpost(800, label);
+        if(target.W == 0)
+        {
+            W3T_Log("FAIL no signpost 800 m away: " + label);
+            W3T_Quit(1);
+            return false;
+        }
+        W3T_Log("CLOCK leader goes to signpost " + label);
+        thePlayer.Teleport(target + Vector(0, 0, 1));
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        return false;
+    }
+    if(bot.scenarioCount == 1)
+    {
+        if(bot.ElapsedS() - bot.scenarioTime < 6)
+        {
+            return false;
+        }
+        theGame.SetGameTime(GameTimeCreate(GameTimeDays(theGame.GetGameTime()) + 1, 13, 0, 0), true);
+        W3T_Log("CLOCK leader set its own clock to " + GameTimeToSeconds(theGame.GetGameTime()));
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+    }
+    W3T_Log("CLOCK leader clock=" + GameTimeToSeconds(theGame.GetGameTime()));
+    return bot.ElapsedS() - bot.scenarioTime >= 25;
+}
+
+// clock_sync, member: joins the party and stays where it is; its clock must come to the leader's within 90 s of it
+// although the leader is 300 m away.
+function W3T_ClockMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var mine, theirs, apart : int;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        return false;
+    }
+    // Witcher Online's own sync still reaches a leader 800 m off; W3Coop's job is what it cannot reach (another
+    // region, or farther still), so it is left out of this test
+    coop.muteWoClock = true;
+    mine = GameTimeToSeconds(theGame.GetGameTime());
+    theirs = GameTimeToSeconds(GameTimeCreate(leader.day, leader.hour, leader.minute, leader.second));
+    apart = mine - theirs;
+    if(apart < 0)
+    {
+        apart = -apart;
+    }
+    W3T_Log("CLOCK member clock=" + mine + " leader=" + theirs + " apart=" + apart + " followed=" + coop.clocksFollowed
+        + " dist=" + FloatToStringPrec(VecDistance(leader.pos, thePlayer.GetWorldPosition()), 0));
+    // the leader's record out here is the global one, whose clock Witcher Online does not fill, so only the count
+    // of clocks followed says whether W3Coop did its work
+    return coop.clocksFollowed >= 1;
+}
+
 // party_invite, leader: waits for the member to be in its party (the member does the interacting).
 function W3T_PartyInviteLeader(bot : W3T_Bot, client : r_MultiplayerClient, member : r_RemotePlayer) : bool
 {
@@ -2318,7 +2609,7 @@ function W3T_PartyInviteMember(bot : W3T_Bot, client : r_MultiplayerClient, lead
         bot.scenarioTime = bot.ElapsedS();
         return false;
     }
-    // in the party for 3 s (the leader must see it), then interacting again must offer to leave
+    // in the party for 3 s (the leader must see it), then interacting again must offer trading and then leaving
     if(bot.scenarioCount == 2)
     {
         if(bot.ElapsedS() - bot.scenarioTime < 3)
@@ -2326,16 +2617,21 @@ function W3T_PartyInviteMember(bot : W3T_Bot, client : r_MultiplayerClient, lead
             return false;
         }
         coop.OfferParty(leader.ghost);
+        bot.scenarioTime = bot.ElapsedS();
         bot.scenarioCount = 3;
         return false;
     }
+    // the trading question comes first and is declined, then the party one a moment later
     if(client.getInParty())
     {
-        W3T_Log("FAIL said yes to leaving and stayed in the party");
-        W3T_Quit(1);
+        if(bot.ElapsedS() - bot.scenarioTime > 5)
+        {
+            W3T_Log("FAIL said yes to leaving and stayed in the party");
+            W3T_Quit(1);
+        }
         return false;
     }
-    return client.getJoinedParty() == "" || !client.getInParty();
+    return true;
 }
 
 // puppet_timeout, leader: shares a drowner and then stops sending anything at all (muteHost), as a leader whose

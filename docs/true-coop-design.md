@@ -869,8 +869,26 @@ friend reported, with what the code says about each.
   - Workaround shipped to the two players meanwhile: `w3coopParty.ws` adds the console commands `coopjoin(<leader>)`
     and `coopleave()` (the game's console needs `-debugscripts`). Witcher Online's own `teleport(<player>)` works
     the same way.
-  - Fixed: interacting with a player now asks in the game's own message dialog ("Join <name>'s party?", and
-    "Leave <name>'s party?" when already in theirs), which this build renders correctly — the follow-the-leader
+  - **Why it is empty, settled 2026-11-01** (`player_menu`, which adds the menu's entries to an inventory of its
+    own, exactly as `createMenu` does, and counts what came back): `wo_joinParty=0, wo_trade=0, wo_ride=0,
+    wo_emote1=0, wo_chat1=0`, while a plain game item in the same breath gives 1. The menu is empty because **its
+    items do not exist in this game**, not because the UI fails to draw them — `AddAnItem` adds nothing. So the
+    DLC's item definitions never load. What is known about that:
+    - The DLC's bundle is readable: the mod's ghost entities come from `dlc\dlc_mpmod\data\entities\...` by exact
+      path and do appear, and `DlcEnabled_dlc_mpmod=1` is in the settings.
+    - The engine still knows `CR4DefinitionsDLCMounter` and `definitionXmlFilePath` (both are in witcher3.exe), and
+      the mod's `dlc_mpmod.reddlc` points that mounter at `dlc\dlc_mpmod\data\items\`.
+    - Remastered's own DLC item definitions sit at `dlc\<name>\data\gameplay\items\` (and `...\items_plus\`),
+      one folder deeper than the mod's. Putting a copy of `wo_def_items.xml` there as a loose file under the DLC's
+      content folder changed nothing, so loose files are not read there (or the path is not the whole story).
+    - Likeliest remaining explanation: the mounter enumerates the folder through the bundle's `metadata.store`,
+      which this DLC's was built for 4.04; loading by exact path still works, enumerating does not. Testing that
+      means repacking the bundle with a 5.x index, which needs a cooking tool this project does not have.
+    - So the menu's other entries (trading, emotes, chat, morphs, riding along, the Gwent invite) cannot be
+      restored by moving files about. Either the DLC is repacked for 5.x, or each entry gets a way in of its own.
+  - Fixed: interacting with a player now asks in the game's own message dialog ("Join <name>'s party?", then
+    "Trade with <name>?" and "Leave <name>'s party?" for someone already in your party), which this build renders
+    correctly — the follow-the-leader
     offer already proved that. No Flash content of the mod's own is involved. `party_invite` drives the same entry
     point the interact key does and checks the dialog was asked, the party formed, and that interacting again
     leaves it. The radial menu stays reachable with `coopmenu()`, which also reports whether the menu's entries are
@@ -899,7 +917,15 @@ friend reported, with what the code says about each.
     therefore tests what it can — the leader goes silent (`muteHost`, now checked inside `HostSend`, which every
     snapshot goes through) and nothing of its monsters may be left in the member's world.
 - **The caster's hand gesture is missing: the sign's effect shows for both players, but the other player's
-  character does not play the casting animation.** The effect is W3Coop's own work and is tested (`sign_visuals`);
+  character does not play the casting animation.** Looked into on 2026-11-01, and neither of the obvious causes
+  holds: `sign_anim` plays each of the fifteen animation names Witcher Online uses on a ghost and the game knows
+  every one of them (a made-up name in the same list returns false, so the probe means something), and `sign_cast`
+  shows the cast reaching the other side — the leader's `lastSignTime` is recorded by the `CastSign` hook and the
+  member's record of it carries `lastSign` and `castSignType`. So the inputs are there and the animations exist;
+  what is left is the ghost's animation queue (movement and idle animations run through the same slot, and a
+  gesture lasting under two seconds is easy to lose). Not confirmed on screen either way: both attempts to film it
+  put the two characters on the same spot or too far apart. A gotcha for the next attempt: `CastSignSpecific`
+  bypasses the mod's hook, so a test must cast through `CastSign`, as the sign key does. The effect is W3Coop's own work and is tested (`sign_visuals`);
   the gesture is Witcher Online's, queued on the ghost in `remotePlayer.ws` when the snapshot's `lastSign` changes,
   by animation name (`man_ger_sword_ignii_front_lp`, `man_geralt_quen_front_sword`, and so on, with branches for
   in and out of combat and for the held item). The hook that sets `lastSign` (`@wrapMethod(W3PlayerWitcher)
@@ -919,8 +945,11 @@ friend reported, with what the code says about each.
   (`SetGameTime` when they are more than 90 s apart), but only while the leader is near enough to be in the
   member's near-player list and in the same region: the clock comes from the full snapshot (`day`, `hour`,
   `minute`, `second`), and the global player record, which carries a player across regions, has no clock in it.
-  Apart, each world runs its own clock and they drift, and meditation jumps one of them. W3Coop could carry the
-  leader's clock in its own presence message (`hz`, every 2 s, no range limit) and keep the existing 90 s rule.
+  Apart, each world runs its own clock and they drift, and meditation jumps one of them. Fixed: W3Coop's own
+  presence message (`hz`, every 2 s, no range limit) now carries the sender's clock as a field of its own, and a
+  member sets its clock to its leader's when the two are more than 90 s apart, wherever either of them is
+  (`FollowLeaderClock`, counted as `clocksFollowed`). `clock_sync` puts the leader 300 m away, out of reach of
+  Witcher Online's own sync, and moves its clock a day and a half on; the member's must follow.
 
 ## Open questions
 
