@@ -3,8 +3,8 @@ WITCHER 3 CO-OP (Witcher Online for The Witcher 3 Remastered)
 
 See your friends in your world and travel together. Each player keeps their own save.
 
-In a party (walk up to a friend's character, press the interact key and pick "Join party"),
-the party leader's world is the one that counts:
+In a party (walk up to a friend's character, press the interact key and answer "Yes" to
+"Join ...'s party?"), the party leader's world is the one that counts:
 - Monsters are shared: everyone fights the leader's monsters. They walk, run, attack, cast,
   dodge, taunt and shoot along with the leader's monsters (the same attack or spell, with the
   same animation). Your hits count in the leader's world, their attacks reach
@@ -29,6 +29,7 @@ the party leader's world is the one that counts:
   HUD" in the mod's options turns that off).
 - When the leader fast-travels (to another region, or far away at once), you are asked whether
   to follow; "Yes" takes you to the leader.
+- Leaving the party: interact with the leader again and answer "Yes".
 - If a friend near you runs another W3Coop version, both of you get a message: install the same
   version (other versions work only in part). A message that someone "sends no W3Coop updates"
   means an older W3Coop on their side, or an older server on the host's.
@@ -75,6 +76,12 @@ If something goes wrong
   If the errors name WO_ functions (WO_Send, WO_Str, ...) and a "WitcherNativeBridge" message
   came first: a game update changed what the mod needs. Look for a newer W3Coop release; until
   then, uninstall it (below) to play without it.
+- Trading, emotes and the Gwent invite open Witcher Online's round menu, which shows nothing
+  on Remastered (the party does not need it). Until that is fixed, start the game with
+  -debugscripts (Steam: Properties > General > Launch options), press ~ in game and use
+  cooptrade() to trade with the player next to you, coopmenu() to try the menu itself,
+  coopjoin(Name) and coopleave() for the party. Witcher Online's own commands work there too:
+  chat("..."), teleport(Name) and the emotes (wave(), bow(), dance(), ...).
 - The game crashes right at startup after a game update: the same; an older W3Coop than 0.3.1
   crashes this way on the update of 2026-10-29.
 - Igni never sets anything on fire, nothing bleeds or gets knocked down: another mod replaced

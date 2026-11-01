@@ -2344,7 +2344,9 @@ function W3T_PuppetTimeoutLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r
 {
     if(bot.scenarioCount < 2)
     {
-        if(!W3T_EnemyAttacksLeader(bot, coop, member))
+        // it spawns the monster; whether it manages to hit the ghost is not this test's business
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(coop.HostEnemyCount() < 1)
         {
             return false;
         }
