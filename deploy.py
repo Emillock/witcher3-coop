@@ -15,11 +15,9 @@ from config import BRIDGE, GAME, UAL, WO as REPO, WORK  # noqa: E402
 MANIFEST = os.path.join(WORK, "deploy-manifest.json")
 BACKUPS = os.path.join(WORK, "backups", "deploy")
 
-# Witcher Online's 4.04 Gwent menu overrides: the port wraps the 5.01 CR4GwintGameMenu instead (gwentDuel.ws)
+# Witcher Online's 4.04 Gwent menu overrides: the port wraps the 5.01 CR4GwintGameMenu instead (gwentDuel.ws, and
+# gwentHooks.ws adds the two methods the 4.04 override declared)
 GWENT_OVERRIDES = ("gwintManager.ws", "gwintGameMenu.ws")
-# wraps HandleOutgoingGwentAction and NotifyGwentMatchEnded, which only the 4.04 gwintGameMenu.ws has: left out
-# until it is rewritten against the 5.01 menu
-GWENT_HOOKS = "gwentHooks.ws"
 # the mod's own bundle is the 4.04 Gwent board (gwint_game.redswf). The 5.01 board is built into
 # WitcherOnline\gwent\out and comes with --extra <WitcherOnline>\gwent\out\modWitcherOnline\content=mods\modWitcherOnline\content
 GWENT_BUNDLE = (os.path.join("mods", "modWitcherOnline", "content", "blob0.bundle"),
@@ -49,7 +47,7 @@ def skipped(a, rel, src):
     """Why `src` does not go to `rel`: None (it goes), "note" (not a game file) or "drop" (a game file this deploy
     must not have; a copy already in the game folder that is not ours is hidden while deployed)."""
     name = rel.split("\\")[-1]
-    if name in GWENT_OVERRIDES or name == GWENT_HOOKS:
+    if name in GWENT_OVERRIDES:
         return "drop"
     if rel in {norm(p) for p in GWENT_BUNDLE} and (a.no_gwent or is_under(src, REPO_GAME_FILES)):
         return "drop"

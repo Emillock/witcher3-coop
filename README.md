@@ -169,7 +169,7 @@ through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C
 | `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
 | `run_test.py <scenario> --steam-box <box>` | Over real Steam between two accounts on one PC. The host relay uses this PC's Steam; the joiner relay runs in a [Sandboxie-Plus](https://sandboxie-plus.com) box whose Steam is logged in to a second account. |
 | `python arrange_windows.py` | Places all open Witcher 3 windows side by side (the harness does this for its bots). |
-| `python deploy.py uninstall` | Removes exactly the files deploy installed (`<root>\work\deploy-manifest.json`), restoring anything it replaced or hid. Deploys never install Witcher Online's 4.04 Gwent files (`gwintManager.ws`, `gwintGameMenu.ws`, `gwentHooks.ws`, its 4.04 `blob0.bundle`); copies of them already in the game folder (an older install) are hidden until uninstall. |
+| `python deploy.py uninstall` | Removes exactly the files deploy installed (`<root>\work\deploy-manifest.json`), restoring anything it replaced or hid. Deploys never install Witcher Online's 4.04 Gwent files (`gwintManager.ws`, `gwintGameMenu.ws`, its 4.04 `blob0.bundle`); copies of them already in the game folder (an older install) are hidden until uninstall. |
 
 Under the test bot (`w3test.asi`, which runs only when the harness sets `W3T_DOCUMENTS`), each game uses a
 throwaway Documents folder. That folder holds copies of your settings and of your newest save (or `--save SUBSTR`),
