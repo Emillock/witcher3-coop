@@ -2389,6 +2389,38 @@ function W3T_DlcReport() : string
     return IntToString(ids.Size()) + ": " + text;
 }
 
+// Which effects a sign entity can play at all: the copy of a player has no cast effects of its own, so the one
+// shown in its hand has to come off the sign entity. Says for each candidate whether the game started it.
+function W3T_SignFxReport(type : ESignType, names : array<name>) : string
+{
+    var template : CEntityTemplate;
+    var sign : W3SignEntity;
+    var text : string;
+    var i : int;
+
+    template = GetWitcherPlayer().GetSignTemplate(type);
+    if(!template)
+    {
+        return "no template";
+    }
+    for(i = 0; i < names.Size(); i += 1)
+    {
+        sign = (W3SignEntity)theGame.CreateEntity(template, thePlayer.GetWorldPosition(), thePlayer.GetWorldRotation());
+        if(!sign)
+        {
+            return text + " (no entity)";
+        }
+        sign.PlayEffect(names[i]);
+        if(text != "")
+        {
+            text += ", ";
+        }
+        text += NameToString(names[i]) + "=" + sign.IsEffectActive(names[i]);
+        sign.Destroy();
+    }
+    return text;
+}
+
 // sign_cast, leader: casts Igni every 4 s with its sword drawn, and says what its own game recorded.
 function W3T_SignCastLeader(bot : W3T_Bot) : bool
 {
@@ -2414,29 +2446,57 @@ function W3T_SignCastLeader(bot : W3T_Bot) : bool
 // on) and whether its animation component is playing anything.
 function W3T_SignCastMember(bot : W3T_Bot, leader : r_RemotePlayer, coop : r_CoopEnemies) : bool
 {
-    var spot : Vector;
+    var spot, want : Vector;
     var rot : EulerAngles;
+    var names : array<name>;
 
     if(!leader.ghost)
     {
         return false;
     }
-    // the caster 5 m ahead of the camera, as player_effects does, so the screenshots show it at all
-    if(VecDistance2D(thePlayer.GetWorldPosition() + theCamera.GetCameraForwardOnHorizontalPlane() * 5.0, leader.ghost.GetWorldPosition()) > 1.5
-        && theGame.GetWorld().NavigationFindSafeSpot(leader.ghost.GetWorldPosition() - theCamera.GetCameraForwardOnHorizontalPlane() * 5.0, 0.5, 3.0, spot))
+    if(bot.scenarioCount == 0)
     {
-        rot.Yaw = theCamera.GetCameraHeading();
-        thePlayer.TeleportWithRotation(spot, rot);
+        bot.scenarioCount = 1;
+        names.PushBack('no_cast');
+        names.PushBack('cone');
+        names.PushBack('burn');
+        W3T_Log("SIGNFX igni: " + W3T_SignFxReport(ST_Igni, names));
+        names.Clear();
+        names.PushBack('no_cast');
+        names.PushBack('cone_lv0');
+        names.PushBack('blast_lv0');
+        W3T_Log("SIGNFX aard: " + W3T_SignFxReport(ST_Aard, names));
+    }
+    // the caster 5 m ahead of the camera and 2 m to its left, where this Geralt's own head does not cover it
+    want = leader.ghost.GetWorldPosition() - theCamera.GetCameraForwardOnHorizontalPlane() * 5.0
+        + VecFromHeading(theCamera.GetCameraHeading() - 90) * 2.0;
+    if(VecDistance2D(thePlayer.GetWorldPosition(), want) > 1.5)
+    {
+        if(theGame.GetWorld().NavigationFindSafeSpot(want, 0.5, 3.0, spot))
+        {
+            rot.Yaw = theCamera.GetCameraHeading();
+            thePlayer.TeleportWithRotation(spot, rot);
+        }
     }
     W3T_Log("SIGNCAST member lastSign=" + FloatToStringPrec(leader.lastSign, 2) + " signType=" + (int)leader.signType
         + " castSignType=" + (int)leader.castSignType + " signFx=" + leader.signFx + " channeling=" + leader.channeling
-        + " inCombat=" + leader.inCombat + " held='" + leader.heldItem + "' gestures=" + coop.signGestures + "'");
+        + " inCombat=" + leader.inCombat + " held='" + leader.heldItem + "' gestures=" + coop.signGestures
+        + " hands=" + coop.signHands + "'");
     if(leader.lastSign > 0)
     {
         bot.scenarioFlag = true;
     }
-    // the gesture of the cast itself must play on the caster's character here, not only the sign's effect
-    return bot.scenarioFlag && coop.signGestures >= 2;
+    // the gesture of the cast itself must play on the caster's character here, with Igni's own effect in its hand,
+    // not only the sign's effect out in front
+    if(!bot.scenarioFlag)
+    {
+        return false;
+    }
+    if(coop.signGestures < 2)
+    {
+        return false;
+    }
+    return coop.signHands >= 1;
 }
 
 // sign_anim, member: a sign's effect shows on the other player's character, but the hand that casts it does not.
@@ -2499,15 +2559,14 @@ function W3T_SignAnim(bot : W3T_Bot, leader : r_RemotePlayer) : bool
     return true;
 }
 
-// player_menu, member: Witcher Online's radial player menu draws no entries on Remastered. Says whether its
-// entries exist as items in this game at all (the menu adds them to an inventory of its own), then opens the menu
-// and leaves it open for the screenshots. Passes once it has said so.
+// player_menu, member: the radial player menu drew nothing on Remastered, because the game has no definitions
+// for the mod's own items. Its entries now ride on a plain game item each (MenuAdd in coopEnemies.ws). Checks that
+// the carrier does make one grid slot per entry, opens the menu and leaves it open for the screenshots.
 function W3T_PlayerMenu(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
 {
     var inventory : CInventoryComponent;
+    var coop : r_CoopEnemies;
     var ids : array<SItemUniqueId>;
-    var names : array<name>;
-    var text : string;
     var i : int;
 
     if(bot.scenarioCount > 0)
@@ -2518,31 +2577,28 @@ function W3T_PlayerMenu(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_
     {
         return false;
     }
-    names.PushBack('wo_joinParty');
-    names.PushBack('wo_trade');
-    names.PushBack('wo_ride');
-    names.PushBack('wo_emote1');
-    names.PushBack('wo_chat1');
-    names.PushBack('Dwarven spirit');  // a plain game item, to tell a dead inventory from missing definitions
+    coop = client.getCoopEnemies();
     W3T_Log("MENU dlcs: " + W3T_DlcReport());
     W3T_Log("MENU definitions: " + W3T_ItemDefReport());
-    for(i = 0; i < names.Size(); i += 1)
+    // six adds of the carrier item must leave six separate items, or every entry would share one grid slot
+    inventory = new CInventoryComponent in theGame;
+    for(i = 0; i < 6; i += 1)
     {
-        inventory = new CInventoryComponent in theGame;
-        inventory.AddAnItem(names[i], 1);
-        ids.Clear();
-        inventory.GetAllItems(ids);
-        if(text != "")
-        {
-            text += ", ";
-        }
-        text += NameToString(names[i]) + "=" + ids.Size();
+        inventory.AddAnItem('Oil Lamp', 1, true, true);
     }
-    W3T_Log("MENU items the player menu adds: " + text);
+    inventory.GetAllItems(ids);
+    W3T_Log("MENU six carrier items make " + ids.Size() + " slots");
     W3T_Log("MENU opening Witcher Online's player menu for " + leader.username);
     client.createMenu(leader.ghost);
+    W3T_Log("MENU entries built: " + coop.menuEntries);
     bot.scenarioCount = 1;
-    return true;
+    if(ids.Size() < 6)
+    {
+        W3T_Log("FAIL the carrier item stacks: " + ids.Size() + " slots for six adds");
+        W3T_Quit(1);
+        return false;
+    }
+    return coop.menuEntries >= 4;  // the party, Gwent, riding along and trading
 }
 
 // clock_sync, leader: sets its clock a day and a half on, far from the member, and keeps it there.
@@ -2623,9 +2679,9 @@ function W3T_PartyInviteLeader(bot : W3T_Bot, client : r_MultiplayerClient, memb
     return member.inParty && member.joinedParty == client.getUsername();
 }
 
-// party_invite, member: interacting with the leader's character (what ghostPlayer.ws does on the interact key)
-// must ask in the game's own dialog, and answering yes must put it in the party. Interacting again must ask to
-// leave, and that must work too (scenarioCount: 1 asked to join, 2 in the party, 3 asked to leave).
+// party_invite, member: the party question in the game's own dialog (ghostPlayer.ws falls back on it when the
+// radial menu cannot be built, and the travel and trade prompts use the same wrap) must put the player in the
+// party when answered yes, and ask to leave the next time (scenarioCount: 1 asked to join, 2 in, 3 asked to leave).
 function W3T_PartyInviteMember(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
 {
     var coop : r_CoopEnemies;
