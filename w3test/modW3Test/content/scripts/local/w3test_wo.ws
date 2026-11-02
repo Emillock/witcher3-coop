@@ -923,6 +923,7 @@ function W3T_SharedEnemyLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
         W3T_Quit(2);
         return false;
     }
+    W3T_Log("RATE leader sends/s=" + coop.sendsPerSec + " loop/s=" + coop.ticksPerSec);
     W3T_Log("ENEMY leader netId=" + coop.HostNetIdOf(drowner) + " hp=" + FloatToStringPrec(drowner.GetHealthPercents(), 4)
         + " alive=" + drowner.IsAlive() + " hitsApplied=" + coop.hitsApplied + " pos=" + W3T_VecStr(drowner.GetWorldPosition()));
 
@@ -978,7 +979,8 @@ function W3T_SharedEnemyMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     W3T_Log("ENEMY member puppet hp=" + FloatToStringPrec(hp, 4) + " local=" + FloatToStringPrec(puppet.GetHealthPercents(), 4)
         + " alive=" + coop.PuppetAlive(index) + " spawned=" + coop.PuppetSpawned(index) + " pending=" + coop.PendingHitCount()
         + " pos=" + W3T_VecStr(puppet.GetWorldPosition()) + " xp=" + GetWitcherPlayer().levelManager.GetPointsTotal(EExperiencePoint)
-        + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));
+        + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1)
+        + " snapHz=" + FloatToStringPrec(1.0 / MaxF(0.001, coop.snapPeriod), 1) + " loop/s=" + coop.ticksPerSec);
 
     // scenarioCount: hits confirmed so far (0-3), then 5 once the death was seen; scenarioFlag: a hit in flight
     if(bot.scenarioCount < 3)
@@ -1150,6 +1152,27 @@ function W3T_LookAt(target : Vector)
     theGame.GetGameCamera().GetActivePivotRotationController().SetDesiredHeading(VecHeading(target - thePlayer.GetWorldPosition()));
 }
 
+// A horse or a passer-by left by an earlier scenario steals the monster's attention, and the ghost is then never
+// attacked at all: whatever it picked instead stops being a target and the ghost is pointed out again.
+function W3T_KeepOnGhost(monster : CNewNPC, ghost : CActor)
+{
+    var target : CActor;
+
+    if(!monster || !ghost)
+    {
+        return;
+    }
+    target = monster.GetTarget();
+    if(target)
+    {
+        if(!target.HasTag('MPEntity'))
+        {
+            monster.SetAttitude(target, AIA_Neutral);
+            monster.NoticeActor(ghost);
+        }
+    }
+}
+
 // enemy_attacks, leader: spawn a drowner next to the member's ghost (12-14 m away if `far`: archers close by fight
 // in melee), neutral to this Geralt so the ghost is its only target. Passes once at least two of its hits on the
 // ghost were sent and acknowledged.
@@ -1226,6 +1249,7 @@ function W3T_EnemyAttacksLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
     else if(target)
     {
         targetName = target.GetReadableName();
+        W3T_KeepOnGhost(drowner, member.ghost);
     }
     W3T_Log("ENEMY leader drowner target=" + targetName + " hp=" + FloatToStringPrec(drowner.GetHealthPercents(), 4)
         + " ghostHits=" + coop.ghostHitsSeen + " hurtsCaptured=" + coop.hurtsCaptured + " pendingHurts=" + coop.PendingHurtCount()
@@ -1959,6 +1983,7 @@ function W3T_SignVisualsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
         }
         return false;
     }
+    W3T_KeepOnGhost((CNewNPC)bot.scenarioEntity, member.ghost);  // its hits are what Quen's shield is shown by
     ghostPos = member.ghost.GetWorldPosition();
     shieldLeft = -1;
     if(IsNameValid(member.quenShield))
@@ -3363,6 +3388,10 @@ function W3T_DeathLeader(bot : W3T_Bot, coop : r_CoopEnemies, players : array<r_
         }
         return false;
     }
+    if(players.Size() > 0)
+    {
+        W3T_KeepOnGhost((CNewNPC)bot.scenarioEntity, players[0].ghost);
+    }
     if(bot.scenarioCount == 1 && !alive)
     {
         W3T_Log("DEATH leader: the member died");
@@ -3427,9 +3456,11 @@ function W3T_DeathMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_C
         bot.scenarioTime = bot.ElapsedS();
         bot.scenarioValue = coop.hurtsApplied;
     }
-    else if(bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime >= 3 && coop.hurtsApplied - bot.scenarioValue > 2)
+    // a pile-up arrives together, within a frame or two; a monster standing over the respawned player lands about
+    // one hit a second, which is the fight going on and not a fault
+    else if(bot.scenarioCount == 3 && bot.ElapsedS() - bot.scenarioTime <= 1.2 && coop.hurtsApplied - bot.scenarioValue > 2)
     {
-        W3T_Log("FAIL " + (coop.hurtsApplied - bot.scenarioValue) + " hurts landed in the first 3 s after the respawn");
+        W3T_Log("FAIL " + (coop.hurtsApplied - bot.scenarioValue) + " hurts landed in the first second after the respawn");
         W3T_Quit(1);
         return false;
     }
@@ -3538,20 +3569,23 @@ function W3T_EffectsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
     }
     puppet = coop.PuppetAt(0);
     W3T_LookAt(puppet.GetWorldPosition());
-    if(!bot.scenarioFlag && coop.effectsMirrorEnded >= 5 && !puppet.HasBuff(EET_Confusion))
+    // hypnosis, not confusion: confusion is one of the effects the leader gives, and on the copy the two are the
+    // same buff, so the leader's ending would take this one with it and nothing would count as dropped
+    if(!bot.scenarioFlag && coop.effectsMirrorEnded >= 5 && !puppet.HasBuff(EET_Hypnotized))
     {
-        params.effectType = EET_Confusion;
+        params.effectType = EET_Hypnotized;
         params.sourceName = "W3Test";
         params.duration = 10;
-        W3T_Log("EFFECTS member confuses the copy here only, for 10 s: result=" + (int)puppet.AddEffectCustom(params));
+        W3T_Log("EFFECTS member hypnotises the copy here only, for 10 s: result=" + (int)puppet.AddEffectCustom(params));
         bot.scenarioFlag = true;
     }
     W3T_Log("EFFECTS member localDropped=" + coop.localEffectsDropped + " mirrored=" + coop.effectsMirrored + " held=" + coop.effectsMirrorHeld + " ended=" + coop.effectsMirrorEnded
         + " burning=" + puppet.HasBuff(EET_Burning) + " down=" + (puppet.HasBuff(EET_Knockdown) || puppet.HasBuff(EET_HeavyKnockdown))
         + " frozen=" + puppet.HasBuff(EET_Frozen) + " blind=" + puppet.HasBuff(EET_Blindness) + " confused=" + puppet.HasBuff(EET_Confusion)
+        + " hypno=" + puppet.HasBuff(EET_Hypnotized)
         + " bleeding=" + puppet.HasBuff(EET_Bleeding) + " hp=" + FloatToStringPrec(puppet.GetHealthPercents(), 3));
     return coop.effectsMirrorHeld >= 4 && coop.effectsMirrorEnded >= 4 && bot.scenarioFlag && coop.localEffectsDropped >= 1
-        && !puppet.HasBuff(EET_Confusion);
+        && !puppet.HasBuff(EET_Hypnotized);
 }
 
 // enemy_projectiles, leader: the monster of enemy_attacks (a Baron's bandit with a bow unless W3T_MONSTER) shoots at
