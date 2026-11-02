@@ -306,7 +306,7 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         {
             return W3T_SignCastLeader(bot);
         }
-        return W3T_SignCastMember(bot, players[0]);
+        return W3T_SignCastMember(bot, players[0], client.getCoopEnemies());
     }
 
     if(scenario == "sign_anim")
@@ -2339,6 +2339,56 @@ function W3T_PartyHudMember(bot : W3T_Bot, client : r_MultiplayerClient, leader 
     return share < 0.5 && StrFindFirst(W3T_PartyText(client), leader.username + ":") >= 0;
 }
 
+// Whether the game's item definitions hold the menu's entries at all (as against being unable to create them)
+function W3T_ItemDefReport() : string
+{
+    var defs : CDefinitionsManagerAccessor;
+    var names : array<name>;
+    var text : string;
+    var i : int;
+
+    defs = theGame.GetDefinitionsManager();
+    names.PushBack('wo_joinParty');
+    names.PushBack('wo_trade');
+    names.PushBack('wo_emote1');
+    names.PushBack('Dwarven spirit');
+    for(i = 0; i < names.Size(); i += 1)
+    {
+        if(text != "")
+        {
+            text += "; ";
+        }
+        text += NameToString(names[i]) + " category=" + NameToString(defs.GetItemCategory(names[i]))
+            + " locKey='" + defs.GetItemLocalisationKeyName(names[i]) + "' icon='" + defs.GetItemIconPath(names[i]) + "'";
+    }
+    return text;
+}
+
+// What the game makes of the DLCs it has, the mod's among them (its items are what the player menu is built from)
+function W3T_DlcReport() : string
+{
+    var manager : CDLCManager;
+    var ids : array<name>;
+    var text : string;
+    var i : int;
+
+    manager = theGame.GetDLCManager();
+    if(!manager)
+    {
+        return "no DLC manager";
+    }
+    manager.GetDLCs(ids);
+    for(i = 0; i < ids.Size(); i += 1)
+    {
+        if(text != "")
+        {
+            text += ", ";
+        }
+        text += NameToString(ids[i]) + "(available=" + manager.IsDLCAvailable(ids[i]) + " enabled=" + manager.IsDLCEnabled(ids[i]) + ")";
+    }
+    return IntToString(ids.Size()) + ": " + text;
+}
+
 // sign_cast, leader: casts Igni every 4 s with its sword drawn, and says what its own game recorded.
 function W3T_SignCastLeader(bot : W3T_Bot) : bool
 {
@@ -2362,7 +2412,7 @@ function W3T_SignCastLeader(bot : W3T_Bot) : bool
 
 // sign_cast, member: logs what the leader's character here is told about the cast (the fields the gesture hangs
 // on) and whether its animation component is playing anything.
-function W3T_SignCastMember(bot : W3T_Bot, leader : r_RemotePlayer) : bool
+function W3T_SignCastMember(bot : W3T_Bot, leader : r_RemotePlayer, coop : r_CoopEnemies) : bool
 {
     var spot : Vector;
     var rot : EulerAngles;
@@ -2380,12 +2430,13 @@ function W3T_SignCastMember(bot : W3T_Bot, leader : r_RemotePlayer) : bool
     }
     W3T_Log("SIGNCAST member lastSign=" + FloatToStringPrec(leader.lastSign, 2) + " signType=" + (int)leader.signType
         + " castSignType=" + (int)leader.castSignType + " signFx=" + leader.signFx + " channeling=" + leader.channeling
-        + " inCombat=" + leader.inCombat + " held='" + leader.heldItem + "'");
+        + " inCombat=" + leader.inCombat + " held='" + leader.heldItem + "' gestures=" + coop.signGestures + "'");
     if(leader.lastSign > 0)
     {
         bot.scenarioFlag = true;
     }
-    return bot.scenarioFlag && bot.ElapsedS() > 40;
+    // the gesture of the cast itself must play on the caster's character here, not only the sign's effect
+    return bot.scenarioFlag && coop.signGestures >= 2;
 }
 
 // sign_anim, member: a sign's effect shows on the other player's character, but the hand that casts it does not.
@@ -2473,6 +2524,8 @@ function W3T_PlayerMenu(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_
     names.PushBack('wo_emote1');
     names.PushBack('wo_chat1');
     names.PushBack('Dwarven spirit');  // a plain game item, to tell a dead inventory from missing definitions
+    W3T_Log("MENU dlcs: " + W3T_DlcReport());
+    W3T_Log("MENU definitions: " + W3T_ItemDefReport());
     for(i = 0; i < names.Size(); i += 1)
     {
         inventory = new CInventoryComponent in theGame;

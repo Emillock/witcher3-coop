@@ -884,8 +884,24 @@ friend reported, with what the code says about each.
     - Likeliest remaining explanation: the mounter enumerates the folder through the bundle's `metadata.store`,
       which this DLC's was built for 4.04; loading by exact path still works, enumerating does not. Testing that
       means repacking the bundle with a 5.x index, which needs a cooking tool this project does not have.
-    - So the menu's other entries (trading, emotes, chat, morphs, riding along, the Gwent invite) cannot be
-      restored by moving files about. Either the DLC is repacked for 5.x, or each entry gets a way in of its own.
+    - **Everything cheap has now been tried (2026-11-02), and the items still do not load.** In order: the DLC is
+      registered and enabled (`GetDLCManager().GetDLCs` lists `dlc_mpmod(available=true enabled=true)`), so its
+      descriptor was read; the definitions manager itself has nothing for the items (`GetItemCategory` returns
+      `None`, no localisation key, no icon, while a real item answers fully), so this is not about creating items
+      but about defining them; a loose copy of the XML in the DLC folder at the official path does nothing; a loose
+      copy in the mod's own `content\gameplay\items\` does nothing either, so the scan is not over the file system;
+      a hand-written bundle (the format is simple: 32-byte header, 320-byte entries, data at 4096-aligned offsets,
+      CRC32 of the uncompressed bytes — `make_bundle.py` writes one that reads back correctly) placed in a mod
+      folder is not read, because a folder's `metadata.store` is what says which files exist; the engine's `-loose`
+      switch makes the game fail to start; and `-rebuild-store`, which does rebuild `content\metadata.store`,
+      covers only the game's own content folder — with the hand-written bundle in `content\content0\bundles\` it
+      wrote a 24-byte stub instead (restored from the backup in `work\backups\stores-2026-11-02`, and the game
+      starts normally again).
+    - So the remaining route is a `metadata.store` of our own, which is a cooked index (magic `\x03VTM`, a string
+      table of bundle names, file paths and directory components, then cross-referenced tables) — reversing and
+      writing it is the one thing left, and it is a real piece of work. Until then the menu's other entries
+      (emotes, chat, morphs, riding along, the Gwent invite) stay out of reach, which is why the party and trading
+      were moved to the game's own dialog instead.
   - Fixed: interacting with a player now asks in the game's own message dialog ("Join <name>'s party?", then
     "Trade with <name>?" and "Leave <name>'s party?" for someone already in your party), which this build renders
     correctly — the follow-the-leader
@@ -921,11 +937,17 @@ friend reported, with what the code says about each.
   holds: `sign_anim` plays each of the fifteen animation names Witcher Online uses on a ghost and the game knows
   every one of them (a made-up name in the same list returns false, so the probe means something), and `sign_cast`
   shows the cast reaching the other side — the leader's `lastSignTime` is recorded by the `CastSign` hook and the
-  member's record of it carries `lastSign` and `castSignType`. So the inputs are there and the animations exist;
-  what is left is the ghost's animation queue (movement and idle animations run through the same slot, and a
-  gesture lasting under two seconds is easy to lose). Not confirmed on screen either way: both attempts to film it
-  put the two characters on the same spot or too far apart. A gotcha for the next attempt: `CastSignSpecific`
-  bypasses the mod's hook, so a test must cast through `CastSign`, as the sign key does. The effect is W3Coop's own work and is tested (`sign_visuals`);
+  member's record of it carries `lastSign` and `castSignType`.
+  - **Settled 2026-11-02: the gesture does play.** With the mod itself logging when it queues a gesture and when
+    the ghost starts one, four casts gave four gestures, each with the animation its state calls for
+    (`man_geralt_ignii_front` out of combat and unarmed, `man_ger_sword_ignii_front_lp` in combat with steel
+    drawn). Every earlier reading of "nothing happens" came from the instrumentation itself: one patch to
+    `remotePlayer.ws` put a statement above the function's `var` declarations, which WitcherScript refuses, so the
+    mod's scripts did not compile at all for several runs — and nothing in those runs logged anything, which is the
+    tell. `sign_cast` now counts gestures (`signGestures`) and fails unless at least two played, so a regression
+    would show. What the report then comes down to is timing or framing: the gesture is under two seconds and
+    starts when the snapshot arrives, a little after the sign's own effect. A gotcha for the next attempt:
+    `CastSignSpecific` bypasses the mod's hook, so a test must cast through `CastSign`, as the sign key does. The effect is W3Coop's own work and is tested (`sign_visuals`);
   the gesture is Witcher Online's, queued on the ghost in `remotePlayer.ws` when the snapshot's `lastSign` changes,
   by animation name (`man_ger_sword_ignii_front_lp`, `man_geralt_quen_front_sword`, and so on, with branches for
   in and out of combat and for the held item). The hook that sets `lastSign` (`@wrapMethod(W3PlayerWitcher)
