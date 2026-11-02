@@ -103,6 +103,10 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
     {
         return W3T_GwentVanilla(bot);
     }
+    if(scenario == "gwent_selftest")
+    {
+        return W3T_GwentSelfTest(bot);
+    }
 
 
     players = client.getPlayers();

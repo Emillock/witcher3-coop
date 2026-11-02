@@ -26,9 +26,9 @@ GAME_ARGS = os.environ.get("W3T_GAME_ARGS", "-windowed -width 640 -height 360 -d
 # scenarios where the leader waits for the member to load and join before acting
 LONG_SCENARIOS = ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync",
                   "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide", "enemy_moves", "enemy_summons", "enemy_spells", "real_encounter",
-                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout", "gwent_vanilla")
+                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout", "gwent_vanilla", "gwent_selftest")
 # scenarios for one game (no co-op): their default --bots
-SINGLE_BOT_SCENARIOS = ("gwent_vanilla",)
+SINGLE_BOT_SCENARIOS = ("gwent_vanilla", "gwent_selftest")
 
 
 def default_duration(scenario):
