@@ -1,6 +1,7 @@
 # Installs the Witcher Online port from the repo into the game folder, recording every file in a manifest so
 # `uninstall` removes exactly what was installed. Existing files that are not ours are backed up first.
 # Usage: deploy.py install [--scripts-only] [--no-gwent] [--extra <dir>=<game-relative dir> ...] | deploy.py uninstall
+# Game files a deploy leaves out on purpose (the 4.04 Gwent menu of an older install) are hidden until uninstall.
 import argparse
 import json
 import os
@@ -14,10 +15,16 @@ from config import BRIDGE, GAME, UAL, WO as REPO, WORK  # noqa: E402
 MANIFEST = os.path.join(WORK, "deploy-manifest.json")
 BACKUPS = os.path.join(WORK, "backups", "deploy")
 
-GWENT_OVERRIDES = ("gwintManager.ws", "gwintGameMenu.ws", "gwentHooks.ws")
-# the mod's only bundle is the 4.04 Gwent board (gwint_game.redswf); it would replace the 5.x Gwent UI
+# Witcher Online's 4.04 Gwent menu overrides: the port wraps the 5.01 CR4GwintGameMenu instead (gwentDuel.ws)
+GWENT_OVERRIDES = ("gwintManager.ws", "gwintGameMenu.ws")
+# wraps HandleOutgoingGwentAction and NotifyGwentMatchEnded, which only the 4.04 gwintGameMenu.ws has: left out
+# until it is rewritten against the 5.01 menu
+GWENT_HOOKS = "gwentHooks.ws"
+# the mod's own bundle is the 4.04 Gwent board (gwint_game.redswf). The 5.01 board is built into
+# WitcherOnline\gwent\out and comes with --extra <WitcherOnline>\gwent\out\modWitcherOnline\content=mods\modWitcherOnline\content
 GWENT_BUNDLE = (os.path.join("mods", "modWitcherOnline", "content", "blob0.bundle"),
                 os.path.join("mods", "modWitcherOnline", "content", "metadata.store"))
+REPO_GAME_FILES = os.path.join(REPO, "witcher")
 
 
 def mappings(a):
@@ -38,12 +45,29 @@ def mappings(a):
     yield os.path.join(REPO, "client", "build", "Release", "WitcherOnlineClient.asi"), os.path.join("bin", "x64_dx12", "WitcherOnlineClient.asi")
 
 
-def skipped(a, rel):
+def skipped(a, rel, src):
+    """Why `src` does not go to `rel`: None (it goes), "note" (not a game file) or "drop" (a game file this deploy
+    must not have; a copy already in the game folder that is not ours is hidden while deployed)."""
     name = rel.split("\\")[-1]
-    if a.no_gwent and (name in GWENT_OVERRIDES or rel in {norm(p) for p in GWENT_BUNDLE}):
-        return True
+    if name in GWENT_OVERRIDES or name == GWENT_HOOKS:
+        return "drop"
+    if rel in {norm(p) for p in GWENT_BUNDLE} and (a.no_gwent or is_under(src, REPO_GAME_FILES)):
+        return "drop"
     # install notes at the mod root (input.settings.txt etc.) are not game files
-    return rel.rsplit("\\", 1)[0] == "mods\\modWitcherOnline" and name.endswith((".txt", ".csv"))
+    if rel.rsplit("\\", 1)[0] == "mods\\modWitcherOnline" and name.endswith((".txt", ".csv")):
+        return "note"
+    return None
+
+
+def is_under(path, folder):
+    return os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(folder)) + os.sep)
+
+
+def lp(path):
+    r"""`path` in the extended form (\\?\C:\...), so copies work from or to folders deeper than MAX_PATH (260
+    characters) without Windows' long-path setting (e.g. clones under a deep temp folder)."""
+    path = os.path.abspath(path)
+    return path if os.name != "nt" or path.startswith("\\\\?\\") else "\\\\?\\" + path
 
 
 def norm(rel):
@@ -53,10 +77,12 @@ def norm(rel):
 
 def load_manifest():
     if not os.path.exists(MANIFEST):
-        return {"files": [], "backups": {}}
+        return {"files": [], "backups": {}, "hidden": {}}
     m = json.load(open(MANIFEST, encoding="utf-8"))
     m["files"] = sorted({norm(f) for f in m["files"]})
     m["backups"] = {norm(k): v for k, v in m["backups"].items()}
+    # game files that are not ours, moved out of the way while deployed (e.g. an older install's 4.04 Gwent menu)
+    m["hidden"] = {norm(k): v for k, v in m.get("hidden", {}).items()}
     return m
 
 
@@ -64,15 +90,15 @@ def install_file(src, rel, manifest):
     dst = os.path.join(GAME, rel)
     if os.path.exists(dst) and rel not in manifest["files"]:
         bak = os.path.join(BACKUPS, time.strftime("%Y%m%d-%H%M%S"), rel)
-        os.makedirs(os.path.dirname(bak), exist_ok=True)
-        shutil.copy2(dst, bak)
+        os.makedirs(lp(os.path.dirname(bak)), exist_ok=True)
+        shutil.copy2(lp(dst), lp(bak))
         manifest["backups"][rel] = bak
         print(f"backed up {rel} -> {bak}")
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     # a game that just exited may hold its files for a few seconds more
     for attempt in range(10):
         try:
-            shutil.copy2(src, dst)
+            shutil.copy2(lp(src), lp(dst))
             break
         except PermissionError:
             if attempt == 9:
@@ -86,6 +112,7 @@ def install(a):
     manifest = load_manifest()
     pairs = list(mappings(a)) + [tuple(e.split("=", 1)) for e in a.extra]
     wanted = {}
+    unwanted = set()
     for src, rel_root in pairs:
         if os.path.isfile(src):
             wanted[norm(rel_root)] = src
@@ -93,15 +120,46 @@ def install(a):
         for dp, _, fns in os.walk(src):
             for f in fns:
                 rel = norm(os.path.join(rel_root, os.path.relpath(os.path.join(dp, f), src)))
-                if not skipped(a, rel):
+                why = skipped(a, rel, os.path.join(dp, f))
+                if why is None:
                     wanted[rel] = os.path.join(dp, f)
-    for rel, src in wanted.items():
-        install_file(src, rel, manifest)
-    # drop files deployed earlier that this deploy no longer includes (e.g. after --no-gwent or without --dlc)
-    for rel in [r for r in manifest["files"] if r not in wanted]:
-        remove(rel, manifest)
-    json.dump(manifest, open(MANIFEST, "w", encoding="utf-8"), indent=1)
+                elif why == "drop":
+                    unwanted.add(rel)
+    try:
+        for rel in wanted:
+            # a hidden file this deploy overwrites after all: uninstall restores it like any other backup
+            if rel in manifest["hidden"]:
+                manifest["backups"][rel] = manifest["hidden"].pop(rel)
+        for rel, src in wanted.items():
+            install_file(src, rel, manifest)
+        # drop files deployed earlier that this deploy no longer includes (e.g. after --no-gwent or without --dlc)
+        for rel in [r for r in manifest["files"] if r not in wanted]:
+            remove(rel, manifest)
+        # after the removals: one of them may have put back a file that this deploy leaves out
+        for rel in sorted(unwanted - set(wanted)):
+            hide(rel, manifest)
+    finally:
+        # also after a failed copy: uninstall must know every file that went in
+        save_manifest(manifest)
     print(f"installed {len(wanted)} files; manifest has {len(manifest['files'])}")
+
+
+def save_manifest(manifest):
+    os.makedirs(os.path.dirname(MANIFEST), exist_ok=True)
+    json.dump(manifest, open(MANIFEST, "w", encoding="utf-8"), indent=1)
+
+
+def hide(rel, manifest):
+    """Moves a game file that is not ours out of the game folder (into the backups) until uninstall."""
+    dst = os.path.join(GAME, rel)
+    if rel in manifest["hidden"] or not os.path.exists(dst):
+        return
+    bak = os.path.join(BACKUPS, time.strftime("%Y%m%d-%H%M%S"), rel)
+    os.makedirs(lp(os.path.dirname(bak)), exist_ok=True)
+    shutil.copy2(lp(dst), lp(bak))
+    os.remove(dst)
+    manifest["hidden"][rel] = bak
+    print(f"hid {rel} (this deploy leaves it out) -> {bak}")
 
 
 def remove(rel, manifest):
@@ -110,8 +168,8 @@ def remove(rel, manifest):
         os.remove(dst)
     manifest["files"].remove(rel)
     bak = manifest["backups"].pop(rel, None)
-    if bak and os.path.exists(bak):
-        shutil.copy2(bak, dst)
+    if bak and os.path.exists(lp(bak)):
+        shutil.copy2(lp(bak), lp(dst))
         print(f"restored {rel}")
     d = os.path.dirname(dst)
     while d.startswith(GAME) and d != GAME and os.path.isdir(d) and not os.listdir(d):
@@ -121,17 +179,28 @@ def remove(rel, manifest):
 
 def uninstall():
     manifest = load_manifest()
-    for rel in list(manifest["files"]):
-        remove(rel, manifest)
-    json.dump(manifest, open(MANIFEST, "w", encoding="utf-8"), indent=1)
-    print("uninstalled; manifest empty" if not manifest["files"] else f"left: {manifest['files']}")
+    try:
+        for rel in list(manifest["files"]):
+            remove(rel, manifest)
+        for rel, bak in list(manifest["hidden"].items()):
+            dst = os.path.join(GAME, rel)
+            if os.path.exists(lp(bak)) and not os.path.exists(dst):
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copy2(lp(bak), lp(dst))
+                print(f"restored hidden {rel}")
+            if os.path.exists(dst):
+                del manifest["hidden"][rel]
+    finally:
+        save_manifest(manifest)
+    left = manifest["files"] + list(manifest["hidden"])
+    print("uninstalled; manifest empty" if not left else f"left: {left}")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("action", choices=["install", "uninstall"])
     ap.add_argument("--scripts-only", action="store_true")
-    ap.add_argument("--no-gwent", action="store_true")
+    ap.add_argument("--no-gwent", action="store_true", help="no Gwent board (blob0.bundle, metadata.store) from any source")
     ap.add_argument("--dlc", action="store_true", help="also install dlc\\dlcWitcherOnline (player ghost templates, emotes)")
     ap.add_argument("--no-repo", action="store_true", help="install only the --extra sources (e.g. a built package)")
     ap.add_argument("--extra", action="append", default=[], help="<abs src>=<game-relative dst>")

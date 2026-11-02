@@ -99,6 +99,10 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
     {
         return W3T_SignCheck(bot);
     }
+    if(scenario == "gwent_vanilla")
+    {
+        return W3T_GwentVanilla(bot);
+    }
 
 
     players = client.getPlayers();

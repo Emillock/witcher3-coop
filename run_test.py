@@ -1,6 +1,6 @@
 # Multi-instance test harness: local Witcher Online server + N game clients driven by the w3test bot.
 # Prints RESULT: PASS/FAIL. Only kills processes it started.
-# Usage: run_test.py <scenario>[,<scenario>...] [--bots 2] [--duration 60] [--stagger 5] [--timeout 420] [--save SUBSTR]
+# Usage: run_test.py <scenario>[,<scenario>...] [--bots N] [--duration 60] [--stagger 5] [--timeout 420] [--save SUBSTR]
 # Several scenarios separated by commas run as one session: the games load once and the bots go from one scenario to
 # the next when the harness says so (control file), cleaning up in between.
 import argparse
@@ -26,7 +26,9 @@ GAME_ARGS = os.environ.get("W3T_GAME_ARGS", "-windowed -width 640 -height 360 -d
 # scenarios where the leader waits for the member to load and join before acting
 LONG_SCENARIOS = ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync",
                   "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide", "enemy_moves", "enemy_summons", "enemy_spells", "real_encounter",
-                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout")
+                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout", "gwent_vanilla")
+# scenarios for one game (no co-op): their default --bots
+SINGLE_BOT_SCENARIOS = ("gwent_vanilla",)
 
 
 def default_duration(scenario):
@@ -281,7 +283,7 @@ def check(scenario, logs, n):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("scenario")
-    ap.add_argument("--bots", type=int, default=2)
+    ap.add_argument("--bots", type=int, help="game instances (default 2; 1 for single-game scenarios like gwent_vanilla)")
     ap.add_argument("--duration", type=int, help="in-game seconds before a bot fails (default 60; enemy scenarios 300)")
     ap.add_argument("--stagger", type=int, default=5, help="seconds between starting the bots")
     ap.add_argument("--serial", action="store_true", help="start each bot only once the one before is in the world "
@@ -301,6 +303,8 @@ def main():
     ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
                                         "Sandboxie box, whose Steam is logged in to a second account")
     a = ap.parse_args()
+    if a.bots is None:
+        a.bots = 1 if a.scenario in SINGLE_BOT_SCENARIOS else 2
     missing = missing_test_build()
     if missing:
         print(f"the test build is not deployed ({', '.join(missing)} missing; compile.sh deploys it): the games would "
