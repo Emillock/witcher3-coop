@@ -186,7 +186,12 @@ statemachine class W3T_Gwent
     public function Closed(menu : CR4GwintGameMenu)
     {
         var minigame : EMinigameState;
+        var manager : CR4GwintManager;
 
+        // the test switches only for the match this scenario opened
+        manager = theGame.GetGwintManager();
+        manager.duelDebugAutoplay = false;
+        manager.duelSelfTest = false;
         minigame = thePlayer.GetGwintMinigameState();
         result = "lost";
         if(minigame == EMS_End_PlayerWon)
