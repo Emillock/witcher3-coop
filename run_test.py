@@ -94,6 +94,8 @@ def gwent_logdiff_files(logs: list[str]) -> tuple[int, str]:
 
 
 DUEL_END_RE = re.compile(r"DUEL END result=(\w+)")
+# an end of game token (version.matchId.seq.E.winner.hash) in a duel_logdiff line
+END_TOKEN_RE = re.compile(r"\b\d+\.[0-9a-f]+g\d+\.\d+\.E\.")
 OPPOSITE_RESULT = {"win": "loss", "loss": "win", "draw": "draw", "nocontest": "nocontest"}
 
 
@@ -143,10 +145,14 @@ def window_mode(requested: str, shots: float, record: float) -> str:
 
 def gwent_logdiff_verdict(rc: int, text: str, corrupt_at: str) -> tuple[bool, str]:
     """Judges duel_logdiff's outcome: clean logs (rc 0), or with W3T_GWENT_CORRUPT_AT=<seq> the first divergence
-    exactly at that seq (the corrupted message); returns (ok, reason when not ok)."""
+    exactly at that seq (the corrupted message), with W3T_GWENT_CORRUPT_AT=end at an end of game message (E);
+    returns (ok, reason when not ok)."""
     first = text.splitlines()[0] if text else str(rc)
     if not corrupt_at:
         return rc == 0, f"duel logs diverged: {first}"
+    if corrupt_at.strip() == "end":
+        ok = rc == 1 and first.startswith("DIVERGED at seq=") and END_TOKEN_RE.search(first) is not None
+        return ok, f"expected duel_logdiff to diverge at an E message (W3T_GWENT_CORRUPT_AT=end), got: {first}"
     wanted = f"DIVERGED at seq={corrupt_at.strip()}:"
     return rc == 1 and first.startswith(wanted), f"expected duel_logdiff {wanted} (W3T_GWENT_CORRUPT_AT), got: {first}"
 

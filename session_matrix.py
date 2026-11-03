@@ -17,7 +17,8 @@ from dataclasses import dataclass
 # per-entry settings the bots read (sent in the control file)
 ENTRY_SETTINGS = ("W3T_GWENT_DECKS", "W3T_GWENT_SEED", "W3T_GWENT_MULLIGAN", "W3T_GWENT_LEADER_FIRST",
                   "W3T_GWENT_CORRUPT_AT", "W3T_GWENT_BREAK_TEMPLATES", "W3T_GWENT_EXPECT", "W3T_GWENT_REASON",
-                  "W3T_GWENT_BET", "W3T_GWENT_TIMED")
+                  "W3T_GWENT_BET", "W3T_GWENT_TIMED", "W3T_GWENT_FORCE_DRAW", "W3T_GWENT_REPLAY",
+                  "W3T_GWENT_SURRENDER_AT")
 # per-entry settings only the harness reads (never sent to the bots)
 HARNESS_SETTINGS = ("W3T_GWENT_LOGDIFF",)
 SETTINGS = ENTRY_SETTINGS + HARNESS_SETTINGS

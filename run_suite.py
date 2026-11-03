@@ -34,6 +34,8 @@ FRESH = ["quest_sync", "dialog_sync", "facts_sync", "real_encounter", "attack_vi
 # landings: clan_dimun_pirate's scorch); muster_nml,muster_nml seeds 1 and 2 were tried too (both passed). Seeds 2 to 5
 # of pirate_ske add round 3 perks of both seats with the change.
 # Decisions, coin toss and mulligan (Task 12): its matrix, the corrupt check, a tricks pair and the leader-first pairs.
+# Match end (Task 14): a forced draw replayed by both, a forced draw that bot 1 leaves, bot 1 surrendering at seq 4, and
+# a desync on the last message of the match (the end of game message E): nobody pays.
 GWENT_DUEL_MATRIX = [
     (f"pirate_ske-pirate_ske-s{seed}", {"W3T_GWENT_DECKS": "pirate_ske,pirate_ske", "W3T_GWENT_SEED": seed}) for seed in ["1", "2", "3", "4", "5"]
 ] + [
@@ -51,6 +53,15 @@ GWENT_DUEL_MATRIX = [
                                            "W3T_GWENT_LEADER_FIRST": "1"}),
     ("leaderfirst-weather_nml-res_nml-s1", {"W3T_GWENT_DECKS": "weather_nml,res_nml", "W3T_GWENT_SEED": "1", "W3T_GWENT_MULLIGAN": "1",
                                              "W3T_GWENT_LEADER_FIRST": "1"}),
+] + [
+    ("forcedraw-replay-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1",
+                                                 "W3T_GWENT_FORCE_DRAW": "1", "W3T_GWENT_REPLAY": "1"}),
+    ("forcedraw-leave-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1",
+                                                "W3T_GWENT_FORCE_DRAW": "1", "W3T_GWENT_REPLAY": "0"}),
+    ("surrender4-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1",
+                                           "W3T_GWENT_SURRENDER_AT": "4"}),
+    ("corrupt-end-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1", "W3T_GWENT_CORRUPT_AT": "end",
+                                            "W3T_GWENT_EXPECT": "nocontest", "W3T_GWENT_REASON": "desync"}),
 ]
 GWENT_DUEL = "gwent_duel"
 

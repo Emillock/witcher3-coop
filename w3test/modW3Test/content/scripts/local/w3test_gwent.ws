@@ -21,7 +21,16 @@
 //   w3test.ws), and both boards play themselves (CR4GwintManager.duelDebugAutoplay; W3T_GWENT_MULLIGAN=1 redraws at
 //   the mulligan, default 0 declines; W3T_GWENT_LEADER_FIRST=1 makes autoplay play its leader as soon as it can). W3T_GWENT_BREAK_TEMPLATES=1 makes bot 0's board send a wrong card table hash.
 //   W3T_GWENT_CORRUPT_AT=<seq> makes bot 0's board add 1 to one card's power right before it sends that seq, so the
-//   peer's hash check fails (desync: both boards must log DUEL DESYNC and end as no contest, reason desync).
+//   peer's hash check fails (desync: both boards must log DUEL DESYNC and end as no contest, reason desync);
+//   W3T_GWENT_CORRUPT_AT=end does that right before bot 0 sends its end of game message (E), the last message of a
+//   match: neither side may pay then.
+//   Match end: W3T_GWENT_FORCE_DRAW=1 makes both boards end game 0 as a draw. On a draw W3T_GWENT_REPLAY=1 makes both
+//   bots press Replay (expected: DUEL END result=draw reason=replay game=0, then a second game with another shuffle,
+//   its DUEL ROUND 1 hash differs, ending game=1 or later with win or loss and the bet paid); W3T_GWENT_REPLAY=0 makes
+//   bot 0 press Replay and bot 1 close the end screen (expected: both result=draw, bot 0 reason=opponent_leave, bot 1
+//   reason=leave, no money moved); unset, both close it (a draw, no money). W3T_GWENT_SURRENDER_AT=<seq> makes bot 1
+//   surrender (Witcher Online's surrender path, OnQuitGameConfirmed) once its board sent that seq (expected: bot 0
+//   result=win, bot 1 result=loss, both reason=surrender, the bet paid).
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
@@ -63,6 +72,8 @@ function W3T_ResetGwent()
     manager.duelDebugLeaderFirst = false;
     manager.duelDebugBreakTemplates = false;
     manager.duelDebugCorruptAt = 0;
+    manager.duelDebugForceDraw = false;
+    manager.duelDebugReplay = false;
     W3T_Log("GWENT state reset (result " + w3t_gwent.result + ", money " + thePlayer.GetMoney() + ")");
     w3t_gwent = NULL;
 }
@@ -93,6 +104,11 @@ statemachine class W3T_Gwent
     public var rounds : int;            // its "DUEL ROUND" lines
     public var dynamicLine : string;    // Witcher Online's "DUEL DYNAMIC cards=<n>" (GetDynamicCards of the duel decks)
     public var desyncLine : string;     // the board's first "DUEL DESYNC" line
+    public var replayLine : string;     // the board's "DUEL END result=draw reason=replay game=0" line
+    public var firstRound1 : string;    // the hash of the first "DUEL ROUND 1" line (game 0)
+    public var lastRound1 : string;     // the hash of the last "DUEL ROUND 1" line (the last game)
+    public var surrenderAt : int;       // W3T_GWENT_SURRENDER_AT on bot 1, else 0
+    public var surrenderDue : bool;     // the board sent seq surrenderAt: surrender on the next frame
     public var duelPassed : bool;
     public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
     public var combatLogged : bool;     // EndCombat found this bot in combat once already
@@ -194,7 +210,11 @@ statemachine class W3T_Gwent
         {
             return;
         }
-        // a duel plays itself (the board's autoplay) and ends by itself
+        // a duel plays itself (the board's autoplay) and ends by itself, unless W3T_GWENT_SURRENDER_AT says otherwise
+        if(duel && surrenderDue && !surrendered)
+        {
+            Surrender(menu, "board sent seq " + surrenderAt);
+        }
         if(duel || !boardOpen || surrendered)
         {
             return;
@@ -243,6 +263,22 @@ statemachine class W3T_Gwent
             if(StrStartsWith(line, "DUEL END "))
             {
                 endLine = line;
+                if(line == "DUEL END result=draw reason=replay game=0")
+                {
+                    replayLine = line;
+                }
+            }
+            if(StrStartsWith(line, "DUEL ROUND 1 "))
+            {
+                lastRound1 = StrAfterFirst(line, "hash=");
+                if(firstRound1 == "")
+                {
+                    firstRound1 = lastRound1;
+                }
+            }
+            if(surrenderAt > 0 && StrStartsWith(line, "DUEL SEND ") && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= surrenderAt)
+            {
+                surrenderDue = true;
             }
             if(StrStartsWith(line, "DUEL DYNAMIC "))
             {
@@ -283,6 +319,8 @@ statemachine class W3T_Gwent
         manager.duelDebugLeaderFirst = false;
         manager.duelDebugBreakTemplates = false;
         manager.duelDebugCorruptAt = 0;
+        manager.duelDebugForceDraw = false;
+        manager.duelDebugReplay = false;
         minigame = thePlayer.GetGwintMinigameState();
         result = "lost";
         if(minigame == EMS_End_PlayerWon)
@@ -354,7 +392,14 @@ statemachine class W3T_Gwent
             manager.duelDebugCorruptAt = 0;
             if(host)
             {
-                manager.duelDebugCorruptAt = StringToInt(W3T_GetEnv("W3T_GWENT_CORRUPT_AT"), 0);
+                manager.duelDebugCorruptAt = W3T_GwentCorruptAt(W3T_GetEnv("W3T_GWENT_CORRUPT_AT"));
+            }
+            manager.duelDebugForceDraw = W3T_GetEnv("W3T_GWENT_FORCE_DRAW") == "1";
+            manager.duelDebugReplay = W3T_GetEnv("W3T_GWENT_REPLAY") == "1" || (host && W3T_GetEnv("W3T_GWENT_REPLAY") == "0");
+            surrenderAt = 0;
+            if(!host)
+            {
+                surrenderAt = StringToInt(W3T_GetEnv("W3T_GWENT_SURRENDER_AT"), 0);
             }
             duelBet = StringToInt(W3T_GetEnv("W3T_GWENT_BET"), 10);
             if(thePlayer.GetMoney() < duelBet)
@@ -367,7 +412,8 @@ statemachine class W3T_Gwent
             W3T_Log("GWENT duel deck " + deckEntry + " (leader " + NameToString(duelDeck.leaderCard) + ", " + duelDeck.cards.Size()
                 + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", corrupt at "
                 + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan + ", leader first "
-                + manager.duelDebugLeaderFirst);
+                + manager.duelDebugLeaderFirst + ", force draw " + manager.duelDebugForceDraw + ", replay "
+                + manager.duelDebugReplay + ", surrender at " + surrenderAt);
             duelStep = 1;
             duelStepAt = bot.ElapsedS();
             return false;
@@ -462,6 +508,7 @@ statemachine class W3T_Gwent
         var expect : string;
         var reason : string;
         var outcome : string;
+        var game : string;
         var why : string;
         var moneyAfter : int;
         var wanted : int;
@@ -477,6 +524,10 @@ statemachine class W3T_Gwent
         {
             outcome = StrAfterFirst(words[2], "result=");
             reason = StrAfterFirst(words[3], "reason=");
+        }
+        if(words.Size() >= 5)
+        {
+            game = StrAfterFirst(words[4], "game=");
         }
         W3T_Log("GWENT duel money before=" + moneyBefore + " after=" + moneyAfter + " bet=" + duelBet + " (" + endLine + ")");
 
@@ -526,6 +577,10 @@ statemachine class W3T_Gwent
             {
                 why = "expected result=win|loss|draw";
             }
+            if(why == "")
+            {
+                why = MatchEndProblem(host, outcome, reason, game);
+            }
         }
         if(why == "" && moneyAfter - moneyBefore != wanted)
         {
@@ -539,6 +594,63 @@ statemachine class W3T_Gwent
         }
         W3T_Log("GWENT duel ok: " + endLine + ", " + rounds + " rounds, money " + (moneyAfter - moneyBefore));
         return true;
+    }
+
+    // the match end switches (W3T_GWENT_SURRENDER_AT, W3T_GWENT_FORCE_DRAW with W3T_GWENT_REPLAY) against the last
+    // DUEL END line's result, reason and game; "" when they fit
+    public function MatchEndProblem(host : bool, outcome : string, reason : string, game : string) : string
+    {
+        var replay : string;
+        var wanted : string;
+
+        if(W3T_GetEnv("W3T_GWENT_SURRENDER_AT") != "")
+        {
+            wanted = "loss";
+            if(host)
+            {
+                wanted = "win";
+            }
+            if(outcome != wanted || reason != "surrender")
+            {
+                return "expected result=" + wanted + " reason=surrender";
+            }
+        }
+        if(W3T_GetEnv("W3T_GWENT_FORCE_DRAW") != "1")
+        {
+            return "";
+        }
+        replay = W3T_GetEnv("W3T_GWENT_REPLAY");
+        if(replay == "1")
+        {
+            if(replayLine == "")
+            {
+                return "expected DUEL END result=draw reason=replay game=0";
+            }
+            if(StringToInt(game, 0) < 1 || outcome == "draw")
+            {
+                return "expected the replayed game (game=1 or later) to end with win or loss";
+            }
+            if(firstRound1 == "" || firstRound1 == lastRound1)
+            {
+                return "expected another first shuffle in the replayed game (DUEL ROUND 1 hash " + firstRound1 + ", then "
+                    + lastRound1 + ")";
+            }
+            return "";
+        }
+        if(outcome != "draw" || game != "0" || replayLine != "")
+        {
+            return "expected result=draw game=0 without a replay";
+        }
+        wanted = "leave";
+        if(replay == "0" && host)
+        {
+            wanted = "opponent_leave";
+        }
+        if(reason != wanted && (replay == "0" || reason != "opponent_leave"))
+        {
+            return "expected reason=" + wanted;
+        }
+        return "";
     }
 }
 
@@ -674,6 +786,30 @@ function W3T_GwentSelfTest(bot : W3T_Bot) : bool
 function W3T_GwentDuel(bot : W3T_Bot, client : r_MultiplayerClient, peer : r_RemotePlayer) : bool
 {
     return theGame.W3T_GwentState().DuelStep(bot, client, peer);
+}
+
+// W3T_GWENT_CORRUPT_AT as the board's gwint.game.debug.corruptAt: a seq, -1 for "end" (the end of game message E),
+// 0 for none
+function W3T_GwentCorruptAt(value : string) : int
+{
+    if(value == "end")
+    {
+        return -1;
+    }
+    return StringToInt(value, 0);
+}
+
+// the seq field of a duel token ("<version>.<matchId>.<seq>.<type>.<args>.<hash>"), 0 if it has none
+function W3T_GwentTokenSeq(token : string) : int
+{
+    var fields : array<string>;
+
+    fields = W3T_Split(token, ".");
+    if(fields.Size() != 6)
+    {
+        return 0;
+    }
+    return StringToInt(fields[2], 0);
 }
 
 function W3T_GwentSeatName(host : bool) : string

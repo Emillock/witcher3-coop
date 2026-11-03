@@ -160,8 +160,9 @@ def test_suite_matrix_file_matches_the_matrix():
     assert entries[0].env == run_suite.GWENT_DUEL_MATRIX[0][1]
     # only the switches some entry sets are cleared from the environment of the runs it starts (as before Task 13b)
     assert run_suite.GWENT_DUEL_SWITCHES == ["W3T_GWENT_CORRUPT_AT", "W3T_GWENT_DECKS", "W3T_GWENT_EXPECT",
-                                             "W3T_GWENT_LEADER_FIRST", "W3T_GWENT_MULLIGAN", "W3T_GWENT_REASON",
-                                             "W3T_GWENT_SEED"]
+                                             "W3T_GWENT_FORCE_DRAW", "W3T_GWENT_LEADER_FIRST", "W3T_GWENT_MULLIGAN",
+                                             "W3T_GWENT_REASON", "W3T_GWENT_REPLAY", "W3T_GWENT_SEED",
+                                             "W3T_GWENT_SURRENDER_AT"]
 
 
 def test_suite_env_keeps_suite_wide_settings():
@@ -261,6 +262,16 @@ def test_judge_corrupt_entry_expects_its_seq(judged):
     outcome.update(rc=1, text="DIVERGED at seq=9: A to B: ...")
     ok, why = matrix.judge(1, logs, True, "passed")
     assert not ok and "W3T_GWENT_CORRUPT_AT" in why
+
+
+def test_logdiff_verdict_for_a_corrupt_end_message():
+    """W3T_GWENT_CORRUPT_AT=end: the first divergence must be at an end of game message (E), whatever its seq."""
+    at_end = "DIVERGED at seq=41: B to A: sender hash 0000aaaa, receiver mine=0000bbbb (1.3039g0.41.E.A.0000aaaa)"
+    assert run_test.gwent_logdiff_verdict(1, at_end, "end")[0]
+    ok, why = run_test.gwent_logdiff_verdict(1, "DIVERGED at seq=8: A to B: sender hash 1, receiver mine=2 "
+                                                "(1.3039g0.8.S._.00000001)", "end")
+    assert not ok and "W3T_GWENT_CORRUPT_AT=end" in why
+    assert not run_test.gwent_logdiff_verdict(0, "OK: 40 + 40 applied messages and 3 rounds agree", "end")[0]
 
 
 def test_judge_hung_entry_stays_failed(judged):
