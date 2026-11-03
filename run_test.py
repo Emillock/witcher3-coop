@@ -54,6 +54,18 @@ def expand_gwent_decks(value: str, decks_file: str = GWENT_DECKS_FILE) -> str:
     return ",".join(named.get(entry.strip(), entry.strip()) for entry in value.split(","))
 
 
+def script_int_seed(value: str) -> str:
+    """W3T_GWENT_SEED as the script reads it (a 32-bit int): a uint seed from 2^31 to 2^32 - 1 becomes the signed
+    value with the same bits, so the board's uint(seed) gets the seed back. Anything else is returned unchanged."""
+    try:
+        seed = int(value.strip())
+    except ValueError:
+        return value
+    if 2 ** 31 <= seed < 2 ** 32:
+        return str(seed - 2 ** 32)
+    return value
+
+
 def gwent_logdiff(run_dir: str, n: int) -> tuple[int, str]:
     """Compares the two bots' duel logs with WitcherOnline's duel_logdiff.py; returns (exit code, its output)."""
     if n < 2:
@@ -356,6 +368,10 @@ def main():
         # the bots get inline decks: names from w3test/gwent_decks.txt become "leader+card+..."
         os.environ["W3T_GWENT_DECKS"] = expand_gwent_decks(os.environ["W3T_GWENT_DECKS"])
         print(f"W3T_GWENT_DECKS={os.environ['W3T_GWENT_DECKS']}", flush=True)
+    if a.scenario == GWENT_DUEL and os.environ.get("W3T_GWENT_SEED"):
+        # StringToInt reads "4000000000" as 0 (not forced); pass the same 32 bits as a signed int
+        os.environ["W3T_GWENT_SEED"] = script_int_seed(os.environ["W3T_GWENT_SEED"])
+        print(f"W3T_GWENT_SEED={os.environ['W3T_GWENT_SEED']}", flush=True)
 
     run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + (f"session{len(session)}" if session else a.scenario)
                            + ("-steam" if a.steam_box else "-relay" if a.relay else "")
