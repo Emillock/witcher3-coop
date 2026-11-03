@@ -306,7 +306,7 @@ statemachine class W3T_Gwent
 
         host = W3T_GetEnv("W3T_ROLE") == "mover";
         manager = theGame.GetGwintManager();
-        if(!boardOpen && duelStep <= 2 && W3T_GetEnv("W3T_SCENARIOS") != "")
+        if(!boardOpen && duelStep <= 2 && W3T_GetEnv("W3T_MATRIX") == "1")
         {
             EndCombat();
         }
@@ -418,10 +418,12 @@ statemachine class W3T_Gwent
         return duelPassed;
     }
 
-    // In a session the bots stand in the world for an hour, and monsters roam near the test save. Witcher Online does
-    // not show a challenge to a player in combat, so the duel would never start (most likely what happened to the one
-    // duel of 21 that got "no board 120 s after the challenge": its guest had moved 23 m from its start point without
-    // being told to). Before the board is up, hostile actors within 40 m of a bot in combat go at once.
+    // In a --matrix session (W3T_MATRIX=1) the bots stand in the world for an hour, and monsters roam near the test
+    // save. Witcher Online does not show a challenge to a player in combat, so the duel would never start (most likely
+    // what happened to the one duel of 21 that got "no board 120 s after the challenge": its guest had moved 23 m from
+    // its start point without being told to). Before the board is up, hostile actors within 40 m of a bot in combat go
+    // at once. Actors Witcher Online manages (other players' characters, copies of a leader's monsters, the leader's
+    // shared monsters) are left alone. The query asks for hostile actors only, so other actors never fill its cap.
     public function EndCombat()
     {
         var entities : array<CGameplayEntity>;
@@ -433,11 +435,12 @@ statemachine class W3T_Gwent
         {
             return;
         }
-        FindGameplayEntitiesInSphere(entities, thePlayer.GetWorldPosition(), 40.0, 64, '', FLAG_OnlyAliveActors, thePlayer);
+        FindGameplayEntitiesInSphere(entities, thePlayer.GetWorldPosition(), 40.0, 1000, '',
+            FLAG_OnlyAliveActors + FLAG_Attitude_Hostile, thePlayer);
         for(i = 0; i < entities.Size(); i += 1)
         {
             npc = (CNewNPC)entities[i];
-            if(npc && GetAttitudeBetween(npc, thePlayer) == AIA_Hostile)
+            if(npc && GetAttitudeBetween(npc, thePlayer) == AIA_Hostile && !W3T_WitcherOnlineActor(npc))
             {
                 W3T_Log("GWENT duel: in combat before the board, removes " + npc.GetReadableName() + " at "
                     + W3T_VecStr(npc.GetWorldPosition()));
@@ -452,7 +455,7 @@ statemachine class W3T_Gwent
         combatLogged = true;
     }
 
-    // whether the board's duel lines and the money match W3T_GWENT_EXPECT (fails the bot otherwise)
+  // whether the board's duel lines and the money match W3T_GWENT_EXPECT (fails the bot otherwise)
     public function DuelVerdict(host : bool) : bool
     {
         var words : array<string>;
@@ -571,6 +574,36 @@ state W3T_GwentWatching in W3T_Gwent
             SleepOneFrame();
         }
     }
+}
+
+// whether Witcher Online manages this actor: another player's character, a copy of a leader's monster, or one of this
+// game's monsters shared with a party
+function W3T_WitcherOnlineActor(npc : CNewNPC) : bool
+{
+    var client : r_MultiplayerClient;
+    var coop : r_CoopEnemies;
+    var players : array<r_RemotePlayer>;
+    var i : int;
+
+    client = theGame.r_getMultiplayerClient();
+    if(!client)
+    {
+        return false;
+    }
+    coop = client.getCoopEnemies();
+    if(coop && (coop.IsPuppet(npc) || coop.HostNetIdOf(npc) != 0))
+    {
+        return true;
+    }
+    players = client.getPlayers();
+    for(i = 0; i < players.Size(); i += 1)
+    {
+        if(players[i] && players[i].ghost == npc)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 function W3T_OkText(ok : bool) : string

@@ -25,7 +25,7 @@ ENTRY_KEYS = ("scenario", "label", "env", "duration")
 END_CONTROL = "end"
 LABEL_RE = re.compile(r"^[A-Za-z0-9_.,+-]+$")
 
-# how a launch ended (run_test.launch): the run goes on in fresh games after "hung" and "exited"
+# how a launch ended (run_test.launch): the run goes on in fresh games after "hung", "exited" and "unstarted"
 STOP_ENDS = ("owner", "timeout")
 
 
@@ -156,10 +156,25 @@ def entry_state(segments: list[str], scenario: str, elapsed: float, limit: float
     return "hung" if elapsed > limit else "running"
 
 
+def entry_started(segments: list[str]) -> bool:
+    """Whether some bot started the entry (its log part, from cut_entry, is not empty)."""
+    return any(segments)
+
+
+def retry_unstarted(index: int, retried: set[int]) -> bool:
+    """Whether entry `index`, which never started in the last launch, gets one more try in fresh games: once only.
+    Records the try in `retried`."""
+    if index in retried:
+        return False
+    retried.add(index)
+    return True
+
+
 def next_launch(decided: int, total: int, end: str) -> int | None:
     """The entry the next launch starts with after a launch that ended with `end` (see run_test.launch) and
     `decided` entries decided so far, or None when the run is over: every entry decided, or a stop (the owner's
-    Documents changed, the run's own timeout). A failed entry is never retried."""
+    Documents changed, the run's own timeout). A failed entry is never retried; an entry that never started is
+    still undecided after its launch ("unstarted"), so the next launch starts with it again."""
     if decided >= total or end in STOP_ENDS:
         return None
     return decided

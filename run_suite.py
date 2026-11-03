@@ -15,7 +15,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
 from run_test import missing_test_build  # noqa: E402
-from session_matrix import SETTINGS  # noqa: E402
 
 # enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "version_check", "party_hud", "horse_ride", "social", "trade", "player_effects", "shared_enemy", "enemy_attacks", "mounted_fight", "reactions", "twin_match", "encounter_mismatch", "handoff", "quest_sync",
@@ -54,7 +53,21 @@ GWENT_DUEL_MATRIX = [
                                              "W3T_GWENT_LEADER_FIRST": "1"}),
 ]
 GWENT_DUEL = "gwent_duel"
-GWENT_DUEL_SWITCHES = list(SETTINGS)
+
+
+def matrix_switches(matrix: list) -> list[str]:
+    """The W3T_* settings some entry of the matrix sets, sorted. Only these are cleared from the suite's
+    environment for the duels, so suite-wide settings no entry sets (W3T_GWENT_LOGDIFF=report, a bet) still apply.
+    """
+    return sorted({name for _, settings in matrix for name in settings})
+
+
+GWENT_DUEL_SWITCHES = matrix_switches(GWENT_DUEL_MATRIX)
+
+
+def suite_env(environ: dict) -> dict:
+    """The environment for the matrix's duels: the suite's own, without the switches the matrix sets."""
+    return {k: v for k, v in environ.items() if k not in GWENT_DUEL_SWITCHES}
 
 
 def matrix_entries(matrix: list) -> list[dict]:
@@ -72,11 +85,12 @@ def session_rows(text: str, labels: list[str], prefix: str) -> list[tuple]:
     return rows
 
 
-def run_gwent_matrix(label, sessions=True):
-    # runs the GWENT_DUEL_MATRIX entries: by default as one run_test.py --matrix (the duels share game launches; a
-    # hung duel or a game that ended starts fresh games for the next), with --no-session each as its own gwent_duel
-    # (its own W3T_* settings, run_test.py's gwent_duel duration and timeout); returns the summary rows
-    env = {k: v for k, v in os.environ.items() if k not in GWENT_DUEL_SWITCHES}
+def run_gwent_matrix(label: str, sessions: bool = True) -> list[tuple]:
+    """Runs the GWENT_DUEL_MATRIX entries and returns the summary rows (name, PASS|FAIL|ERROR, seconds, why).
+    By default as one run_test.py --matrix: the duels share game launches, and a hung duel or a game that ended
+    starts fresh games for the next. With sessions=False (--no-session) each entry is its own gwent_duel run with
+    its own W3T_* settings and run_test.py's gwent_duel duration and timeout."""
+    env = suite_env(dict(os.environ))
     if sessions:
         stamp = time.strftime('%H%M%S')
         matrix = os.path.join(WORK, "runs", f"suite_{label}_gwent_duel_matrix_{stamp}.json")
@@ -97,11 +111,10 @@ def run_gwent_matrix(label, sessions=True):
     rows = []
     for name, settings in GWENT_DUEL_MATRIX:
         out = os.path.join(WORK, "runs", f"suite_{label}_gwent_duel_{name}_{time.strftime('%H%M%S')}.out")
-        env = {k: v for k, v in os.environ.items() if k not in GWENT_DUEL_SWITCHES}
-        env.update(settings)
+        entry_env = dict(env, **settings)
         t0 = time.time()
         with open(out, "w") as f:
-            subprocess.run([sys.executable, os.path.join(HERE, "run_test.py"), GWENT_DUEL], stdout=f, stderr=subprocess.STDOUT, env=env)
+            subprocess.run([sys.executable, os.path.join(HERE, "run_test.py"), GWENT_DUEL], stdout=f, stderr=subprocess.STDOUT, env=entry_env)
         text = open(out, encoding="utf-8", errors="replace").read()
         m = re.search(r"RESULT: (PASS|FAIL) \((.*)\)", text)
         rows.append((f"{GWENT_DUEL} {name}", m.group(1) if m else "ERROR", int(time.time() - t0), m.group(2) if m else "no result line"))

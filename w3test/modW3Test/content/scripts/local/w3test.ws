@@ -436,13 +436,15 @@ statemachine class W3T_Bot
     }
 
     // a session's next scenario: the last one's leftovers go, the free-form state and the Gwent state start over, and
-    // the scenario's own settings from the control file apply
+    // the scenario's own settings from the control file apply. The start line comes first, so the harness's cut of
+    // this scenario's log holds its reset and settings lines too.
     public function NextScenario(index : int, next : string, control : array<string>)
     {
         if(scenario != "")
         {
             W3T_EndScenario(this);
         }
+        W3T_Log("SCENARIO " + next + " start entry=" + index);
         theGame.W3T_ResetGwent();
         W3T_ApplySessionSettings(control);
         scenarioVec = Vector(0, 0, 0);
@@ -463,7 +465,6 @@ statemachine class W3T_Bot
         scenario = next;
         settleUntil = ElapsedS() + 5;
         begun = false;
-        W3T_Log("SCENARIO " + next + " start entry=" + index);
     }
 
     public function CountDialog()

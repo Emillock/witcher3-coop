@@ -158,8 +158,117 @@ def test_suite_matrix_file_matches_the_matrix():
     assert [e.label for e in entries] == [name for name, _ in run_suite.GWENT_DUEL_MATRIX]
     assert all(e.scenario == "gwent_duel" for e in entries)
     assert entries[0].env == run_suite.GWENT_DUEL_MATRIX[0][1]
-    # every per-entry setting is cleared from the environment of the runs it starts
-    assert set(sm.SETTINGS) <= set(run_suite.GWENT_DUEL_SWITCHES)
+    # only the switches some entry sets are cleared from the environment of the runs it starts (as before Task 13b)
+    assert run_suite.GWENT_DUEL_SWITCHES == ["W3T_GWENT_CORRUPT_AT", "W3T_GWENT_DECKS", "W3T_GWENT_EXPECT",
+                                             "W3T_GWENT_LEADER_FIRST", "W3T_GWENT_MULLIGAN", "W3T_GWENT_REASON",
+                                             "W3T_GWENT_SEED"]
+
+
+def test_suite_env_keeps_suite_wide_settings():
+    env = run_suite.suite_env({"W3T_GWENT_LOGDIFF": "report", "W3T_GWENT_BET": "20", "W3T_GWENT_SEED": "7",
+                               "W3T_GWENT_DECKS": "North,North", "PATH": "x"})
+    assert env == {"W3T_GWENT_LOGDIFF": "report", "W3T_GWENT_BET": "20", "PATH": "x"}
+    # and a session entry then takes them as its defaults
+    entry = sm.parse_matrix(run_suite.matrix_entries(run_suite.GWENT_DUEL_MATRIX[:1]))[0]
+    settings = sm.entry_settings(entry, env)
+    assert settings["W3T_GWENT_BET"] == "20" and settings["W3T_GWENT_LOGDIFF"] == "report"
+    assert settings["W3T_GWENT_SEED"] == "1"
+
+
+def test_entry_started_and_one_retry():
+    assert not sm.entry_started(["", ""])
+    assert sm.entry_started(["", "x SCENARIO gwent_duel start entry=2\n"])
+    retried = set()
+    assert sm.retry_unstarted(2, retried)
+    assert not sm.retry_unstarted(2, retried)
+    assert sm.retry_unstarted(3, retried)
+    # an unstarted entry has no result, so the next launch starts with it again
+    assert sm.next_launch(2, 4, "unstarted") == 2
+
+
+def test_focus_watch_drops_destroyed_windows():
+    import time
+
+    import w3run
+    watch = w3run.FocusWatch(every=0.05)
+    pid = 0x7FFFFFF0  # no such process
+    watch.add(pid, "BotA")
+    with watch.lock:
+        watch.windows[pid] = 0x7FFFFFF4  # no such window: IsIconic would say "not minimized"
+    watch.start()
+    time.sleep(0.4)
+    watch.stop()
+    assert watch.polls > 0
+    assert "BotA" not in watch.minimized and "BotA" not in watch.shown
+    assert pid not in watch.windows
+
+
+def duel_log(seat_result: str, before: int, after: int, extra: str = "") -> str:
+    return ("10:00:00.000 SCENARIO gwent_duel start entry=0\n"
+            f"10:00:01.000 GwentDuel: DUEL END result={seat_result} reason=match game=0\n"
+            f"10:00:02.000 GWENT duel money before={before} after={after} bet=10\n" + extra)
+
+
+@pytest.fixture
+def judged(tmp_path, monkeypatch):
+    """A MatrixRun of two gwent_duel entries (a normal one and a corrupt check) whose logdiff step is stubbed."""
+    entries = sm.parse_matrix([
+        {"scenario": "gwent_duel", "label": "normal", "env": {"W3T_GWENT_DECKS": "North,North"}},
+        {"scenario": "gwent_duel", "label": "corrupt", "env": {"W3T_GWENT_CORRUPT_AT": "8"}},
+    ])
+    matrix = run_test.MatrixRun(entries, {}, str(tmp_path), 2)
+    outcome = {"rc": 0, "text": "OK: 3 + 3 applied messages and 2 rounds agree"}
+    calls = []
+
+    def fake_logdiff(paths):
+        calls.append(paths)
+        return outcome["rc"], outcome["text"]
+
+    monkeypatch.setattr(run_test, "gwent_logdiff_files", fake_logdiff)
+    return matrix, outcome, calls, tmp_path
+
+
+def test_judge_pass_writes_the_parts(judged):
+    matrix, _, calls, root = judged
+    logs = {0: duel_log("win", 382, 392), 1: duel_log("loss", 382, 372)}
+    assert matrix.judge(0, logs, True, "every bot passed 'gwent_duel'") == (True, "every bot passed 'gwent_duel'")
+    folder = root / "entries" / "01-normal"
+    assert (folder / "BotA.log").read_text(encoding="utf-8") == logs[0]
+    assert [os.path.basename(p) for p in calls[0]] == ["BotA.log", "BotB.log"]
+
+
+def test_judge_keeps_a_bot_failure(judged):
+    matrix, _, _, _ = judged
+    logs = {0: duel_log("win", 382, 392), 1: duel_log("loss", 382, 382, "x FAIL gwent duel: money moved by 0\n")}
+    assert matrix.judge(0, logs, False, "BotB: gwent duel: money moved by 0") == (False, "BotB: gwent duel: money moved by 0")
+
+
+def test_judge_fails_on_divergence_and_on_results_that_do_not_fit(judged):
+    matrix, outcome, _, _ = judged
+    outcome.update(rc=1, text="DIVERGED at seq=5: A to B: ...")
+    ok, why = matrix.judge(0, {0: duel_log("win", 382, 392), 1: duel_log("loss", 382, 372)}, True, "passed")
+    assert not ok and why.startswith("duel logs diverged: DIVERGED at seq=5")
+    outcome.update(rc=0, text="OK")
+    ok, why = matrix.judge(0, {0: duel_log("win", 382, 392), 1: duel_log("win", 382, 392)}, True, "passed")
+    assert not ok and "do not fit together" in why
+
+
+def test_judge_corrupt_entry_expects_its_seq(judged):
+    matrix, outcome, _, _ = judged
+    outcome.update(rc=1, text="DIVERGED at seq=8: A to B: ...")
+    logs = {0: duel_log("nocontest", 382, 382), 1: duel_log("nocontest", 382, 382)}
+    assert matrix.judge(1, logs, True, "passed") == (True, "passed")
+    outcome.update(rc=1, text="DIVERGED at seq=9: A to B: ...")
+    ok, why = matrix.judge(1, logs, True, "passed")
+    assert not ok and "W3T_GWENT_CORRUPT_AT" in why
+
+
+def test_judge_hung_entry_stays_failed(judged):
+    matrix, _, _, root = judged
+    why = "not decided within 50 s: BotA: no pass (did not finish); BotB: no pass (did not finish)"
+    logs = {0: "10:00:00.000 SCENARIO gwent_duel start entry=0\n", 1: ""}
+    assert matrix.judge(0, logs, False, why) == (False, why)
+    assert (root / "entries" / "01-normal" / "BotB.log").read_text(encoding="utf-8") == ""
 
 
 def test_suite_reads_session_results():

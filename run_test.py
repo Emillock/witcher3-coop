@@ -407,6 +407,7 @@ class MatrixRun:
         self.settings = [bot_settings(e, base_env) for e in entries]
         self.root = root
         self.bots = bots
+        self.unstarted_why = ""   # why the last launch ended before its entry under way had started
 
     def scenarios(self) -> list[str]:
         """The session's scenario names, in entry order (the bots' W3T_SCENARIOS)."""
@@ -453,13 +454,15 @@ class MatrixRun:
         return ok, why
 
 
-def launch(a, game_args: list[str], run_dir: str, session: list[str], results: list, timeout: float,
-           matrix: MatrixRun | None = None, start: int = 0, watch: FocusWatch | None = None) -> tuple[list[str], str]:
+def launch(a: argparse.Namespace, game_args: list[str], run_dir: str, session: list[str], results: list,
+           timeout: float, matrix: MatrixRun | None = None, start: int = 0,
+           watch: FocusWatch | None = None) -> tuple[list[str], str]:
     """One launch: the local server (and relays), a.bots games, and the run loop, until the run is over, every
     session entry is decided, or (matrix) an entry hung or a game ended; then everything it started is stopped.
     A session's (name, ok, why) verdicts are appended to results. With a matrix the session starts at entry `start`.
     Returns (the owner's Documents files that changed, why the launch ended: "done", "timeout", "owner", "failed",
-    or with a matrix "hung" or "exited")."""
+    or with a matrix "hung", "exited", or "unstarted" when the entry under way never started: no result is
+    appended for it then, and matrix.unstarted_why says why)."""
     server_log = open(os.path.join(run_dir, "server.log"), "w")
     server = subprocess.Popen(["java", "-jar", SERVER_JAR, str(a.port)], cwd=os.path.dirname(SERVER_JAR),
                               stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT)
@@ -510,6 +513,8 @@ def launch(a, game_args: list[str], run_dir: str, session: list[str], results: l
             if session:
                 # the harness times each scenario; the bots never give up by themselves
                 env.update(W3T_SCENARIO="session", W3T_SCENARIOS=",".join(session), W3T_CONTROL=control, W3T_DURATION="100000")
+            if matrix:
+                env["W3T_MATRIX"] = "1"  # the test mod's matrix-only behaviour (EndCombat)
             p = subprocess.Popen([EXE] + game_args, cwd=os.path.dirname(EXE), env=env, startupinfo=startup_info(a.window))
             procs.append(p)
             if watch:
@@ -552,6 +557,11 @@ def launch(a, game_args: list[str], run_dir: str, session: list[str], results: l
                 limit = matrix.limit(index) + (150 if index == start else 30)  # the first one waits for the loading
                 logs = {i: sm.cut_entry(read_log(run_dir, i), index, entry.scenario) for i in range(a.bots)}
                 state = sm.entry_state(list(logs.values()), entry.scenario, time.time() - go_at, limit)
+                if state == "hung" and not sm.entry_started(list(logs.values())):
+                    matrix.unstarted_why = f"no bot started it within {limit} s"
+                    print(f"[{time.time() - t0:6.1f}s] {entry.label} not started within {limit} s: ending this launch", flush=True)
+                    end = "unstarted"
+                    break
                 if state != "running":
                     ok, why = check(entry.scenario, logs, a.bots)
                     if state == "hung":
@@ -614,6 +624,11 @@ def launch(a, game_args: list[str], run_dir: str, session: list[str], results: l
                     index = len(results)
                     entry = matrix.entries[index]
                     logs = {i: sm.cut_entry(read_log(run_dir, i), index, entry.scenario) for i in range(a.bots)}
+                    if not sm.entry_started(list(logs.values())):
+                        matrix.unstarted_why = f"a game ended before it started ({', '.join(exits)})"
+                        print(f"[{time.time() - t0:6.1f}s] {entry.label} not started: {matrix.unstarted_why}", flush=True)
+                        end = "unstarted"
+                        break
                     _, why = check(entry.scenario, logs, a.bots)
                     why = f"a game ended during it ({', '.join(exits)}): {why}"
                     matrix.judge(index, logs, False, why)
@@ -630,6 +645,18 @@ def launch(a, game_args: list[str], run_dir: str, session: list[str], results: l
                 end = "done"
                 break
             time.sleep(1)
+        else:
+            if matrix and len(procs) == a.bots and len(results) < len(session):
+                # the run's own timeout: an entry that had started is reported as interrupted (not "not run")
+                index = len(results)
+                entry = matrix.entries[index]
+                logs = {i: sm.cut_entry(read_log(run_dir, i), index, entry.scenario) for i in range(a.bots)}
+                if sm.entry_started(list(logs.values())):
+                    _, why = check(entry.scenario, logs, a.bots)
+                    why = f"interrupted by the run's timeout after {time.time() - go_at:.0f} s: {why}"
+                    matrix.judge(index, logs, False, why)
+                    results.append((entry.label, False, why))
+                    print(f"[{time.time() - t0:6.1f}s] RESULT {entry.label}: FAIL ({why}) [{time.time() - go_at:.0f}s]", flush=True)
     finally:
         shots_stop.set()
         if recorder:
@@ -668,9 +695,10 @@ def launch(a, game_args: list[str], run_dir: str, session: list[str], results: l
     return owner_touched, end
 
 
-def run_matrix(a, game_args: list[str], entries: list[sm.Entry], watch: FocusWatch) -> int:
+def run_matrix(a: argparse.Namespace, game_args: list[str], entries: list[sm.Entry], watch: FocusWatch) -> int:
     """Runs a matrix's entries in shared game launches: one launch until an entry hangs or a game ends, then fresh
-    games from the next entry on (a failed entry is not retried). Prints one RESULT line per entry and the total."""
+    games from the next entry on. A failed entry is not retried; an entry that never started gets one more try in
+    fresh games. Prints one RESULT line per entry and the total; returns the exit code."""
     root = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + f"-matrix{len(entries)}"
                         + ("-steam" if a.steam_box else "-relay" if a.relay else ""))
     os.makedirs(root)
@@ -683,17 +711,29 @@ def run_matrix(a, game_args: list[str], entries: list[sm.Entry], watch: FocusWat
     results = []
     t0 = time.time()
     start, launches, owner_touched = 0, 0, []
+    retried: set[int] = set()
     while start is not None:
+        if a.timeout:
+            timeout = a.timeout - (time.time() - t0)
+            if timeout <= 0:
+                print(f"[{time.time() - t0:6.1f}s] the run's --timeout ({a.timeout} s) is used up: no more launches", flush=True)
+                break
+        else:
+            timeout = sum(matrix.limit(i) + 30 for i in range(start, len(entries))) + 150 + 420
         launches += 1
         run_dir = root if launches == 1 else os.path.join(root, f"launch{launches}")
         os.makedirs(run_dir, exist_ok=True)
-        if a.timeout:
-            timeout = a.timeout - (time.time() - t0)
-        else:
-            timeout = sum(matrix.limit(i) + 30 for i in range(start, len(entries))) + 150 + 420
         print(f"[{time.time() - t0:6.1f}s] launch {launches}: entries {start + 1} to {len(entries)} in {run_dir}", flush=True)
         owner_touched, end = launch(a, game_args, run_dir, session, results, timeout, matrix, start, watch)
         print(f"[{time.time() - t0:6.1f}s] launch {launches} ended ({end}) after {len(results)} of {len(entries)} entries", flush=True)
+        if end == "unstarted" and not owner_touched:
+            entry = entries[len(results)]
+            if sm.retry_unstarted(entry.index, retried):
+                print(f"[{time.time() - t0:6.1f}s] {entry.label} did not start ({matrix.unstarted_why}): one more try in fresh games", flush=True)
+            else:
+                why = f"not started in two launches ({matrix.unstarted_why})"
+                results.append((entry.label, False, why))
+                print(f"[{time.time() - t0:6.1f}s] RESULT {entry.label}: FAIL ({why}) [0s]", flush=True)
         start = sm.next_launch(len(results), len(entries), "owner" if owner_touched else end)
     for entry in entries[len(results):]:
         results.append((entry.label, False, "not run (the run stopped first)"))
@@ -709,7 +749,9 @@ def run_matrix(a, game_args: list[str], entries: list[sm.Entry], watch: FocusWat
     return 0 if ok else 1
 
 
-def main():
+def main() -> int:
+    """Parses the command line, runs one scenario, a comma session or a --matrix, and prints RESULT; returns the
+    exit code (0 when everything passed)."""
     ap = argparse.ArgumentParser()
     ap.add_argument("scenario", nargs="?", default="", help="a scenario, or several separated by commas (a session)")
     ap.add_argument("--matrix", help="a JSON file of session entries, each with its own settings (session_matrix.py)")

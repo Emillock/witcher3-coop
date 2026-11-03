@@ -5,7 +5,8 @@
 //   dismissed, the process's audio session muted (W3T_MUTE=0 keeps sound), "Documents" redirected to
 //   W3T_DOCUMENTS so settings, saves and logs live in a per-test sandbox, never in the owner's folder, and the
 //   game's window never activated (ShowWindow, SetActiveWindow, SetFocus, BringWindowToTop, SetWindowPos and
-//   SetForegroundWindow; with W3T_WINDOW=minimized it also stays minimized).
+//   SetForegroundWindow; a CBT hook on every thread that creates a window or dialog refuses each activation;
+//   with W3T_WINDOW=minimized it also stays minimized).
 #include <windows.h>
 
 #include <audiopolicy.h>
@@ -183,6 +184,64 @@ namespace
 		// the first calls only: they show what the game does with its window at start
 		if (g_windowCallsLogged.fetch_add(1) < 40)
 			WriteLog("WINDOW " + line);
+	}
+
+	// Windows can activate a window without any call the IAT hooks see: user32 activates a visible dialog while it
+	// creates it (seen: the game's first window, a #32770 dialog, was the foreground window for a moment while the
+	// desktop was idle). A CBT hook on each thread that creates windows refuses every activation instead.
+	HMODULE g_module = nullptr;
+	thread_local HHOOK t_noActivateHook = nullptr;
+	std::atomic<int> g_activationsLogged{0};
+
+	LRESULT CALLBACK NoActivateCbt(int code, WPARAM wParam, LPARAM lParam)
+	{
+		if (code == HCBT_ACTIVATE)
+		{
+			if (g_activationsLogged.fetch_add(1) < 20)
+			{
+				char cls[64]{};
+				GetClassNameA(reinterpret_cast<HWND>(wParam), cls, sizeof(cls));
+				WriteLog(std::string("WINDOW activation of a '") + cls + "' window refused");
+			}
+			return 1;
+		}
+		return CallNextHookEx(nullptr, code, wParam, lParam);
+	}
+
+	void EnsureNoActivateHook()
+	{
+		if (t_noActivateHook)
+			return;
+		t_noActivateHook = SetWindowsHookExW(WH_CBT, &NoActivateCbt, g_module, GetCurrentThreadId());
+		WriteLog("WINDOW no-activate hook on thread " + std::to_string(GetCurrentThreadId()) + (t_noActivateHook ? " installed" : " FAILED"));
+	}
+
+	using CreateWindowExAFn = HWND(WINAPI *)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+	CreateWindowExAFn g_createWindowExA = nullptr;
+
+	HWND WINAPI HookCreateWindowExA(DWORD exStyle, LPCSTR cls, LPCSTR name, DWORD style, int x, int y, int w, int h, HWND parent,
+	                                HMENU menu, HINSTANCE instance, LPVOID param)
+	{
+		EnsureNoActivateHook();
+		return g_createWindowExA(exStyle, cls, name, style, x, y, w, h, parent, menu, instance, param);
+	}
+
+	using CreateDialogParamAFn = HWND(WINAPI *)(HINSTANCE, LPCSTR, HWND, DLGPROC, LPARAM);
+	CreateDialogParamAFn g_createDialogParamA = nullptr;
+
+	HWND WINAPI HookCreateDialogParamA(HINSTANCE instance, LPCSTR templateName, HWND parent, DLGPROC proc, LPARAM param)
+	{
+		EnsureNoActivateHook();
+		return g_createDialogParamA(instance, templateName, parent, proc, param);
+	}
+
+	using DialogBoxParamAFn = INT_PTR(WINAPI *)(HINSTANCE, LPCSTR, HWND, DLGPROC, LPARAM);
+	DialogBoxParamAFn g_dialogBoxParamA = nullptr;
+
+	INT_PTR WINAPI HookDialogBoxParamA(HINSTANCE instance, LPCSTR templateName, HWND parent, DLGPROC proc, LPARAM param)
+	{
+		EnsureNoActivateHook();
+		return g_dialogBoxParamA(instance, templateName, parent, proc, param);
 	}
 
 	using ShowWindowFn = BOOL(WINAPI *)(HWND, int);
@@ -424,6 +483,10 @@ namespace
 		Hook("USER32.dll", "SetFocus", &HookSetFocus, g_setFocus);
 		Hook("USER32.dll", "BringWindowToTop", &HookBringWindowToTop, g_bringWindowToTop);
 		Hook("USER32.dll", "SetWindowPos", &HookSetWindowPos, g_setWindowPos);
+		Hook("USER32.dll", "CreateWindowExA", &HookCreateWindowExA, g_createWindowExA);
+		Hook("USER32.dll", "CreateDialogParamA", &HookCreateDialogParamA, g_createDialogParamA);
+		Hook("USER32.dll", "DialogBoxParamA", &HookDialogBoxParamA, g_dialogBoxParamA);
+		EnsureNoActivateHook();
 		Hook("USER32.dll", "GetAsyncKeyState", &HookGetAsyncKeyState, g_getAsyncKeyState);
 		Hook("USER32.dll", "RegisterRawInputDevices", &HookRegisterRawInputDevices, g_registerRawInputDevices);
 		Hook("USER32.dll", "MessageBoxW", &HookMessageBoxW, g_messageBoxW);
@@ -686,6 +749,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
 {
 	if (reason == DLL_PROCESS_ATTACH)
 	{
+		g_module = module;
 		DisableThreadLibraryCalls(module);
 		Register();
 		if (TestMode())

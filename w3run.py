@@ -166,6 +166,12 @@ class FocusWatch(threading.Thread):
             with self.lock:
                 windows = dict(self.windows)
             for pid, hwnd in windows.items():
+                # a destroyed window (its game is exiting) is neither shown nor minimized: IsIconic would say FALSE
+                if not user32.IsWindow(hwnd):
+                    with self.lock:
+                        if self.windows.get(pid) == hwnd:
+                            del self.windows[pid]
+                    continue
                 name = names.get(pid, str(pid))
                 counts = self.minimized.setdefault(name, [0, 0])
                 iconic = bool(user32.IsIconic(hwnd))
