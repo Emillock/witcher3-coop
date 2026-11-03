@@ -36,24 +36,25 @@ GWENT_DECKS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "w3t
 DUEL_LOGDIFF = os.path.join(WO, "gwent", "tools", "duel_logdiff.py")
 
 
-def default_duration(scenario):
+def default_duration(scenario: str) -> int:
     if scenario == GWENT_DUEL:
         return 600
     return 300 if scenario in LONG_SCENARIOS else 60
 
 
-def expand_gwent_decks(value, decks_file=GWENT_DECKS_FILE):
+def expand_gwent_decks(value: str, decks_file: str = GWENT_DECKS_FILE) -> str:
     """W3T_GWENT_DECKS with every name from w3test/gwent_decks.txt replaced by its "leader+card+..." list."""
     named = {}
-    for line in open(decks_file, encoding="utf-8"):
-        line = line.strip()
-        if line and not line.startswith("#"):
-            name, _, cards = line.partition(":")
-            named[name.strip()] = cards.strip()
+    with open(decks_file, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                name, _, cards = line.partition(":")
+                named[name.strip()] = cards.strip()
     return ",".join(named.get(entry.strip(), entry.strip()) for entry in value.split(","))
 
 
-def gwent_logdiff(run_dir, n):
+def gwent_logdiff(run_dir: str, n: int) -> tuple[int, str]:
     """Compares the two bots' duel logs with WitcherOnline's duel_logdiff.py; returns (exit code, its output)."""
     if n < 2:
         return 0, "skipped (one bot)"

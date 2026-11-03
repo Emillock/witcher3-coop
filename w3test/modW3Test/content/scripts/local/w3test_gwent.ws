@@ -23,7 +23,8 @@
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
-//   no money change.
+//   no money change. Every bot also needs Witcher Online's "DUEL DYNAMIC cards=0" (no dynamic cards for the duel
+//   deck name).
 
 @addField(CR4Game)
 var w3t_gwent : W3T_Gwent;
@@ -62,6 +63,7 @@ statemachine class W3T_Gwent
     public var helloLine : string;      // the board's first "DUEL HELLO" line
     public var endLine : string;        // its last "DUEL END" line
     public var rounds : int;            // its "DUEL ROUND" lines
+    public var dynamicLine : string;    // Witcher Online's "DUEL DYNAMIC cards=<n>" (GetDynamicCards of the duel decks)
     public var duelPassed : bool;
     public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
 
@@ -211,6 +213,10 @@ statemachine class W3T_Gwent
             if(StrStartsWith(line, "DUEL END "))
             {
                 endLine = line;
+            }
+            if(StrStartsWith(line, "DUEL DYNAMIC "))
+            {
+                dynamicLine = line;
             }
         }
         if(requested && result == "" && selfTestLine == "" && StrStartsWith(line, "DUEL SELFTEST pass="))
@@ -393,6 +399,10 @@ statemachine class W3T_Gwent
         if(endLine == "")
         {
             why = "the board sent no DUEL END line";
+        }
+        else if(dynamicLine != "DUEL DYNAMIC cards=0")
+        {
+            why = "the duel decks must have no dynamic cards, got [" + dynamicLine + "]";
         }
         else if(expect == "nocontest")
         {
