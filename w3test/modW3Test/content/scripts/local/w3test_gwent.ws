@@ -29,8 +29,10 @@
 //   its DUEL ROUND 1 hash differs, ending game=1 or later with win or loss and the bet paid); W3T_GWENT_REPLAY=0 makes
 //   bot 0 press Replay and bot 1 close the end screen (expected: both result=draw, bot 0 reason=opponent_leave, bot 1
 //   reason=leave, no money moved); unset, both close it (a draw, no money). W3T_GWENT_SURRENDER_AT=<seq> makes bot 1
-//   surrender (Witcher Online's surrender path, OnQuitGameConfirmed) once its board sent that seq (expected: bot 0
-//   result=win, bot 1 result=loss, both reason=surrender, the bet paid).
+//   surrender once its board sent that seq; W3T_GWENT_SURRENDER_AT=<game>:<n> once its board sent its n-th message of
+//   that game (for example 1:3 in a replayed game). The bot presses the board's close button (duelDebugPressClose, the
+//   vanilla handleCloseClick) and accepts the surrender popup the board asks for (OnConfirmSurrender), so the whole
+//   player path runs (expected: bot 0 result=win, bot 1 result=loss, both reason=surrender, the bet paid).
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
@@ -107,7 +109,9 @@ statemachine class W3T_Gwent
     public var replayLine : string;     // the board's "DUEL END result=draw reason=replay game=0" line
     public var firstRound1 : string;    // the hash of the first "DUEL ROUND 1" line (game 0)
     public var lastRound1 : string;     // the hash of the last "DUEL ROUND 1" line (the last game)
-    public var surrenderAt : int;       // W3T_GWENT_SURRENDER_AT on bot 1, else 0
+    public var surrenderAt : int;       // W3T_GWENT_SURRENDER_AT on bot 1 (the seq, or n of <game>:<n>), else 0
+    public var surrenderGame : int;     // the game of W3T_GWENT_SURRENDER_AT=<game>:<n>, -1 for a plain seq
+    public var surrenderSent : int;     // the board's messages of surrenderGame so far
     public var surrenderDue : bool;     // the board sent seq surrenderAt: surrender on the next frame
     public var duelPassed : bool;
     public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
@@ -213,7 +217,9 @@ statemachine class W3T_Gwent
         // a duel plays itself (the board's autoplay) and ends by itself, unless W3T_GWENT_SURRENDER_AT says otherwise
         if(duel && surrenderDue && !surrendered)
         {
-            Surrender(menu, "board sent seq " + surrenderAt);
+            surrendered = true;
+            W3T_Log("GWENT surrender (board sent " + W3T_GetEnv("W3T_GWENT_SURRENDER_AT") + "): presses the board's close button");
+            menu.W3T_PressClose();
         }
         if(duel || !boardOpen || surrendered)
         {
@@ -232,6 +238,21 @@ statemachine class W3T_Gwent
             && SecondsSince(boardAtMs) > StringToFloat(W3T_GetEnv("W3T_GWENT_SELFTEST_WAIT"), 30.0))
         {
             Surrender(menu, "no self-test line");
+        }
+    }
+
+    // W3T_GWENT_SURRENDER_AT: one outbound token of the board
+    public function SurrenderCount(token : string)
+    {
+        if(surrenderGame < 0)
+        {
+            surrenderDue = surrenderDue || W3T_GwentTokenSeq(token) >= surrenderAt;
+            return;
+        }
+        if(W3T_GwentTokenGame(token) == surrenderGame)
+        {
+            surrenderSent += 1;
+            surrenderDue = surrenderDue || surrenderSent >= surrenderAt;
         }
     }
 
@@ -276,9 +297,9 @@ statemachine class W3T_Gwent
                     firstRound1 = lastRound1;
                 }
             }
-            if(surrenderAt > 0 && StrStartsWith(line, "DUEL SEND ") && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= surrenderAt)
+            if(surrenderAt > 0 && StrStartsWith(line, "DUEL SEND "))
             {
-                surrenderDue = true;
+                SurrenderCount(StrAfterFirst(line, "DUEL SEND "));
             }
             if(StrStartsWith(line, "DUEL DYNAMIC "))
             {
@@ -397,9 +418,10 @@ statemachine class W3T_Gwent
             manager.duelDebugForceDraw = W3T_GetEnv("W3T_GWENT_FORCE_DRAW") == "1";
             manager.duelDebugReplay = W3T_GetEnv("W3T_GWENT_REPLAY") == "1" || (host && W3T_GetEnv("W3T_GWENT_REPLAY") == "0");
             surrenderAt = 0;
+            surrenderGame = -1;
             if(!host)
             {
-                surrenderAt = StringToInt(W3T_GetEnv("W3T_GWENT_SURRENDER_AT"), 0);
+                SurrenderSetting(W3T_GetEnv("W3T_GWENT_SURRENDER_AT"));
             }
             duelBet = StringToInt(W3T_GetEnv("W3T_GWENT_BET"), 10);
             if(thePlayer.GetMoney() < duelBet)
@@ -594,6 +616,21 @@ statemachine class W3T_Gwent
         }
         W3T_Log("GWENT duel ok: " + endLine + ", " + rounds + " rounds, money " + (moneyAfter - moneyBefore));
         return true;
+    }
+
+    // W3T_GWENT_SURRENDER_AT: "<seq>" or "<game>:<n>"
+    public function SurrenderSetting(value : string)
+    {
+        var gamePart : string;
+        var countPart : string;
+
+        if(StrSplitFirst(value, ":", gamePart, countPart))
+        {
+            surrenderGame = StringToInt(gamePart, 0);
+            surrenderAt = StringToInt(countPart, 0);
+            return;
+        }
+        surrenderAt = StringToInt(value, 0);
     }
 
     // the match end switches (W3T_GWENT_SURRENDER_AT, W3T_GWENT_FORCE_DRAW with W3T_GWENT_REPLAY) against the last
@@ -799,6 +836,19 @@ function W3T_GwentCorruptAt(value : string) : int
     return StringToInt(value, 0);
 }
 
+// the game number of a duel token's match id ("<seed hex>g<game>"), -1 if it has none
+function W3T_GwentTokenGame(token : string) : int
+{
+    var fields : array<string>;
+
+    fields = W3T_Split(token, ".");
+    if(fields.Size() != 6 || !StrContains(fields[1], "g"))
+    {
+        return -1;
+    }
+    return StringToInt(StrAfterLast(fields[1], "g"), -1);
+}
+
 // the seq field of a duel token ("<version>.<matchId>.<seq>.<type>.<args>.<hash>"), 0 if it has none
 function W3T_GwentTokenSeq(token : string) : int
 {
@@ -934,4 +984,33 @@ function OnClosingMenu()
     {
         theGame.w3t_gwent.Closed(this);
     }
+}
+
+// gwent_duel: the board's close button, as a player's click presses it (the board's duelDebugPressClose test hook,
+// which works only with duel autoplay on)
+@addMethod(CR4GwintGameMenu)
+function W3T_PressClose()
+{
+    var fx : CScriptedFlashFunction;
+
+    fx = m_flashModule.GetMemberFlashFunction("duelDebugPressClose");
+    if(fx)
+    {
+        fx.InvokeSelf();
+    }
+}
+
+// gwent_duel: the surrender popup the board asks for after the bot pressed its close button is accepted at once (as
+// the player's "yes": OnQuitGameConfirmed); any other surrender popup opens as usual
+@wrapMethod(CR4GwintBaseMenu)
+function OnConfirmSurrender()
+{
+    if(W3T_Active() && theGame.w3t_gwent && theGame.w3t_gwent.duel && theGame.w3t_gwent.surrendered)
+    {
+        W3T_Log("GWENT surrender popup accepted");
+        OnQuitGameConfirmed();
+        // an event returns a bool
+        return true;
+    }
+    return wrappedMethod();
 }
