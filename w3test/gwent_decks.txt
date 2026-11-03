@@ -4,9 +4,15 @@
 #
 # plain_*: unit cards without abilities that ask a question (no medic, spy, decoy, scorch, weather, horn, agile, muster)
 #   and a leader whose ability has no choice, so no dialog opens during the match.
-# medic_nr: Northern Realms with medics (dialogs from Task 12).
+# medic_nr: Northern Realms with medics: the medic's pick is a dialog (Task 12), except against an Invader of the North
+#   leader (invader_nilf), where non-hero medics resurrect at random (the hero medic yennefer still asks).
 # leaders_nilf: Nilfgaard with a leader whose ability asks a choice (emhyr_gold: resurrect from the enemy graveyard).
-# agile_medic: a medic and agile cards (the medic's row choice on agile resurrects, spec 7.3).
+# agile_medic: a medic and agile cards (the medic's row choice on agile resurrects, spec 7.3); its only medic is the hero
+#   yennefer, whose pick is always a dialog (Task 12).
+# invader_nilf: Nilfgaard with Invader of the North (emhyr_platinium: every non-hero medic of both decks and the
+#   resurrect leaders pick at random), non-hero medics and the agile olgierd (the medic's row choice, spec 7.3).
+# res_nml: Monsters with a resurrect leader (eredin_silver: a dialog, random against invader_nilf).
+# crach_ske: Skellige with Crach an Craite (shuffles both graveyards into the decks, no choice).
 #
 # Built-in deck names (W3T_GWENT_DECKS=North,...) come from def_gwint_decks.xml through GetDeck(name, 1): North and
 # NilfEasy hold cards, while Nilf, nml, scotial and ske are the player's starter decks with a leader and no cards.
@@ -18,3 +24,6 @@ plain_ske: king_bran+hemdal+hjalmar+madman_lugos+donar_an_hindar+udalryk+blueboy
 medic_nr: foltest_silver+dun_banner_medic+dun_banner_medic+yennefer+vernon+natalis+esterad+philippa+ves+siegfried+yarpen+keira+sile+sabrina+sheldon+dethmold+trebuchet+trebuchet2+redanian+redanian2+ballista+ballista2+siege_tower
 leaders_nilf: emhyr_gold+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+black_archer+black_archer2+heavy_zerri+zerri+combat_engineer+impera_brigade+impera_brigade2
 agile_medic: eredin_copper+yennefer+harpy+celaeno_harpy+kayran+olgierd+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental
+invader_nilf: emhyr_platinium+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+archer_support+archer_support2+siege_support+olgierd+heavy_zerri+zerri+combat_engineer
+res_nml: eredin_silver+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental+fogling+wyvern+vesemir+zoltan+emiel+roach
+crach_ske: Crach_an_Craite+hemdal+hjalmar+madman_lugos+donar_an_hindar+udalryk+blueboy_lugos+svanrige+holger_blackhand+clan_brokvar_archer+clan_tordarroch_armorsmith+clan_heymaey_skald+clan_an_craite_warrior+clan_drummond_shieldmaiden+clan_drummond_shieldmaiden2+clan_drummond_shieldmaiden3+war_drakkar+vesemir+zoltan+emiel+roach+geralt+triss

@@ -75,6 +75,36 @@ def gwent_logdiff(run_dir: str, n: int) -> tuple[int, str]:
     return out.returncode, (out.stdout + out.stderr).strip()
 
 
+DUEL_END_RE = re.compile(r"DUEL END result=(\w+)")
+OPPOSITE_RESULT = {"win": "loss", "loss": "win", "draw": "draw", "nocontest": "nocontest"}
+
+
+def gwent_results_agree(run_dir: str, n: int) -> tuple[bool, str]:
+    """Whether the two bots' last DUEL END results fit together (win with loss, draw with draw, no contest with no
+    contest); returns (ok, the two results)."""
+    if n < 2:
+        return True, "skipped (one bot)"
+    results = []
+    for i in range(2):
+        try:
+            with open(os.path.join(run_dir, bot_name(i) + ".log"), encoding="utf-8", errors="replace") as f:
+                found = DUEL_END_RE.findall(f.read())
+        except OSError:
+            found = []
+        results.append(found[-1] if found else "none")
+    return OPPOSITE_RESULT.get(results[0]) == results[1], f"{bot_name(0)} {results[0]}, {bot_name(1)} {results[1]}"
+
+
+def gwent_logdiff_verdict(rc: int, text: str, corrupt_at: str) -> tuple[bool, str]:
+    """Judges duel_logdiff's outcome: clean logs (rc 0), or with W3T_GWENT_CORRUPT_AT=<seq> the first divergence
+    exactly at that seq (the corrupted message); returns (ok, reason when not ok)."""
+    first = text.splitlines()[0] if text else str(rc)
+    if not corrupt_at:
+        return rc == 0, f"duel logs diverged: {first}"
+    wanted = f"DIVERGED at seq={corrupt_at.strip()}:"
+    return rc == 1 and first.startswith(wanted), f"expected duel_logdiff {wanted} (W3T_GWENT_CORRUPT_AT), got: {first}"
+
+
 def segment(log, scenario):
     # a session's log from where `scenario` started
     i = log.find(f"SCENARIO {scenario} start")
@@ -551,8 +581,13 @@ def main():
         mode = os.environ.get("W3T_GWENT_LOGDIFF", "fail")
         rc, text = gwent_logdiff(run_dir, a.bots)
         print(f"--- duel_logdiff ({mode}): rc={rc} {text}")
-        if rc != 0 and mode != "report" and ok:
-            ok, why = False, f"duel logs diverged: {text.splitlines()[0] if text else rc}"
+        diff_ok, diff_why = gwent_logdiff_verdict(rc, text, os.environ.get("W3T_GWENT_CORRUPT_AT", ""))
+        if not diff_ok and mode != "report" and ok:
+            ok, why = False, diff_why
+        agree, results = gwent_results_agree(run_dir, a.bots)
+        print(f"--- duel results: {results}")
+        if not agree and ok:
+            ok, why = False, f"the bots' duel results do not fit together: {results}"
     if owner_touched:
         ok, why = False, f"the owner's Documents changed: {', '.join(owner_touched)}"
     print(f"RESULT: {'PASS' if ok else 'FAIL'} ({why})")

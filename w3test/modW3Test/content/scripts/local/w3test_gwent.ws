@@ -20,11 +20,13 @@
 //   W3T_GWENT_TIMED=1 for a timed duel, W3T_GWENT_SEED forces the seed), bot 1 accepts in Witcher Online's popup (see
 //   w3test.ws), and both boards play themselves (CR4GwintManager.duelDebugAutoplay; W3T_GWENT_MULLIGAN=1 redraws at
 //   the mulligan, default 0 declines). W3T_GWENT_BREAK_TEMPLATES=1 makes bot 0's board send a wrong card table hash.
+//   W3T_GWENT_CORRUPT_AT=<seq> makes bot 0's board add 1 to one card's power right before it sends that seq, so the
+//   peer's hash check fails (desync: both boards must log DUEL DESYNC and end as no contest, reason desync).
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
-//   no money change. Every bot also needs Witcher Online's "DUEL DYNAMIC cards=0" (no dynamic cards for the duel
-//   deck name).
+//   no money change; with W3T_GWENT_CORRUPT_AT also a "DUEL DESYNC" line and reason=desync. Every bot also needs
+//   Witcher Online's "DUEL DYNAMIC cards=0" (no dynamic cards for the duel deck name).
 
 @addField(CR4Game)
 var w3t_gwent : W3T_Gwent;
@@ -64,6 +66,7 @@ statemachine class W3T_Gwent
     public var endLine : string;        // its last "DUEL END" line
     public var rounds : int;            // its "DUEL ROUND" lines
     public var dynamicLine : string;    // Witcher Online's "DUEL DYNAMIC cards=<n>" (GetDynamicCards of the duel decks)
+    public var desyncLine : string;     // the board's first "DUEL DESYNC" line
     public var duelPassed : bool;
     public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
 
@@ -218,6 +221,10 @@ statemachine class W3T_Gwent
             {
                 dynamicLine = line;
             }
+            if(desyncLine == "" && StrStartsWith(line, "DUEL DESYNC "))
+            {
+                desyncLine = line;
+            }
         }
         if(requested && result == "" && selfTestLine == "" && StrStartsWith(line, "DUEL SELFTEST pass="))
         {
@@ -247,6 +254,7 @@ statemachine class W3T_Gwent
         manager.duelSelfTest = false;
         manager.duelDebugMulligan = false;
         manager.duelDebugBreakTemplates = false;
+        manager.duelDebugCorruptAt = 0;
         minigame = thePlayer.GetGwintMinigameState();
         result = "lost";
         if(minigame == EMS_End_PlayerWon)
@@ -310,14 +318,19 @@ statemachine class W3T_Gwent
             thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
             manager.duelDebugMulligan = W3T_GetEnv("W3T_GWENT_MULLIGAN") == "1";
             manager.duelDebugBreakTemplates = host && W3T_GetEnv("W3T_GWENT_BREAK_TEMPLATES") == "1";
+            manager.duelDebugCorruptAt = 0;
+            if(host)
+            {
+                manager.duelDebugCorruptAt = StringToInt(W3T_GetEnv("W3T_GWENT_CORRUPT_AT"), 0);
+            }
             duelBet = StringToInt(W3T_GetEnv("W3T_GWENT_BET"), 10);
             if(thePlayer.GetMoney() < duelBet)
             {
                 thePlayer.AddMoney(duelBet - thePlayer.GetMoney());
             }
             W3T_Log("GWENT duel deck " + deckEntry + " (leader " + NameToString(duelDeck.leaderCard) + ", " + duelDeck.cards.Size()
-                + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", mulligan redraw "
-                + manager.duelDebugMulligan);
+                + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", corrupt at "
+                + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan);
             duelStep = 1;
             duelStepAt = bot.ElapsedS();
             return false;
@@ -413,6 +426,10 @@ statemachine class W3T_Gwent
             else if(W3T_GetEnv("W3T_GWENT_REASON") != "" && reason != W3T_GetEnv("W3T_GWENT_REASON"))
             {
                 why = "expected reason=" + W3T_GetEnv("W3T_GWENT_REASON");
+            }
+            else if(W3T_GetEnv("W3T_GWENT_CORRUPT_AT") != "" && (desyncLine == "" || reason != "desync"))
+            {
+                why = "expected DUEL DESYNC and reason=desync, got [" + desyncLine + "]";
             }
         }
         else
