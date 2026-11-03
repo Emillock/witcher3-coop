@@ -1,8 +1,11 @@
 # Multi-instance test harness: local Witcher Online server + N game clients driven by the w3test bot.
 # Prints RESULT: PASS/FAIL. Only kills processes it started.
 # Usage: run_test.py <scenario>[,<scenario>...] [--bots N] [--duration 60] [--stagger 5] [--timeout 420] [--save SUBSTR]
+#        run_test.py --matrix FILE [--bots N] ...
 # Several scenarios separated by commas run as one session: the games load once and the bots go from one scenario to
-# the next when the harness says so (control file), cleaning up in between.
+# the next when the harness says so (control file), cleaning up in between. --matrix FILE runs a session whose entries
+# carry their own settings (session_matrix.py); a hung entry or a game that ended starts fresh games for the next one.
+# The games start minimized and are never activated (--window).
 import argparse
 import ctypes
 import os
@@ -14,9 +17,11 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import session_matrix as sm  # noqa: E402
 from config import GAME, USER_W3_DOCS, WO, WORK  # noqa: E402
 from sandbox import make_sandbox  # noqa: E402
-from w3run import BITMAPINFOHEADER, EXE, arrange, capture_window, game_window, gdi32, user32, windows_of, wt  # noqa: E402
+from w3run import (BITMAPINFOHEADER, EXE, FocusWatch, arrange, capture_window, game_window, gdi32,  # noqa: E402
+                   startup_info, user32, windows_of, wt)
 
 SERVER_JAR = os.path.join(WO, "server", "build", "WitcherServer.jar")
 RUNS = os.path.join(WORK, "runs")
@@ -79,7 +84,11 @@ def gwent_logdiff(run_dir: str, n: int) -> tuple[int, str]:
     """Compares the two bots' duel logs with WitcherOnline's duel_logdiff.py; returns (exit code, its output)."""
     if n < 2:
         return 0, "skipped (one bot)"
-    logs = [os.path.join(run_dir, bot_name(i) + ".log") for i in range(2)]
+    return gwent_logdiff_files([os.path.join(run_dir, bot_name(i) + ".log") for i in range(2)])
+
+
+def gwent_logdiff_files(logs: list[str]) -> tuple[int, str]:
+    """duel_logdiff.py on these two log files; returns (exit code, its output)."""
     out = subprocess.run([sys.executable, "-I", DUEL_LOGDIFF] + logs, capture_output=True, text=True, timeout=120)
     return out.returncode, (out.stdout + out.stderr).strip()
 
@@ -93,15 +102,43 @@ def gwent_results_agree(run_dir: str, n: int) -> tuple[bool, str]:
     contest); returns (ok, the two results)."""
     if n < 2:
         return True, "skipped (one bot)"
-    results = []
+    texts = []
     for i in range(2):
         try:
             with open(os.path.join(run_dir, bot_name(i) + ".log"), encoding="utf-8", errors="replace") as f:
-                found = DUEL_END_RE.findall(f.read())
+                texts.append(f.read())
         except OSError:
-            found = []
+            texts.append("")
+    return gwent_results_agree_texts(texts)
+
+
+def gwent_results_agree_texts(texts: list[str]) -> tuple[bool, str]:
+    """gwent_results_agree on the two bots' log texts (or a session entry's parts of them)."""
+    results = []
+    for text in texts[:2]:
+        found = DUEL_END_RE.findall(text)
         results.append(found[-1] if found else "none")
     return OPPOSITE_RESULT.get(results[0]) == results[1], f"{bot_name(0)} {results[0]}, {bot_name(1)} {results[1]}"
+
+
+def bot_settings(entry: sm.Entry, base_env: dict) -> dict[str, str]:
+    """A matrix entry's settings as the bots get them: names from w3test/gwent_decks.txt become inline decks and the
+    seed is passed as the script reads it (as run_test.py does for one gwent_duel run)."""
+    settings = sm.entry_settings(entry, base_env)
+    if settings["W3T_GWENT_DECKS"]:
+        settings["W3T_GWENT_DECKS"] = expand_gwent_decks(settings["W3T_GWENT_DECKS"])
+    if settings["W3T_GWENT_SEED"]:
+        settings["W3T_GWENT_SEED"] = script_int_seed(settings["W3T_GWENT_SEED"])
+    return settings
+
+
+def window_mode(requested: str, shots: float, record: float) -> str:
+    """How the games' windows start: "minimized" (never focused), or "noactivate" (shown but never activated) when
+    asked for or when screenshots or a recording need a window that draws (PrintWindow gets nothing from a minimized
+    one)."""
+    if requested:
+        return requested
+    return "noactivate" if shots > 0 or record > 0 else "minimized"
 
 
 def gwent_logdiff_verdict(rc: int, text: str, corrupt_at: str) -> tuple[bool, str]:
@@ -359,68 +396,70 @@ def check(scenario, logs, n):
     return not reasons, "; ".join(reasons) or f"every bot passed '{scenario}'"
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("scenario")
-    ap.add_argument("--bots", type=int, help="game instances (default 2; 1 for single-game scenarios like gwent_vanilla)")
-    ap.add_argument("--duration", type=int, help="in-game seconds before a bot fails (default 60; enemy scenarios 300)")
-    ap.add_argument("--stagger", type=int, default=5, help="seconds between starting the bots")
-    ap.add_argument("--serial", action="store_true", help="start each bot only once the one before is in the world "
-                                                          "(one loading screen at a time; slower)")
-    ap.add_argument("--timeout", type=int, help="seconds for the whole run (default 420; gwent_duel: its duration + 420)")
-    ap.add_argument("--save", default="")
-    ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
-    ap.add_argument("--port", type=int, default=41000)
-    ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
-    ap.add_argument("--monster", default="", help="puppet scenarios: the leader's monster template (depot path)")
-    ap.add_argument("--shots", type=float, default=0, help="save both bots' windows as PNG every this many seconds once all are in the world")
-    ap.add_argument("--shots-from", default="", help="start the screenshots when this text appears in the first bot's log")
-    ap.add_argument("--shots-for", type=float, default=0, help="stop the screenshots after this many seconds")
-    ap.add_argument("--size", default="", help="window and render resolution, e.g. 960x540 (default 640x360)")
-    ap.add_argument("--record", type=float, default=0, help="film both bots' windows side by side for this many seconds")
-    ap.add_argument("--record-from", default="", help="start filming when this text appears in the first bot's log")
-    ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
-                                        "Sandboxie box, whose Steam is logged in to a second account")
-    a = ap.parse_args()
-    if a.bots is None:
-        a.bots = 1 if a.scenario in SINGLE_BOT_SCENARIOS else 2
-    missing = missing_test_build()
-    if missing:
-        print(f"the test build is not deployed ({', '.join(missing)} missing; compile.sh deploys it): the games would "
-              "use the owner's Documents. Nothing started.")
-        print("RESULT: FAIL (the test build is not deployed)")
-        return 2
-    if a.steam_box:
-        a.relay = True
-    game_args = list(GAME_ARGS)
-    if a.size:
-        os.environ["W3T_RESOLUTION"] = a.size  # sandbox.py writes it into the settings
-        for flag, value in zip(("-width", "-height"), a.size.split("x")):
-            if flag in game_args:
-                game_args[game_args.index(flag) + 1] = value
-    session = a.scenario.split(",") if "," in a.scenario else []
-    if a.duration is None:
-        a.duration = default_duration(a.scenario)
-    if a.timeout is None:
-        a.timeout = a.duration + 420 if a.scenario == GWENT_DUEL else 420
-    if a.scenario == GWENT_DUEL and os.environ.get("W3T_GWENT_DECKS"):
-        # the bots get inline decks: names from w3test/gwent_decks.txt become "leader+card+..."
-        os.environ["W3T_GWENT_DECKS"] = expand_gwent_decks(os.environ["W3T_GWENT_DECKS"])
-        print(f"W3T_GWENT_DECKS={os.environ['W3T_GWENT_DECKS']}", flush=True)
-    if a.scenario == GWENT_DUEL and os.environ.get("W3T_GWENT_SEED"):
-        # StringToInt reads "4000000000" as 0 (not forced); pass the same 32 bits as a signed int
-        os.environ["W3T_GWENT_SEED"] = script_int_seed(os.environ["W3T_GWENT_SEED"])
-        print(f"W3T_GWENT_SEED={os.environ['W3T_GWENT_SEED']}", flush=True)
-    if a.scenario == GWENT_DUEL:
-        for switch in gwent_autoplay_switches(dict(os.environ)):
-            print(switch, flush=True)
+MONEY_RE = re.compile(r"GWENT duel money before=(-?\d+) after=(-?\d+)")
 
-    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + (f"session{len(session)}" if session else a.scenario)
-                           + ("-steam" if a.steam_box else "-relay" if a.relay else "")
-                           + ("-" + re.sub(r"\.w2ent$", "", a.monster.split("\\")[-1]) if a.monster else ""))
-    os.makedirs(run_dir)
-    print(f"run dir: {run_dir}", flush=True)
 
+class MatrixRun:
+    """A --matrix session: its entries with their settings and time limits, and each entry's verdict."""
+
+    def __init__(self, entries: list[sm.Entry], base_env: dict, root: str, bots: int):
+        self.entries = entries
+        self.settings = [bot_settings(e, base_env) for e in entries]
+        self.root = root
+        self.bots = bots
+
+    def scenarios(self) -> list[str]:
+        """The session's scenario names, in entry order (the bots' W3T_SCENARIOS)."""
+        return [e.scenario for e in self.entries]
+
+    def control(self, index: int) -> str:
+        """The control file that starts entry `index`, or ends the session past the last entry."""
+        if index >= len(self.entries):
+            return sm.END_CONTROL
+        return sm.control_text(index, self.settings[index])
+
+    def limit(self, index: int) -> int:
+        """Seconds entry `index` gets once started (its "duration", else its scenario's default)."""
+        entry = self.entries[index]
+        return entry.duration or default_duration(entry.scenario)
+
+    def judge(self, index: int, logs: dict, ok: bool, why: str) -> tuple[bool, str]:
+        """An entry's verdict. The bots' parts of the session log are kept in entries\\<NN>-<label>\\; a gwent_duel
+        entry is also checked as one gwent_duel run is: duel_logdiff on those parts and the two bots' results."""
+        entry = self.entries[index]
+        folder = os.path.join(self.root, "entries", f"{index + 1:02d}-{entry.label}")
+        os.makedirs(folder, exist_ok=True)
+        paths = []
+        for i in range(self.bots):
+            paths.append(os.path.join(folder, bot_name(i) + ".log"))
+            with open(paths[-1], "w", encoding="utf-8") as f:
+                f.write(logs[i])
+        if entry.scenario != GWENT_DUEL or self.bots < 2:
+            return ok, why
+        money = ", ".join(f"{bot_name(i)} " + ("{}->{}".format(*m[-1]) if (m := MONEY_RE.findall(logs[i])) else "none")
+                          for i in range(self.bots))
+        print(f"--- {entry.label} money: {money}", flush=True)
+        settings = self.settings[index]
+        mode = settings["W3T_GWENT_LOGDIFF"] or "fail"
+        rc, text = gwent_logdiff_files(paths[:2])
+        print(f"--- {entry.label} duel_logdiff ({mode}): rc={rc} {text}", flush=True)
+        diff_ok, diff_why = gwent_logdiff_verdict(rc, text, settings["W3T_GWENT_CORRUPT_AT"])
+        if not diff_ok and mode != "report" and ok:
+            ok, why = False, diff_why
+        agree, results = gwent_results_agree_texts([logs[0], logs[1]])
+        print(f"--- {entry.label} duel results: {results}", flush=True)
+        if not agree and ok:
+            ok, why = False, f"the bots' duel results do not fit together: {results}"
+        return ok, why
+
+
+def launch(a, game_args: list[str], run_dir: str, session: list[str], results: list, timeout: float,
+           matrix: MatrixRun | None = None, start: int = 0, watch: FocusWatch | None = None) -> tuple[list[str], str]:
+    """One launch: the local server (and relays), a.bots games, and the run loop, until the run is over, every
+    session entry is decided, or (matrix) an entry hung or a game ended; then everything it started is stopped.
+    A session's (name, ok, why) verdicts are appended to results. With a matrix the session starts at entry `start`.
+    Returns (the owner's Documents files that changed, why the launch ended: "done", "timeout", "owner", "failed",
+    or with a matrix "hung" or "exited")."""
     server_log = open(os.path.join(run_dir, "server.log"), "w")
     server = subprocess.Popen(["java", "-jar", SERVER_JAR, str(a.port)], cwd=os.path.dirname(SERVER_JAR),
                               stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT)
@@ -448,10 +487,12 @@ def main():
     shots_stop = threading.Event()
     recorder = None
     control = os.path.join(run_dir, "control.txt")
-    if session:
+    if matrix:
+        sm.write_control(control, matrix.control(start))
+    elif session:
         open(control, "w").write("go 0")
-    results = []  # a session's (scenario, ok, why)
     owner_before, owner_touched = owner_docs_state(), []
+    end = "timeout"
     go_at = time.time()
     t0 = time.time()
     try:
@@ -464,13 +505,15 @@ def main():
                        WO_SERVER_PORT=str(a.port + 100 + i if a.relay and i > 0 else a.port),
                        W3T_SCENARIO=a.scenario, W3T_DURATION=str(a.duration), W3T_SAVE=a.save,
                        W3T_PEERS=str(a.bots - 1), W3T_ROLE="mover" if i == 0 else "observer",
-                       W3T_GRACE=str(a.grace), W3T_MONSTER=a.monster,
+                       W3T_GRACE=str(a.grace), W3T_MONSTER=a.monster, W3T_WINDOW=a.window,
                        W3T_LOG=os.path.join(run_dir, bot_name(i) + ".log"))
             if session:
                 # the harness times each scenario; the bots never give up by themselves
                 env.update(W3T_SCENARIO="session", W3T_SCENARIOS=",".join(session), W3T_CONTROL=control, W3T_DURATION="100000")
-            p = subprocess.Popen([EXE] + game_args, cwd=os.path.dirname(EXE), env=env)
+            p = subprocess.Popen([EXE] + game_args, cwd=os.path.dirname(EXE), env=env, startupinfo=startup_info(a.window))
             procs.append(p)
+            if watch:
+                watch.add(p.pid, bot_name(i))
             print(f"[{time.time() - t0:6.1f}s] started {bot_name(i)} pid={p.pid}", flush=True)
             if i + 1 < a.bots:
                 time.sleep(a.stagger)
@@ -480,15 +523,16 @@ def main():
         seen = {}
         next_stats = 0
         shooter = None
-        while time.time() - t0 < a.timeout:
+        while time.time() - t0 < timeout:
             owner_now = owner_docs_state()
             owner_touched = sorted(os.path.basename(f) for f in set(owner_before) | set(owner_now)
                                    if owner_before.get(f) != owner_now.get(f))
             if owner_touched:
                 print(f"[{time.time() - t0:6.1f}s] STOP: the owner's Documents changed ({', '.join(owner_touched)}): "
                       "a game is not using its sandbox", flush=True)
+                end = "owner"
                 break
-            # side by side, in bot order, so no window covers another
+            # side by side, in bot order, so no window covers another (minimized ones stay where they are)
             arrange([p.pid for p in procs])
             if a.shots > 0 and len(procs) == a.bots and not shooter:
                 shooter = threading.Thread(target=shoot, args=(run_dir, procs, a, shots_stop), daemon=True)
@@ -500,15 +544,38 @@ def main():
                 next_stats = time.time() + 15
                 mem = ", ".join(f"{bot_name(i)} {private_mb(p.pid)} MB" for i, p in enumerate(procs) if p.poll() is None)
                 print(f"[{time.time() - t0:6.1f}s] stats: {mem}; GPU {gpu_used_mb()}", flush=True)
-            if session and len(procs) == a.bots and len(results) < len(session):
-                # the scenario under way: on to the next once every bot passed it, or it took too long
+            if matrix and len(procs) == a.bots and len(results) < len(session):
+                # the entry under way: on to the next once every bot passed it or reported its failure; if it hangs,
+                # this launch ends and the next entry gets fresh games
+                index = len(results)
+                entry = matrix.entries[index]
+                limit = matrix.limit(index) + (150 if index == start else 30)  # the first one waits for the loading
+                logs = {i: sm.cut_entry(read_log(run_dir, i), index, entry.scenario) for i in range(a.bots)}
+                state = sm.entry_state(list(logs.values()), entry.scenario, time.time() - go_at, limit)
+                if state != "running":
+                    ok, why = check(entry.scenario, logs, a.bots)
+                    if state == "hung":
+                        ok, why = False, f"not decided within {limit} s: {why}"
+                    ok, why = matrix.judge(index, logs, ok, why)
+                    results.append((entry.label, ok, why))
+                    print(f"[{time.time() - t0:6.1f}s] RESULT {entry.label}: {'PASS' if ok else 'FAIL'} ({why}) [{time.time() - go_at:.0f}s]", flush=True)
+                    go_at = time.time()
+                    if state == "hung":
+                        print(f"[{time.time() - t0:6.1f}s] {entry.label} hung: ending this launch", flush=True)
+                        end = "hung"
+                        break
+                    sm.write_control(control, matrix.control(index + 1))
+            elif session and len(procs) == a.bots and len(results) < len(session):
+                # the scenario under way: on to the next once every bot passed it (or reported its failure), or it
+                # took too long
                 name = session[len(results)]
                 limit = default_duration(name) + (150 if not results else 30)  # the first one waits for the loading
                 logs = {i: segment(read_log(run_dir, i), name) for i in range(a.bots)}
                 passed = all(re.search(rf"PASS condition met at t=\S+ scenario={re.escape(name)}(\s|$)", logs[i]) for i in logs)
-                if passed or time.time() - go_at > limit:
+                decided = sm.entry_state(list(logs.values()), name, 0, limit) == "decided"
+                if passed or decided or time.time() - go_at > limit:
                     ok, why = check(name, logs, a.bots)
-                    if not passed:
+                    if not passed and not decided:
                         ok, why = False, f"not passed within {limit} s: {why}"
                     results.append((name, ok, why))
                     print(f"[{time.time() - t0:6.1f}s] RESULT {name}: {'PASS' if ok else 'FAIL'} ({why}) [{time.time() - go_at:.0f}s]", flush=True)
@@ -520,6 +587,7 @@ def main():
                     for i in range(a.bots) if os.path.exists(os.path.join(run_dir, bot_name(i) + ".log"))) \
                     and all(os.path.exists(os.path.join(run_dir, bot_name(i) + ".log")) for i in range(a.bots)):
                 print(f"[{time.time() - t0:6.1f}s] every bot passed; stopping the run", flush=True)
+                end = "done"
                 break
             alive = 0
             for i, p in enumerate(procs):
@@ -538,11 +606,28 @@ def main():
                 elif ("rc", i) not in seen:
                     seen[("rc", i)] = rc
                     print(f"[{time.time() - t0:6.1f}s] {bot_name(i)} exited rc={rc}", flush=True)
+            if matrix:
+                # a game ended (crashed, or its bot cannot go on) before the session was over: the entry under way
+                # failed, the next one gets fresh games
+                exits = [f"{bot_name(i)} rc={seen[('rc', i)]}" for i in range(len(procs)) if ("rc", i) in seen]
+                if exits and len(results) < len(session):
+                    index = len(results)
+                    entry = matrix.entries[index]
+                    logs = {i: sm.cut_entry(read_log(run_dir, i), index, entry.scenario) for i in range(a.bots)}
+                    _, why = check(entry.scenario, logs, a.bots)
+                    why = f"a game ended during it ({', '.join(exits)}): {why}"
+                    matrix.judge(index, logs, False, why)
+                    results.append((entry.label, False, why))
+                    print(f"[{time.time() - t0:6.1f}s] RESULT {entry.label}: FAIL ({why}) [{time.time() - go_at:.0f}s]", flush=True)
+                    end = "exited"
+                    break
             # a failed bot decides the run; its peers would only wait for the timeout
-            if any(seen.get(("rc", i)) not in (None, 0) for i in range(len(procs))):
+            elif any(seen.get(("rc", i)) not in (None, 0) for i in range(len(procs))):
                 print(f"[{time.time() - t0:6.1f}s] a bot failed; stopping the run", flush=True)
+                end = "failed"
                 break
             if alive == 0:
+                end = "done"
                 break
             time.sleep(1)
     finally:
@@ -553,6 +638,8 @@ def main():
             if p.poll() is None:
                 p.kill()
                 print(f"stopped {bot_name(i)}", flush=True)
+            if watch:
+                watch.remove(p.pid)
         try:
             server.stdin.write(b"stop\n")
             server.stdin.flush()
@@ -574,11 +661,151 @@ def main():
                 text = open(os.path.join(run_dir, name, "relay.log"), encoding="utf-8", errors="replace").read()
                 print(f"--- {name}: {' | '.join(text.strip().splitlines()[-4:])}")
 
-    logs = {}
     for i in range(a.bots):
-        logs[i] = read_log(run_dir, i)
-        last_wo = [l for l in logs[i].splitlines() if " WO " in l][-1:]
-        print(f"--- {bot_name(i)}: {len(logs[i].splitlines())} log lines; last WO line: {last_wo}")
+        log = read_log(run_dir, i)
+        last_wo = [l for l in log.splitlines() if " WO " in l][-1:]
+        print(f"--- {bot_name(i)}: {len(log.splitlines())} log lines; last WO line: {last_wo}")
+    return owner_touched, end
+
+
+def run_matrix(a, game_args: list[str], entries: list[sm.Entry], watch: FocusWatch) -> int:
+    """Runs a matrix's entries in shared game launches: one launch until an entry hangs or a game ends, then fresh
+    games from the next entry on (a failed entry is not retried). Prints one RESULT line per entry and the total."""
+    root = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + f"-matrix{len(entries)}"
+                        + ("-steam" if a.steam_box else "-relay" if a.relay else ""))
+    os.makedirs(root)
+    print(f"run dir: {root}", flush=True)
+    matrix = MatrixRun(entries, dict(os.environ), root, a.bots)
+    for entry in entries:
+        print(f"entry {entry.index + 1} {entry.label}: {entry.scenario} "
+              + " ".join(f"{k}={v}" for k, v in entry.env.items()) + (f" duration={entry.duration}" if entry.duration else ""), flush=True)
+    session = matrix.scenarios()
+    results = []
+    t0 = time.time()
+    start, launches, owner_touched = 0, 0, []
+    while start is not None:
+        launches += 1
+        run_dir = root if launches == 1 else os.path.join(root, f"launch{launches}")
+        os.makedirs(run_dir, exist_ok=True)
+        if a.timeout:
+            timeout = a.timeout - (time.time() - t0)
+        else:
+            timeout = sum(matrix.limit(i) + 30 for i in range(start, len(entries))) + 150 + 420
+        print(f"[{time.time() - t0:6.1f}s] launch {launches}: entries {start + 1} to {len(entries)} in {run_dir}", flush=True)
+        owner_touched, end = launch(a, game_args, run_dir, session, results, timeout, matrix, start, watch)
+        print(f"[{time.time() - t0:6.1f}s] launch {launches} ended ({end}) after {len(results)} of {len(entries)} entries", flush=True)
+        start = sm.next_launch(len(results), len(entries), "owner" if owner_touched else end)
+    for entry in entries[len(results):]:
+        results.append((entry.label, False, "not run (the run stopped first)"))
+        print(f"RESULT {entry.label}: FAIL (not run (the run stopped first)) [0s]")
+    passed = sum(ok for _, ok, _ in results)
+    ok = passed == len(entries)
+    why = f"{passed}/{len(entries)} entries passed in {launches} launch(es), {time.time() - t0:.0f} s"
+    if owner_touched:
+        ok, why = False, f"the owner's Documents changed: {', '.join(owner_touched)}"
+    watch.stop()
+    print(f"--- focus: {watch.summary()}")
+    print(f"RESULT: {'PASS' if ok else 'FAIL'} ({why})")
+    return 0 if ok else 1
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("scenario", nargs="?", default="", help="a scenario, or several separated by commas (a session)")
+    ap.add_argument("--matrix", help="a JSON file of session entries, each with its own settings (session_matrix.py)")
+    ap.add_argument("--window", choices=("minimized", "noactivate"),
+                    help="how the games' windows start; they are never activated (default minimized; noactivate "
+                         "with --shots or --record, which need a window that draws)")
+    ap.add_argument("--bots", type=int, help="game instances (default 2; 1 for single-game scenarios like gwent_vanilla)")
+    ap.add_argument("--duration", type=int, help="in-game seconds before a bot fails (default 60; enemy scenarios 300)")
+    ap.add_argument("--stagger", type=int, default=5, help="seconds between starting the bots")
+    ap.add_argument("--serial", action="store_true", help="start each bot only once the one before is in the world "
+                                                          "(one loading screen at a time; slower)")
+    ap.add_argument("--timeout", type=int, help="seconds for the whole run (default 420; gwent_duel: its duration + 420; "
+                                                "--matrix: every entry's time plus the loading)")
+    ap.add_argument("--save", default="")
+    ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
+    ap.add_argument("--port", type=int, default=41000)
+    ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
+    ap.add_argument("--monster", default="", help="puppet scenarios: the leader's monster template (depot path)")
+    ap.add_argument("--shots", type=float, default=0, help="save both bots' windows as PNG every this many seconds once all are in the world")
+    ap.add_argument("--shots-from", default="", help="start the screenshots when this text appears in the first bot's log")
+    ap.add_argument("--shots-for", type=float, default=0, help="stop the screenshots after this many seconds")
+    ap.add_argument("--size", default="", help="window and render resolution, e.g. 960x540 (default 640x360)")
+    ap.add_argument("--record", type=float, default=0, help="film both bots' windows side by side for this many seconds")
+    ap.add_argument("--record-from", default="", help="start filming when this text appears in the first bot's log")
+    ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
+                                        "Sandboxie box, whose Steam is logged in to a second account")
+    a = ap.parse_args()
+    entries = None
+    if a.matrix:
+        if a.scenario:
+            ap.error("give a scenario or --matrix, not both")
+        try:
+            entries = sm.load_matrix(a.matrix)
+        except (OSError, ValueError) as e:
+            print(f"bad matrix: {e}")
+            print("RESULT: FAIL (bad matrix)")
+            return 2
+        a.scenario = "matrix"
+        if a.bots is None:
+            a.bots = 1 if all(e.scenario in SINGLE_BOT_SCENARIOS for e in entries) else 2
+    elif not a.scenario:
+        ap.error("a scenario or --matrix is needed")
+    if a.bots is None:
+        a.bots = 1 if a.scenario in SINGLE_BOT_SCENARIOS else 2
+    a.window = window_mode(a.window or "", a.shots, a.record)
+    if a.window == "minimized" and (a.shots > 0 or a.record > 0):
+        print("note: --shots and --record capture nothing from minimized windows", flush=True)
+    missing = missing_test_build()
+    if missing:
+        print(f"the test build is not deployed ({', '.join(missing)} missing; compile.sh deploys it): the games would "
+              "use the owner's Documents. Nothing started.")
+        print("RESULT: FAIL (the test build is not deployed)")
+        return 2
+    if a.steam_box:
+        a.relay = True
+    game_args = list(GAME_ARGS)
+    if a.size:
+        os.environ["W3T_RESOLUTION"] = a.size  # sandbox.py writes it into the settings
+        for flag, value in zip(("-width", "-height"), a.size.split("x")):
+            if flag in game_args:
+                game_args[game_args.index(flag) + 1] = value
+    print(f"windows: {a.window}", flush=True)
+    watch = FocusWatch()
+    watch.start()
+    if entries:
+        if a.duration is None:
+            a.duration = 100000
+        return run_matrix(a, game_args, entries, watch)
+    session = a.scenario.split(",") if "," in a.scenario else []
+    if a.duration is None:
+        a.duration = default_duration(a.scenario)
+    if a.timeout is None:
+        a.timeout = a.duration + 420 if a.scenario == GWENT_DUEL else 420
+    if a.scenario == GWENT_DUEL and os.environ.get("W3T_GWENT_DECKS"):
+        # the bots get inline decks: names from w3test/gwent_decks.txt become "leader+card+..."
+        os.environ["W3T_GWENT_DECKS"] = expand_gwent_decks(os.environ["W3T_GWENT_DECKS"])
+        print(f"W3T_GWENT_DECKS={os.environ['W3T_GWENT_DECKS']}", flush=True)
+    if a.scenario == GWENT_DUEL and os.environ.get("W3T_GWENT_SEED"):
+        # StringToInt reads "4000000000" as 0 (not forced); pass the same 32 bits as a signed int
+        os.environ["W3T_GWENT_SEED"] = script_int_seed(os.environ["W3T_GWENT_SEED"])
+        print(f"W3T_GWENT_SEED={os.environ['W3T_GWENT_SEED']}", flush=True)
+    if a.scenario == GWENT_DUEL:
+        for switch in gwent_autoplay_switches(dict(os.environ)):
+            print(switch, flush=True)
+
+    run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + (f"session{len(session)}" if session else a.scenario)
+                           + ("-steam" if a.steam_box else "-relay" if a.relay else "")
+                           + ("-" + re.sub(r"\.w2ent$", "", a.monster.split("\\")[-1]) if a.monster else ""))
+    os.makedirs(run_dir)
+    print(f"run dir: {run_dir}", flush=True)
+
+    results = []  # a session's (scenario, ok, why)
+    owner_touched, _ = launch(a, game_args, run_dir, session, results, a.timeout, watch=watch)
+    watch.stop()
+    print(f"--- focus: {watch.summary()}")
+    logs = {i: read_log(run_dir, i) for i in range(a.bots)}
     if session:
         for name in session[len(results):]:
             results.append((name, False, "not run (the session ended first)"))

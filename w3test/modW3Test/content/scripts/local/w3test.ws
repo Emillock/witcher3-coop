@@ -1,12 +1,16 @@
 // In-game test bot. Does nothing unless the W3T_SCENARIO environment variable is set.
 // Env: W3T_SCENARIO (name), W3T_SAVE (part of a save filename; newest save if empty), W3T_DURATION (seconds in game).
 // A session runs several scenarios in one game: W3T_SCENARIOS (comma-separated) and W3T_CONTROL, a file in which the
-// harness writes "go N" (start scenario N) or "end".
+// harness writes "go N" (start scenario N) or "end". Lines after "go N" are scenario N's own settings, NAME=VALUE (an
+// empty value clears it; run_test.py --matrix): the bot sets them in its environment right before scenario N starts,
+// so W3T_GetEnv returns them from then on.
 
 import function W3T_GetEnv(key : string) : string;
+import function W3T_SetEnv(assignment : string);
 import function W3T_Log(line : string);
 import function W3T_TimeMs() : int;
 import function W3T_ReadFile(path : string) : string;
+import function W3T_ReadLines(path : string) : string;
 import function W3T_Quit(code : int);
 
 function W3T_Active() : bool
@@ -32,12 +36,23 @@ function W3T_Split(text : string, separator : string) : array<string>
     return parts;
 }
 
-// the harness's word in a session: N for "go N", -2 for "end", -1 for nothing yet
-function W3T_SessionGo() : int
+// the session's control file, line by line (W3T_ReadLines joins them with "|": splitting the file's text at "\n" or
+// at StrChar(10) found no line break in game)
+function W3T_SessionControl() : array<string>
+{
+    return W3T_Split(W3T_ReadLines(W3T_GetEnv("W3T_CONTROL")), "|");
+}
+
+// the harness's word in a session (the control file's first line): N for "go N", -2 for "end", -1 for nothing yet
+function W3T_SessionGoOf(control : array<string>) : int
 {
     var words : array<string>;
 
-    words = W3T_Split(StrReplaceAll(StrReplaceAll(W3T_ReadFile(W3T_GetEnv("W3T_CONTROL")), "\r", ""), "\n", ""), " ");
+    if(control.Size() == 0)
+    {
+        return -1;
+    }
+    words = W3T_Split(control[0], " ");
     if(words.Size() >= 1 && words[0] == "end")
     {
         return -2;
@@ -47,6 +62,39 @@ function W3T_SessionGo() : int
         return StringToInt(words[1], -1);
     }
     return -1;
+}
+
+function W3T_SessionGo() : int
+{
+    return W3T_SessionGoOf(W3T_SessionControl());
+}
+
+// the settings after "go N": this scenario's own, set in the environment before it starts
+function W3T_ApplySessionSettings(control : array<string>)
+{
+    var i : int;
+
+    for(i = 1; i < control.Size(); i += 1)
+    {
+        if(StrFindFirst(control[i], "=") > 0)
+        {
+            W3T_SetEnv(control[i]);
+            W3T_Log("SESSION setting " + control[i]);
+        }
+    }
+}
+
+// a scenario's verdict failed. Alone the bot quits (W3T_Quit(1)), as before; in a session it logs the failure and
+// goes on, so the harness can start the next scenario in the same game.
+function W3T_FailScenario(why : string)
+{
+    W3T_Log("FAIL " + why);
+    if(W3T_GetEnv("W3T_SCENARIOS") == "")
+    {
+        W3T_Quit(1);
+        return;
+    }
+    W3T_Log("SCENARIO " + W3T_CurrentScenario() + " failed");
 }
 
 // the scenario running now (in a session too)
@@ -387,13 +435,16 @@ statemachine class W3T_Bot
         }
     }
 
-    // a session's next scenario: the last one's leftovers go, the free-form state starts over
-    public function NextScenario(index : int, next : string)
+    // a session's next scenario: the last one's leftovers go, the free-form state and the Gwent state start over, and
+    // the scenario's own settings from the control file apply
+    public function NextScenario(index : int, next : string, control : array<string>)
     {
         if(scenario != "")
         {
             W3T_EndScenario(this);
         }
+        theGame.W3T_ResetGwent();
+        W3T_ApplySessionSettings(control);
         scenarioVec = Vector(0, 0, 0);
         scenarioFlag = false;
         scenarioTime = 0;
@@ -412,7 +463,7 @@ statemachine class W3T_Bot
         scenario = next;
         settleUntil = ElapsedS() + 5;
         begun = false;
-        W3T_Log("SCENARIO " + next + " start");
+        W3T_Log("SCENARIO " + next + " start entry=" + index);
     }
 
     public function CountDialog()
@@ -473,6 +524,7 @@ state W3T_Running in W3T_Bot
         var startedAt : float;
         var streak : int;
         var session : array<string>;
+        var control : array<string>;
         var go : int;
 
         duration = StringToFloat(W3T_GetEnv("W3T_DURATION"), 240.0);
@@ -501,7 +553,9 @@ state W3T_Running in W3T_Bot
 
             if(session.Size() > 0)
             {
-                go = W3T_SessionGo();
+                // one read: the word and the settings come from the same version of the file
+                control = W3T_SessionControl();
+                go = W3T_SessionGoOf(control);
                 if(go == -2)
                 {
                     W3T_Log("BOT session done after " + parent.reports + " reports");
@@ -509,7 +563,7 @@ state W3T_Running in W3T_Bot
                 }
                 if(go >= 0 && go < session.Size() && go != parent.scenarioIndex)
                 {
-                    parent.NextScenario(go, session[go]);
+                    parent.NextScenario(go, session[go], control);
                     startedAt = parent.ElapsedS();
                     passedAt = -1;
                     streak = 0;

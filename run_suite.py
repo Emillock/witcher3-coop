@@ -1,8 +1,10 @@
 # Runs several run_test.py scenarios and prints a summary table. Scenarios that can share a game run as one session
 # (the games load once); the others get fresh games each.
 # Usage: run_suite.py [--steam-box BOX [--all]] [--duration S] [--no-session] [scenario ...]   (default: every
-# scenario; over Steam a subset). The scenario gwent_duel runs every entry of GWENT_DUEL_MATRIX (not in the default).
+# scenario; over Steam a subset). The scenario gwent_duel runs every entry of GWENT_DUEL_MATRIX (not in the default),
+# as sessions of several duels per game launch (--no-session: fresh games for every duel).
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -13,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from config import WORK  # noqa: E402
 from run_test import missing_test_build  # noqa: E402
+from session_matrix import SETTINGS  # noqa: E402
 
 # enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "version_check", "party_hud", "horse_ride", "social", "trade", "player_effects", "shared_enemy", "enemy_attacks", "mounted_fight", "reactions", "twin_match", "encounter_mismatch", "handoff", "quest_sync",
@@ -51,13 +54,46 @@ GWENT_DUEL_MATRIX = [
                                              "W3T_GWENT_LEADER_FIRST": "1"}),
 ]
 GWENT_DUEL = "gwent_duel"
-GWENT_DUEL_SWITCHES = ["W3T_GWENT_DECKS", "W3T_GWENT_SEED", "W3T_GWENT_MULLIGAN", "W3T_GWENT_LEADER_FIRST", "W3T_GWENT_CORRUPT_AT",
-                       "W3T_GWENT_EXPECT", "W3T_GWENT_REASON"]
+GWENT_DUEL_SWITCHES = list(SETTINGS)
 
 
-def run_gwent_matrix(label):
-    # runs every GWENT_DUEL_MATRIX entry as its own gwent_duel (its own W3T_* settings, run_test.py's gwent_duel
-    # duration and timeout); returns the summary rows
+def matrix_entries(matrix: list) -> list[dict]:
+    """GWENT_DUEL_MATRIX as a run_test.py --matrix file's entries."""
+    return [{"scenario": GWENT_DUEL, "label": name, "env": dict(settings)} for name, settings in matrix]
+
+
+def session_rows(text: str, labels: list[str], prefix: str) -> list[tuple]:
+    """Summary rows (name, PASS|FAIL|ERROR, seconds, why) from a run_test.py session's per-entry RESULT lines."""
+    found = {m.group(1): m for m in re.finditer(r"RESULT (\S+): (PASS|FAIL) \((.*)\) \[(\d+)s\]", text)}
+    rows = []
+    for name in labels:
+        m = found.get(name)
+        rows.append((prefix + name, m.group(2) if m else "ERROR", int(m.group(4)) if m else 0, m.group(3) if m else "no result line"))
+    return rows
+
+
+def run_gwent_matrix(label, sessions=True):
+    # runs the GWENT_DUEL_MATRIX entries: by default as one run_test.py --matrix (the duels share game launches; a
+    # hung duel or a game that ended starts fresh games for the next), with --no-session each as its own gwent_duel
+    # (its own W3T_* settings, run_test.py's gwent_duel duration and timeout); returns the summary rows
+    env = {k: v for k, v in os.environ.items() if k not in GWENT_DUEL_SWITCHES}
+    if sessions:
+        stamp = time.strftime('%H%M%S')
+        matrix = os.path.join(WORK, "runs", f"suite_{label}_gwent_duel_matrix_{stamp}.json")
+        with open(matrix, "w", encoding="utf-8") as f:
+            json.dump(matrix_entries(GWENT_DUEL_MATRIX), f, indent=1)
+        out = os.path.join(WORK, "runs", f"suite_{label}_gwent_duel_matrix_{stamp}.out")
+        t0 = time.time()
+        with open(out, "w") as f:
+            subprocess.run([sys.executable, os.path.join(HERE, "run_test.py"), "--matrix", matrix], stdout=f,
+                           stderr=subprocess.STDOUT, env=env)
+        text = open(out, encoding="utf-8", errors="replace").read()
+        rows = session_rows(text, [name for name, _ in GWENT_DUEL_MATRIX], f"{GWENT_DUEL} ")
+        for row in rows:
+            print(f"{row[0]:40} {row[1]:5} {row[2]:4}s  {row[3][:110]}", flush=True)
+        launches = len(re.findall(r"launch \d+: entries", text))
+        print(f"  (sessions: {launches} launch(es), {int(time.time() - t0)}s in all; see {out})", flush=True)
+        return rows
     rows = []
     for name, settings in GWENT_DUEL_MATRIX:
         out = os.path.join(WORK, "runs", f"suite_{label}_gwent_duel_{name}_{time.strftime('%H%M%S')}.out")
@@ -100,7 +136,7 @@ def main():
     rows = []
     if GWENT_DUEL in a.scenarios:
         a.scenarios = [s for s in a.scenarios if s != GWENT_DUEL]
-        rows += run_gwent_matrix(label)
+        rows += run_gwent_matrix(label, not a.no_session)
     for run in plan(a.scenarios, not a.no_session):
         out = os.path.join(WORK, "runs", f"suite_{label}_{run.split(',')[0]}_{time.strftime('%H%M%S')}.out")
         cmd = [sys.executable, os.path.join(HERE, "run_test.py"), run, "--duration", str(a.duration), "--timeout", "3600" if "," in run else "900"]

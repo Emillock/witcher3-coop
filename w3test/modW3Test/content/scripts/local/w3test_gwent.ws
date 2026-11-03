@@ -27,6 +27,9 @@
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
 //   no money change; with W3T_GWENT_CORRUPT_AT also a "DUEL DESYNC" line and reason=desync. Every bot also needs
 //   Witcher Online's "DUEL DYNAMIC cards=0" (no dynamic cards for the duel deck name).
+//   In a session (run_test.py --matrix) each duel reads these W3T_GWENT_* settings when it starts (the control file
+//   sets them, see w3test.ws), the Gwent state starts over between duels (W3T_ResetGwent), and a failed verdict does
+//   not end the game: the bot logs it and the next duel follows in the same game.
 
 @addField(CR4Game)
 var w3t_gwent : W3T_Gwent;
@@ -39,6 +42,29 @@ function W3T_GwentState() : W3T_Gwent
         w3t_gwent = new W3T_Gwent in this;
     }
     return w3t_gwent;
+}
+
+// a session's next scenario: the last Gwent scenario's state goes (its deck, step, lines, money before), and the
+// board's test switches are off, as after a match (W3T_Gwent.Closed). The next duel starts from step 0: it reads its
+// own settings and its money again.
+@addMethod(CR4Game)
+function W3T_ResetGwent()
+{
+    var manager : CR4GwintManager;
+
+    if(!w3t_gwent)
+    {
+        return;
+    }
+    manager = GetGwintManager();
+    manager.duelDebugAutoplay = false;
+    manager.duelSelfTest = false;
+    manager.duelDebugMulligan = false;
+    manager.duelDebugLeaderFirst = false;
+    manager.duelDebugBreakTemplates = false;
+    manager.duelDebugCorruptAt = 0;
+    W3T_Log("GWENT state reset (result " + w3t_gwent.result + ", money " + thePlayer.GetMoney() + ")");
+    w3t_gwent = NULL;
 }
 
 statemachine class W3T_Gwent
@@ -69,6 +95,7 @@ statemachine class W3T_Gwent
     public var desyncLine : string;     // the board's first "DUEL DESYNC" line
     public var duelPassed : bool;
     public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
+    public var combatLogged : bool;     // EndCombat found this bot in combat once already
 
     // the challenge popup opened (w3test.ws)
     public function ChallengeShown(popup : CR4ItemSelectionPopup)
@@ -279,6 +306,10 @@ statemachine class W3T_Gwent
 
         host = W3T_GetEnv("W3T_ROLE") == "mover";
         manager = theGame.GetGwintManager();
+        if(!boardOpen && duelStep <= 2 && W3T_GetEnv("W3T_SCENARIOS") != "")
+        {
+            EndCombat();
+        }
         if(challengePopup)
         {
             W3T_Log("GWENT duel accepts the challenge");
@@ -387,6 +418,40 @@ statemachine class W3T_Gwent
         return duelPassed;
     }
 
+    // In a session the bots stand in the world for an hour, and monsters roam near the test save. Witcher Online does
+    // not show a challenge to a player in combat, so the duel would never start (most likely what happened to the one
+    // duel of 21 that got "no board 120 s after the challenge": its guest had moved 23 m from its start point without
+    // being told to). Before the board is up, hostile actors within 40 m of a bot in combat go at once.
+    public function EndCombat()
+    {
+        var entities : array<CGameplayEntity>;
+        var npc : CNewNPC;
+        var removed : int;
+        var i : int;
+
+        if(!thePlayer.IsInCombat())
+        {
+            return;
+        }
+        FindGameplayEntitiesInSphere(entities, thePlayer.GetWorldPosition(), 40.0, 64, '', FLAG_OnlyAliveActors, thePlayer);
+        for(i = 0; i < entities.Size(); i += 1)
+        {
+            npc = (CNewNPC)entities[i];
+            if(npc && GetAttitudeBetween(npc, thePlayer) == AIA_Hostile)
+            {
+                W3T_Log("GWENT duel: in combat before the board, removes " + npc.GetReadableName() + " at "
+                    + W3T_VecStr(npc.GetWorldPosition()));
+                npc.Destroy();
+                removed += 1;
+            }
+        }
+        if(removed == 0 && !combatLogged)
+        {
+            W3T_Log("GWENT duel: in combat before the board, no hostile within 40 m");
+        }
+        combatLogged = true;
+    }
+
     // whether the board's duel lines and the money match W3T_GWENT_EXPECT (fails the bot otherwise)
     public function DuelVerdict(host : bool) : bool
     {
@@ -465,8 +530,8 @@ statemachine class W3T_Gwent
         }
         if(why != "")
         {
-            W3T_Log("FAIL gwent duel: " + why + " (" + endLine + ")");
-            W3T_Quit(1);
+            // the board has closed: in a session the next duel can follow in this game
+            W3T_FailScenario("gwent duel: " + why + " (" + endLine + ")");
             return false;
         }
         W3T_Log("GWENT duel ok: " + endLine + ", " + rounds + " rounds, money " + (moneyAfter - moneyBefore));
