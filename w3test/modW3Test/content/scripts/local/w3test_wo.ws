@@ -376,6 +376,15 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_TradeBuyer(bot, client, players[0]);
     }
 
+    if(scenario == "gwent_duel")
+    {
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        return W3T_GwentDuel(bot, client, players[0]);
+    }
+
     if(scenario == "enemy_crowd")
     {
         if(players.Size() < 1)

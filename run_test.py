@@ -26,13 +26,40 @@ GAME_ARGS = os.environ.get("W3T_GAME_ARGS", "-windowed -width 640 -height 360 -d
 # scenarios where the leader waits for the member to load and join before acting
 LONG_SCENARIOS = ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync",
                   "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide", "enemy_moves", "enemy_summons", "enemy_spells", "real_encounter",
-                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout", "gwent_vanilla", "gwent_selftest")
+                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout", "gwent_vanilla", "gwent_selftest", "gwent_duel")
 # scenarios for one game (no co-op): their default --bots
 SINGLE_BOT_SCENARIOS = ("gwent_vanilla", "gwent_selftest")
 
 
+GWENT_DUEL = "gwent_duel"
+GWENT_DECKS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "w3test", "gwent_decks.txt")
+DUEL_LOGDIFF = os.path.join(WO, "gwent", "tools", "duel_logdiff.py")
+
+
 def default_duration(scenario):
+    if scenario == GWENT_DUEL:
+        return 600
     return 300 if scenario in LONG_SCENARIOS else 60
+
+
+def expand_gwent_decks(value, decks_file=GWENT_DECKS_FILE):
+    """W3T_GWENT_DECKS with every name from w3test/gwent_decks.txt replaced by its "leader+card+..." list."""
+    named = {}
+    for line in open(decks_file, encoding="utf-8"):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            name, _, cards = line.partition(":")
+            named[name.strip()] = cards.strip()
+    return ",".join(named.get(entry.strip(), entry.strip()) for entry in value.split(","))
+
+
+def gwent_logdiff(run_dir, n):
+    """Compares the two bots' duel logs with WitcherOnline's duel_logdiff.py; returns (exit code, its output)."""
+    if n < 2:
+        return 0, "skipped (one bot)"
+    logs = [os.path.join(run_dir, bot_name(i) + ".log") for i in range(2)]
+    out = subprocess.run([sys.executable, "-I", DUEL_LOGDIFF] + logs, capture_output=True, text=True, timeout=120)
+    return out.returncode, (out.stdout + out.stderr).strip()
 
 
 def segment(log, scenario):
@@ -288,7 +315,7 @@ def main():
     ap.add_argument("--stagger", type=int, default=5, help="seconds between starting the bots")
     ap.add_argument("--serial", action="store_true", help="start each bot only once the one before is in the world "
                                                           "(one loading screen at a time; slower)")
-    ap.add_argument("--timeout", type=int, default=420)
+    ap.add_argument("--timeout", type=int, help="seconds for the whole run (default 420; gwent_duel: its duration + 420)")
     ap.add_argument("--save", default="")
     ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
     ap.add_argument("--port", type=int, default=41000)
@@ -322,6 +349,12 @@ def main():
     session = a.scenario.split(",") if "," in a.scenario else []
     if a.duration is None:
         a.duration = default_duration(a.scenario)
+    if a.timeout is None:
+        a.timeout = a.duration + 420 if a.scenario == GWENT_DUEL else 420
+    if a.scenario == GWENT_DUEL and os.environ.get("W3T_GWENT_DECKS"):
+        # the bots get inline decks: names from w3test/gwent_decks.txt become "leader+card+..."
+        os.environ["W3T_GWENT_DECKS"] = expand_gwent_decks(os.environ["W3T_GWENT_DECKS"])
+        print(f"W3T_GWENT_DECKS={os.environ['W3T_GWENT_DECKS']}", flush=True)
 
     run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + (f"session{len(session)}" if session else a.scenario)
                            + ("-steam" if a.steam_box else "-relay" if a.relay else "")
@@ -495,6 +528,14 @@ def main():
         ok, why = passed == len(session), f"{passed}/{len(session)} scenarios passed"
     else:
         ok, why = check(a.scenario, logs, a.bots)
+    if a.scenario == GWENT_DUEL:
+        # W3T_GWENT_LOGDIFF=report: print the comparison but do not fail on it (before moves and random streams are
+        # synced the two boards are expected to differ)
+        mode = os.environ.get("W3T_GWENT_LOGDIFF", "fail")
+        rc, text = gwent_logdiff(run_dir, a.bots)
+        print(f"--- duel_logdiff ({mode}): rc={rc} {text}")
+        if rc != 0 and mode != "report" and ok:
+            ok, why = False, f"duel logs diverged: {text.splitlines()[0] if text else rc}"
     if owner_touched:
         ok, why = False, f"the owner's Documents changed: {', '.join(owner_touched)}"
     print(f"RESULT: {'PASS' if ok else 'FAIL'} ({why})")

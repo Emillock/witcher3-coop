@@ -12,6 +12,18 @@
 //   Online's duel deck fields passed the script checks below (GWENT script checks ok ...): no card or leader name in
 //   GetCardDefs/GetLeaderDefs has a space or "~" or fails to come back through the wo3 encoding, the selected player
 //   deck round-trips through WO_GwentDeckFields/WO_GwentParseDeck, and 4.04 or marker-less deck fields give protocol 0.
+// gwent_duel (two bots): a Gwent duel between the bots through the local server and Witcher Online's challenge.
+//   Each bot plays its own entry of W3T_GWENT_DECKS (bot 0 the first, bot 1 the second; default North,North): a
+//   built-in deck name for GetDeck (North and NilfEasy hold cards; Nilf, nml, scotial, ske are starter decks without
+//   cards) or an inline deck "leader+card+card+..." (run_test.py turns the names in w3test\gwent_decks.txt into
+//   these). Bot 0 (W3T_ROLE mover, the host, seat A) challenges bot 1 for W3T_GWENT_BET crowns (default 10;
+//   W3T_GWENT_TIMED=1 for a timed duel, W3T_GWENT_SEED forces the seed), bot 1 accepts in Witcher Online's popup (see
+//   w3test.ws), and both boards play themselves (CR4GwintManager.duelDebugAutoplay; W3T_GWENT_MULLIGAN=1 redraws at
+//   the mulligan, default 0 declines). W3T_GWENT_BREAK_TEMPLATES=1 makes bot 0's board send a wrong card table hash.
+//   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
+//   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
+//   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
+//   no money change.
 
 @addField(CR4Game)
 var w3t_gwent : W3T_Gwent;
@@ -39,6 +51,25 @@ statemachine class W3T_Gwent
     public var surrendered : bool;
     public var result : string;   // "won" or "lost" once the menu closed
     public var frames : int;      // the watcher's frames (latent functions keep running while the board is open)
+    // gwent_duel
+    public var duel : bool;
+    public var hasDuelDeck : bool;      // GetCurrentPlayerDeck returns duelDeck (the deck Witcher Online sends)
+    public var duelDeck : SDeckDefinition;
+    public var duelStep : int;
+    public var duelStepAt : float;
+    public var duelBet : int;
+    public var moneyBefore : int;
+    public var helloLine : string;      // the board's first "DUEL HELLO" line
+    public var endLine : string;        // its last "DUEL END" line
+    public var rounds : int;            // its "DUEL ROUND" lines
+    public var duelPassed : bool;
+    public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
+
+    // the challenge popup opened (w3test.ws)
+    public function ChallengeShown(popup : CR4ItemSelectionPopup)
+    {
+        challengePopup = popup;
+    }
 
     public function Start(deckName : string, withSelfTest : bool)
     {
@@ -131,7 +162,8 @@ statemachine class W3T_Gwent
         {
             return;
         }
-        if(!boardOpen || surrendered)
+        // a duel plays itself (the board's autoplay) and ends by itself
+        if(duel || !boardOpen || surrendered)
         {
             return;
         }
@@ -166,6 +198,21 @@ statemachine class W3T_Gwent
     // one line of the board's duel log, already in the bot log as "GwentDuel: <line>"
     public function DuelLine(line : string)
     {
+        if(duel && result == "")
+        {
+            if(helloLine == "" && StrStartsWith(line, "DUEL HELLO"))
+            {
+                helloLine = line;
+            }
+            if(StrStartsWith(line, "DUEL ROUND "))
+            {
+                rounds += 1;
+            }
+            if(StrStartsWith(line, "DUEL END "))
+            {
+                endLine = line;
+            }
+        }
         if(requested && result == "" && selfTestLine == "" && StrStartsWith(line, "DUEL SELFTEST pass="))
         {
             selfTestLine = "GwentDuel: " + line;
@@ -192,6 +239,8 @@ statemachine class W3T_Gwent
         manager = theGame.GetGwintManager();
         manager.duelDebugAutoplay = false;
         manager.duelSelfTest = false;
+        manager.duelDebugMulligan = false;
+        manager.duelDebugBreakTemplates = false;
         minigame = thePlayer.GetGwintMinigameState();
         result = "lost";
         if(minigame == EMS_End_PlayerWon)
@@ -200,6 +249,197 @@ statemachine class W3T_Gwent
         }
         W3T_Log("GWENT RESULT " + result + " (minigame state " + (int)minigame + ", self-test " + selfTest
             + ", surrendered " + surrendered + ")");
+    }
+
+    // gwent_duel, one step a report (see the scenarios above). 0: own deck and test switches; 1: the host challenges
+    // once both sides see each other's duel protocol; 2: the match; 3: a moment for the settlement; 4: the verdict.
+    public function DuelStep(bot : W3T_Bot, client : r_MultiplayerClient, peer : r_RemotePlayer) : bool
+    {
+        var manager : CR4GwintManager;
+        var decks : array<string>;
+        var deckEntry : string;
+        var host : bool;
+        var seed : int;
+        var noItem : SItemUniqueId;
+
+        host = W3T_GetEnv("W3T_ROLE") == "mover";
+        manager = theGame.GetGwintManager();
+        if(challengePopup)
+        {
+            W3T_Log("GWENT duel accepts the challenge");
+            challengePopup.OnCallSelectItem(noItem);
+            challengePopup = NULL;
+        }
+        if(duelStep == 0)
+        {
+            // once the save has placed the player and the world has settled
+            if(!bot.homeSet || bot.ElapsedS() < 10)
+            {
+                return false;
+            }
+            decks = W3T_Split(W3T_GetEnv("W3T_GWENT_DECKS"), ",");
+            while(decks.Size() < 2)
+            {
+                decks.PushBack("North");
+            }
+            deckEntry = decks[0];
+            if(!host)
+            {
+                deckEntry = decks[1];
+            }
+            if(!W3T_GwentDeckFromEntry(deckEntry, duelDeck))
+            {
+                W3T_Log("FAIL gwent duel: deck " + deckEntry + " is not a built-in deck or has an unknown card");
+                W3T_Quit(1);
+                return false;
+            }
+            hasDuelDeck = true;
+            duel = true;
+            requested = true;
+            manager.SetHasDoneTutorial(true);
+            manager.SetHasDoneDeckTutorial(true);
+            manager.setDoubleAIEnabled(false);
+            manager.duelDebugAutoplay = true;
+            // monsters roam near the test save; a dead bot never gets to its board
+            thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+            manager.duelDebugMulligan = W3T_GetEnv("W3T_GWENT_MULLIGAN") == "1";
+            manager.duelDebugBreakTemplates = host && W3T_GetEnv("W3T_GWENT_BREAK_TEMPLATES") == "1";
+            duelBet = StringToInt(W3T_GetEnv("W3T_GWENT_BET"), 10);
+            if(thePlayer.GetMoney() < duelBet)
+            {
+                thePlayer.AddMoney(duelBet - thePlayer.GetMoney());
+            }
+            W3T_Log("GWENT duel deck " + deckEntry + " (leader " + NameToString(duelDeck.leaderCard) + ", " + duelDeck.cards.Size()
+                + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", mulligan redraw "
+                + manager.duelDebugMulligan);
+            duelStep = 1;
+            duelStepAt = bot.ElapsedS();
+            return false;
+        }
+        if(duelStep == 1)
+        {
+            // the deck goes out in every wo3 packet: give it a few seconds to reach the peer, and wait for the peer's
+            if(bot.ElapsedS() - duelStepAt < 5 || !client.gwentProtocolMatches(peer))
+            {
+                return false;
+            }
+            moneyBefore = thePlayer.GetMoney();
+            W3T_Log("GWENT duel money before=" + moneyBefore + " bet=" + duelBet);
+            if(host)
+            {
+                seed = StringToInt(W3T_GetEnv("W3T_GWENT_SEED"), 0);
+                W3T_Log("GWENT duel challenge " + peer.username + " (id " + peer.id + ", seed " + seed + ", timed "
+                    + (W3T_GetEnv("W3T_GWENT_TIMED") == "1") + ")");
+                client.W3T_GwentChallenge(peer.id, W3T_GetEnv("W3T_GWENT_TIMED") == "1", duelBet, seed);
+            }
+            GotoState('W3T_GwentWatching');
+            duelStep = 2;
+            duelStepAt = bot.ElapsedS();
+            return false;
+        }
+        if(duelStep == 2)
+        {
+            if(result == "")
+            {
+                if(!boardOpen && bot.ElapsedS() - duelStepAt > 120)
+                {
+                    W3T_Log("FAIL gwent duel: no board 120 s after the challenge");
+                    W3T_Quit(1);
+                }
+                return false;
+            }
+            duelStep = 3;
+            duelStepAt = bot.ElapsedS();
+            return false;
+        }
+        if(duelStep == 3)
+        {
+            if(bot.ElapsedS() - duelStepAt < 3)
+            {
+                return false;
+            }
+            duelStep = 4;
+            duelPassed = DuelVerdict(host);
+        }
+        return duelPassed;
+    }
+
+    // whether the board's duel lines and the money match W3T_GWENT_EXPECT (fails the bot otherwise)
+    public function DuelVerdict(host : bool) : bool
+    {
+        var words : array<string>;
+        var expect : string;
+        var reason : string;
+        var outcome : string;
+        var why : string;
+        var moneyAfter : int;
+        var wanted : int;
+
+        expect = W3T_GetEnv("W3T_GWENT_EXPECT");
+        if(expect == "")
+        {
+            expect = "result";
+        }
+        moneyAfter = thePlayer.GetMoney();
+        words = W3T_Split(endLine, " ");
+        if(words.Size() >= 4)
+        {
+            outcome = StrAfterFirst(words[2], "result=");
+            reason = StrAfterFirst(words[3], "reason=");
+        }
+        W3T_Log("GWENT duel money before=" + moneyBefore + " after=" + moneyAfter + " bet=" + duelBet + " (" + endLine + ")");
+
+        wanted = 0;
+        if(endLine == "")
+        {
+            why = "the board sent no DUEL END line";
+        }
+        else if(expect == "nocontest")
+        {
+            if(outcome != "nocontest")
+            {
+                why = "expected result=nocontest";
+            }
+            else if(W3T_GetEnv("W3T_GWENT_REASON") != "" && reason != W3T_GetEnv("W3T_GWENT_REASON"))
+            {
+                why = "expected reason=" + W3T_GetEnv("W3T_GWENT_REASON");
+            }
+        }
+        else
+        {
+            if(helloLine != "DUEL HELLO ok seat=" + W3T_GwentSeatName(host))
+            {
+                why = "expected DUEL HELLO ok seat=" + W3T_GwentSeatName(host) + ", got [" + helloLine + "]";
+            }
+            else if(rounds < 1)
+            {
+                why = "no DUEL ROUND line";
+            }
+            else if(outcome == "win")
+            {
+                wanted = duelBet;
+            }
+            else if(outcome == "loss")
+            {
+                wanted = -duelBet;
+            }
+            else if(outcome != "draw")
+            {
+                why = "expected result=win|loss|draw";
+            }
+        }
+        if(why == "" && moneyAfter - moneyBefore != wanted)
+        {
+            why = "money moved by " + (moneyAfter - moneyBefore) + ", expected " + wanted;
+        }
+        if(why != "")
+        {
+            W3T_Log("FAIL gwent duel: " + why + " (" + endLine + ")");
+            W3T_Quit(1);
+            return false;
+        }
+        W3T_Log("GWENT duel ok: " + endLine + ", " + rounds + " rounds, money " + (moneyAfter - moneyBefore));
+        return true;
     }
 }
 
@@ -300,6 +540,96 @@ function W3T_GwentVanilla(bot : W3T_Bot) : bool
 function W3T_GwentSelfTest(bot : W3T_Bot) : bool
 {
     return W3T_GwentMatch(bot, true);
+}
+
+function W3T_GwentDuel(bot : W3T_Bot, client : r_MultiplayerClient, peer : r_RemotePlayer) : bool
+{
+    return theGame.W3T_GwentState().DuelStep(bot, client, peer);
+}
+
+function W3T_GwentSeatName(host : bool) : string
+{
+    if(host)
+    {
+        return "A";
+    }
+    return "B";
+}
+
+// A W3T_GWENT_DECKS entry as a deck: a built-in deck name (GetDeck, difficulty 1) or "leader+card+card+...".
+// False when the deck is unknown or names a card the game does not have.
+function W3T_GwentDeckFromEntry(deckEntry : string, out deck : SDeckDefinition) : bool
+{
+    var manager : CR4GwintManager;
+    var empty : SDeckDefinition;
+    var card : SCardDefinition;
+    var parts : array<string>;
+    var i : int;
+
+    manager = theGame.GetGwintManager();
+    deck = empty;
+    if(StrContains(deckEntry, "+"))
+    {
+        parts = W3T_Split(deckEntry, "+");
+        deck.deckName = 'w3t_gwent_duel';
+        deck.leaderCard = WO_ToName(parts[0]);
+        for(i = 1; i < parts.Size(); i += 1)
+        {
+            deck.cards.PushBack(WO_ToName(parts[i]));
+        }
+    }
+    else if(!manager.GetDeck(WO_ToName(deckEntry), 1, deck))
+    {
+        return false;
+    }
+    deck.unlocked = true;
+    if(!manager.GetGwentCard(deck.leaderCard, card))
+    {
+        W3T_Log("GWENT unknown leader " + NameToString(deck.leaderCard));
+        return false;
+    }
+    for(i = 0; i < deck.cards.Size(); i += 1)
+    {
+        if(!manager.GetGwentCard(deck.cards[i], card))
+        {
+            W3T_Log("GWENT unknown card " + NameToString(deck.cards[i]));
+            return false;
+        }
+    }
+    return true;
+}
+
+// gwent_duel: the bot's own duel deck is the one Witcher Online sends to the peer and shows on its board
+@wrapMethod(CR4GwintManager)
+function GetCurrentPlayerDeck() : SDeckDefinition
+{
+    if(W3T_Active() && theGame.w3t_gwent && theGame.w3t_gwent.hasDuelDeck)
+    {
+        return theGame.w3t_gwent.duelDeck;
+    }
+    return wrappedMethod();
+}
+
+// gwent_duel: the host's challenge as the challenge popup and the bet slider would send it (type, bet), with the seed
+// forced when W3T_GWENT_SEED is set
+@addMethod(r_MultiplayerClient)
+function W3T_GwentChallenge(toId : string, timed : bool, bet : int, seed : int)
+{
+    clearGwentRequestState();
+    outgoingGwentTo = toId;
+    if(timed)
+    {
+        setGwentGameType(GG_Timed);
+    }
+    else
+    {
+        setGwentGameType(GG_Normal);
+    }
+    setGwentBetAmount(bet);
+    if(seed != 0)
+    {
+        outgoingGwentSeed = seed;
+    }
 }
 
 @wrapMethod(CR4GwintGameMenu)

@@ -213,13 +213,22 @@ function ShowProgressDialog( messageId : int, title : string, message : string, 
     }
 }
 
-// Witcher Online's trade popups (trade): the seller picks the Dwarven spirit, the buyer accepts the offer
+// Witcher Online's trade popups (trade): the seller picks the Dwarven spirit, the buyer accepts the offer; and its
+// Gwent challenge popup (gwent_duel): the challenged bot accepts
 @wrapMethod(CR4ItemSelectionPopup)
 function OnConfigUI()
 {
     var ids : array<SItemUniqueId>;
 
     wrappedMethod();
+    if(W3T_Active() && W3T_CurrentScenario() == "gwent_duel" && m_DataObject.wo_isReceivingGwent)
+    {
+        // accepted on the scenario's next step: Witcher Online marks the request as shown only after this popup opened,
+        // and acceptGwentRequest does nothing before that. Its OnCallSelectItem accepts whatever item is picked.
+        W3T_Log("MENU gwent: " + m_DataObject.wo_toGwent + " challenges for " + m_DataObject.wo_betAmount + " crowns -> accept");
+        theGame.W3T_GwentState().ChallengeShown(this);
+        return true;
+    }
     if(!W3T_Active() || W3T_CurrentScenario() != "trade")
     {
         return true;
