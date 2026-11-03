@@ -37,7 +37,9 @@
 //   that seq (it logs "GWENT exit ..." and its own pass line first: quitting is its whole part; expected on bot 0:
 //   W3T_GWENT_EXPECT=nocontest, reason opponent_left). W3T_GWENT_IDLE_AT=<seq> makes bot 1 stop playing once its
 //   board sent that seq (the bot turns its board's autoplay off, so the board waits for a player who never acts;
-//   expected on both bots in Normal mode: nocontest, reason stuck_wait, bot 1 through the opponent's Y).
+//   expected on both bots in Normal mode: nocontest, reason stuck_wait, bot 1 through the opponent's Y);
+//   W3T_GWENT_IDLE_AT=end once its board sent its E (with W3T_GWENT_FORCE_DRAW=1 and W3T_GWENT_REPLAY=0 bot 1 then
+//   never answers the end screen: bot 0 replays and ends draw replay_timeout, bot 1 draw opponent_leave).
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
@@ -121,6 +123,7 @@ statemachine class W3T_Gwent
     public var exitAt : int;            // W3T_GWENT_EXIT_AT on bot 1, else 0
     public var exitDue : bool;          // the board sent seq exitAt: quit the game on the next frame
     public var idleAt : int;            // W3T_GWENT_IDLE_AT on bot 1, else 0
+    public var idleAtEnd : bool;        // W3T_GWENT_IDLE_AT=end on bot 1: idle once its board sent its E
     public var idleDue : bool;          // the board sent seq idleAt: stop playing on the next frame
     public var idle : bool;             // the board's autoplay was turned off (W3T_GWENT_IDLE_AT)
     public var duelPassed : bool;
@@ -241,7 +244,7 @@ statemachine class W3T_Gwent
         if(duel && idleDue && !idle)
         {
             idle = true;
-            W3T_Log("GWENT idle (board sent seq " + idleAt + "): autoplay off, the board waits for this player");
+            W3T_Log("GWENT idle (board sent " + W3T_GetEnv("W3T_GWENT_IDLE_AT") + "): autoplay off, the board waits for this player");
             menu.W3T_SetAutoplay(false);
         }
         if(duel || !boardOpen || surrendered)
@@ -328,6 +331,7 @@ statemachine class W3T_Gwent
             {
                 exitDue = exitDue || (exitAt > 0 && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= exitAt);
                 idleDue = idleDue || (idleAt > 0 && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= idleAt);
+                idleDue = idleDue || (idleAtEnd && W3T_GwentTokenType(StrAfterFirst(line, "DUEL SEND ")) == "E");
             }
             if(StrStartsWith(line, "DUEL DYNAMIC "))
             {
@@ -454,6 +458,7 @@ statemachine class W3T_Gwent
                 SurrenderSetting(W3T_GetEnv("W3T_GWENT_SURRENDER_AT"));
                 exitAt = StringToInt(W3T_GetEnv("W3T_GWENT_EXIT_AT"), 0);
                 idleAt = StringToInt(W3T_GetEnv("W3T_GWENT_IDLE_AT"), 0);
+                idleAtEnd = W3T_GetEnv("W3T_GWENT_IDLE_AT") == "end";
             }
             duelBet = StringToInt(W3T_GetEnv("W3T_GWENT_BET"), 10);
             if(thePlayer.GetMoney() < duelBet)
@@ -717,6 +722,15 @@ statemachine class W3T_Gwent
         {
             wanted = "opponent_leave";
         }
+        if(replay == "0" && W3T_GetEnv("W3T_GWENT_IDLE_AT") == "end")
+        {
+            // bot 1 never answers the end screen: bot 0's R wait ends the draw (X), bot 1 ends with that X
+            wanted = "opponent_leave";
+            if(host)
+            {
+                wanted = "replay_timeout";
+            }
+        }
         if(reason != wanted && (replay == "0" || reason != "opponent_leave"))
         {
             return "expected reason=" + wanted;
@@ -881,6 +895,19 @@ function W3T_GwentTokenGame(token : string) : int
         return -1;
     }
     return StringToInt(StrAfterLast(fields[1], "g"), -1);
+}
+
+// the type field of a duel token ("<version>.<matchId>.<seq>.<type>.<args>.<hash>"), "" if it has none
+function W3T_GwentTokenType(token : string) : string
+{
+    var fields : array<string>;
+
+    fields = W3T_Split(token, ".");
+    if(fields.Size() != 6)
+    {
+        return "";
+    }
+    return fields[3];
 }
 
 // the seq field of a duel token ("<version>.<matchId>.<seq>.<type>.<args>.<hash>"), 0 if it has none

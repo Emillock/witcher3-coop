@@ -165,24 +165,28 @@ def test_suite_matrix_file_matches_the_matrix():
                                              "W3T_GWENT_REPLAY", "W3T_GWENT_SEED", "W3T_GWENT_SURRENDER_AT"]
 
 
-def test_suite_matrix_quits_a_game_only_in_its_last_entry():
+def test_suite_matrix_quits_a_game_only_in_its_last_entry() -> None:
     """W3T_GWENT_EXIT_AT ends a game: its entry runs last, so the duels before it share the launch."""
     exits = [i for i, (_, settings) in enumerate(run_suite.GWENT_DUEL_MATRIX) if "W3T_GWENT_EXIT_AT" in settings]
     assert exits == [len(run_suite.GWENT_DUEL_MATRIX) - 1]
     name, settings = run_suite.GWENT_DUEL_MATRIX[-1]
     assert settings["W3T_GWENT_EXPECT"] == "nocontest" and settings["W3T_GWENT_REASON"] == "opponent_left"
-    idle = [s for _, s in run_suite.GWENT_DUEL_MATRIX if "W3T_GWENT_IDLE_AT" in s]
+    idle = [s for _, s in run_suite.GWENT_DUEL_MATRIX if s.get("W3T_GWENT_IDLE_AT", "").isdigit()]
     assert idle and all(s["W3T_GWENT_REASON"] == "stuck_wait" and "W3T_GWENT_TIMED" not in s for s in idle)
+    at_end = [s for _, s in run_suite.GWENT_DUEL_MATRIX if s.get("W3T_GWENT_IDLE_AT") == "end"]
+    assert at_end and all(s["W3T_GWENT_FORCE_DRAW"] == "1" and s["W3T_GWENT_REPLAY"] == "0" for s in at_end)
 
 
-def test_exit_and_idle_are_per_entry_settings_the_bots_read():
+def test_exit_and_idle_are_per_entry_settings_the_bots_read() -> None:
+    """W3T_GWENT_EXIT_AT and W3T_GWENT_IDLE_AT go to the bots in the control file (an empty value clears it)."""
     assert "W3T_GWENT_EXIT_AT" in sm.ENTRY_SETTINGS and "W3T_GWENT_IDLE_AT" in sm.ENTRY_SETTINGS
     text = sm.control_text(3, {"W3T_GWENT_EXIT_AT": "6"})
     assert text.splitlines()[0] == "go 3"
     assert "W3T_GWENT_EXIT_AT=6" in text.splitlines() and "W3T_GWENT_IDLE_AT=" in text.splitlines()
 
 
-def test_planned_exit_only_for_bot_1_quitting_on_purpose():
+def test_planned_exit_only_for_bot_1_quitting_on_purpose() -> None:
+    """A game that ends during an entry is a planned exit only for bot 1, rc 0, with EXIT_AT and its exit line."""
     settings = {"W3T_GWENT_EXIT_AT": "6"}
     start = "10:00:00.000 SCENARIO gwent_duel start entry=4\n"
     part = start + "10:00:30.000 GWENT exit (board sent seq 6): quits the game\n"
@@ -193,7 +197,7 @@ def test_planned_exit_only_for_bot_1_quitting_on_purpose():
     assert not sm.planned_exit({"W3T_GWENT_EXIT_AT": ""}, 1, 0, part)
 
 
-def test_results_fit_when_bot_1_quit_its_game():
+def test_results_fit_when_bot_1_quit_its_game() -> None:
     """W3T_GWENT_EXIT_AT: bot 1 has no DUEL END (it quit mid-match); bot 0 must end as no contest."""
     left = "x GwentDuel: DUEL END result=nocontest reason=opponent_left game=0\n"
     assert run_test.gwent_results_agree_texts([left, "x GWENT exit (board sent seq 6): quits the game\n"], True)[0]

@@ -37,9 +37,11 @@ FRESH = ["quest_sync", "dialog_sync", "facts_sync", "real_encounter", "attack_vi
 # Match end (Task 14): a forced draw replayed by both, a forced draw that bot 1 leaves, bot 1 surrendering at seq 4, and
 # a desync on the last message of the match (the end of game message E): nobody pays; and a forced draw replayed by
 # both whose second game bot 1 surrenders through the board's close button (its 3rd message of game 1).
-# Opponent leaving and stuck waits (Task 15): bot 1 stops playing after its 4th message (both end nocontest,
-# stuck_wait, bot 1 through bot 0's Y, after the 120 s limit), and, last because a game quits (the harness then needs
-# fresh games), bot 1 quits its game after its 6th message (bot 0 ends nocontest, opponent_left).
+# Opponent leaving and stuck waits (Task 15): a forced draw that bot 1 never answers (bot 0 replays; its R wait ends
+# the draw with X after 120 s: replay_timeout and opponent_leave, no money), bot 1 stops playing after its 4th message
+# (both end nocontest, stuck_wait, bot 1 through bot 0's Y, after the 120 s limit), and, last because a game quits (the
+# harness then needs fresh games), bot 1 quits its game after its 6th message (bot 0 ends nocontest, opponent_left,
+# after the opponent's 30 s of silence).
 GWENT_DUEL_MATRIX = [
     (f"pirate_ske-pirate_ske-s{seed}", {"W3T_GWENT_DECKS": "pirate_ske,pirate_ske", "W3T_GWENT_SEED": seed}) for seed in ["1", "2", "3", "4", "5"]
 ] + [
@@ -70,6 +72,9 @@ GWENT_DUEL_MATRIX = [
     ("corrupt-end-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1", "W3T_GWENT_CORRUPT_AT": "end",
                                             "W3T_GWENT_EXPECT": "nocontest", "W3T_GWENT_REASON": "desync"}),
 ] + [
+    ("forcedraw-noreplay-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1",
+                                                   "W3T_GWENT_FORCE_DRAW": "1", "W3T_GWENT_REPLAY": "0",
+                                                   "W3T_GWENT_IDLE_AT": "end"}),
     ("idle4-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1", "W3T_GWENT_IDLE_AT": "4",
                                       "W3T_GWENT_EXPECT": "nocontest", "W3T_GWENT_REASON": "stuck_wait"}),
     ("exit6-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1", "W3T_GWENT_EXIT_AT": "6",
