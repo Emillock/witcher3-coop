@@ -330,6 +330,9 @@ statemachine class W3T_Gwent
             {
                 thePlayer.AddMoney(duelBet - thePlayer.GetMoney());
             }
+            // read here, before the deck goes out: the guest may accept the challenge before its next step runs
+            moneyBefore = thePlayer.GetMoney();
+            W3T_Log("GWENT duel money before=" + moneyBefore + " bet=" + duelBet);
             W3T_Log("GWENT duel deck " + deckEntry + " (leader " + NameToString(duelDeck.leaderCard) + ", " + duelDeck.cards.Size()
                 + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", corrupt at "
                 + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan + ", leader first "
@@ -345,8 +348,6 @@ statemachine class W3T_Gwent
             {
                 return false;
             }
-            moneyBefore = thePlayer.GetMoney();
-            W3T_Log("GWENT duel money before=" + moneyBefore + " bet=" + duelBet);
             if(host)
             {
                 seed = StringToInt(W3T_GetEnv("W3T_GWENT_SEED"), 0);
