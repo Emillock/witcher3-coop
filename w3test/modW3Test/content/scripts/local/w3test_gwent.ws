@@ -19,7 +19,7 @@
 //   these). Bot 0 (W3T_ROLE mover, the host, seat A) challenges bot 1 for W3T_GWENT_BET crowns (default 10;
 //   W3T_GWENT_TIMED=1 for a timed duel, W3T_GWENT_SEED forces the seed), bot 1 accepts in Witcher Online's popup (see
 //   w3test.ws), and both boards play themselves (CR4GwintManager.duelDebugAutoplay; W3T_GWENT_MULLIGAN=1 redraws at
-//   the mulligan, default 0 declines). W3T_GWENT_BREAK_TEMPLATES=1 makes bot 0's board send a wrong card table hash.
+//   the mulligan, default 0 declines; W3T_GWENT_LEADER_FIRST=1 makes autoplay play its leader as soon as it can). W3T_GWENT_BREAK_TEMPLATES=1 makes bot 0's board send a wrong card table hash.
 //   W3T_GWENT_CORRUPT_AT=<seq> makes bot 0's board add 1 to one card's power right before it sends that seq, so the
 //   peer's hash check fails (desync: both boards must log DUEL DESYNC and end as no contest, reason desync).
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
@@ -253,6 +253,7 @@ statemachine class W3T_Gwent
         manager.duelDebugAutoplay = false;
         manager.duelSelfTest = false;
         manager.duelDebugMulligan = false;
+        manager.duelDebugLeaderFirst = false;
         manager.duelDebugBreakTemplates = false;
         manager.duelDebugCorruptAt = 0;
         minigame = thePlayer.GetGwintMinigameState();
@@ -317,6 +318,7 @@ statemachine class W3T_Gwent
             // monsters roam near the test save; a dead bot never gets to its board
             thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
             manager.duelDebugMulligan = W3T_GetEnv("W3T_GWENT_MULLIGAN") == "1";
+            manager.duelDebugLeaderFirst = W3T_GetEnv("W3T_GWENT_LEADER_FIRST") == "1";
             manager.duelDebugBreakTemplates = host && W3T_GetEnv("W3T_GWENT_BREAK_TEMPLATES") == "1";
             manager.duelDebugCorruptAt = 0;
             if(host)
@@ -330,7 +332,8 @@ statemachine class W3T_Gwent
             }
             W3T_Log("GWENT duel deck " + deckEntry + " (leader " + NameToString(duelDeck.leaderCard) + ", " + duelDeck.cards.Size()
                 + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", corrupt at "
-                + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan);
+                + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan + ", leader first "
+                + manager.duelDebugLeaderFirst);
             duelStep = 1;
             duelStepAt = bot.ElapsedS();
             return false;

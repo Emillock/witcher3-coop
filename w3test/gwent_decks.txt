@@ -21,9 +21,9 @@
 # weather_nml: Monsters with eredin_bronze (pick a weather card from the deck: D LWEA, since the deck holds three
 #   different weather cards).
 # bin_nml: Monsters with eredin_gold (discard two hand cards, then take one from the deck: two D LBIN and one D LPICK).
-#   The vanilla AI never plays this leader (its AI value is -1), so autoplay does not reach these decisions by itself.
+#   The vanilla AI never plays this leader (its AI value is -1): use W3T_GWENT_LEADER_FIRST=1 to reach them.
 # view_nilf: Nilfgaard with emhyr_bronze (shows three of the opponent's hand cards on the leader owner's board only;
-#   nothing is sent).
+#   nothing is sent). The AI rarely plays it or eredin_bronze either; W3T_GWENT_LEADER_FIRST=1 makes autoplay do so.
 #
 # Built-in deck names (W3T_GWENT_DECKS=North,...) come from def_gwint_decks.xml through GetDeck(name, 1): North and
 # NilfEasy hold cards, while Nilf, nml, scotial and ske are the player's starter decks with a leader and no cards.

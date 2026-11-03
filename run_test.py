@@ -66,6 +66,15 @@ def script_int_seed(value: str) -> str:
     return value
 
 
+GWENT_AUTOPLAY_SWITCHES = ("W3T_GWENT_MULLIGAN", "W3T_GWENT_LEADER_FIRST")
+
+
+def gwent_autoplay_switches(env: dict) -> list[str]:
+    """The gwent_duel autoplay switches set in env ("NAME=value"), which the test mod hands to both boards:
+    W3T_GWENT_MULLIGAN=1 redraws two cards at the mulligan, W3T_GWENT_LEADER_FIRST=1 plays a usable leader first."""
+    return [f"{name}={env[name]}" for name in GWENT_AUTOPLAY_SWITCHES if env.get(name)]
+
+
 def gwent_logdiff(run_dir: str, n: int) -> tuple[int, str]:
     """Compares the two bots' duel logs with WitcherOnline's duel_logdiff.py; returns (exit code, its output)."""
     if n < 2:
@@ -402,6 +411,9 @@ def main():
         # StringToInt reads "4000000000" as 0 (not forced); pass the same 32 bits as a signed int
         os.environ["W3T_GWENT_SEED"] = script_int_seed(os.environ["W3T_GWENT_SEED"])
         print(f"W3T_GWENT_SEED={os.environ['W3T_GWENT_SEED']}", flush=True)
+    if a.scenario == GWENT_DUEL:
+        for switch in gwent_autoplay_switches(dict(os.environ)):
+            print(switch, flush=True)
 
     run_dir = os.path.join(RUNS, time.strftime("%Y%m%d-%H%M%S") + "-" + (f"session{len(session)}" if session else a.scenario)
                            + ("-steam" if a.steam_box else "-relay" if a.relay else "")
