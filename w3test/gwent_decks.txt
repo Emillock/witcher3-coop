@@ -13,6 +13,9 @@
 #   resurrect leaders pick at random), non-hero medics and the agile olgierd (the medic's row choice, spec 7.3).
 # res_nml: Monsters with a resurrect leader (eredin_silver: a dialog, random against invader_nilf).
 # crach_ske: Skellige with Crach an Craite (shuffles both graveyards into the decks, no choice).
+# tricks_nr, tricks_nilf: plain units plus decoys, scorch, the four weather cards and a horn, so moves onto a card
+#   (decoy: C), global moves (scorch: G), weather plays (P to the weather slot, seat N) and horns go over the wire;
+#   none of them asks a choice.
 #
 # Built-in deck names (W3T_GWENT_DECKS=North,...) come from def_gwint_decks.xml through GetDeck(name, 1): North and
 # NilfEasy hold cards, while Nilf, nml, scotial and ske are the player's starter decks with a leader and no cards.
@@ -27,3 +30,5 @@ agile_medic: eredin_copper+yennefer+harpy+celaeno_harpy+kayran+olgierd+draug+iml
 invader_nilf: emhyr_platinium+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+archer_support+archer_support2+siege_support+olgierd+heavy_zerri+zerri+combat_engineer
 res_nml: eredin_silver+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental+fogling+wyvern+vesemir+zoltan+emiel+roach
 crach_ske: Crach_an_Craite+hemdal+hjalmar+madman_lugos+donar_an_hindar+udalryk+blueboy_lugos+svanrige+holger_blackhand+clan_brokvar_archer+clan_tordarroch_armorsmith+clan_heymaey_skald+clan_an_craite_warrior+clan_drummond_shieldmaiden+clan_drummond_shieldmaiden2+clan_drummond_shieldmaiden3+war_drakkar+vesemir+zoltan+emiel+roach+geralt+triss
+tricks_nr: foltest_silver+vernon+natalis+esterad+philippa+ves+siegfried+yarpen+keira+sile+sabrina+sheldon+dethmold+trebuchet+ballista+siege_tower+redanian+dummy+dummy+scorch+frost+fog+rain+clear_sky+horn
+tricks_nilf: emhyr_copper+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+dummy+dummy+scorch+frost+fog+rain+clear_sky+horn
