@@ -33,6 +33,11 @@
 //   that game (for example 1:3 in a replayed game). The bot presses the board's close button (duelDebugPressClose, the
 //   vanilla handleCloseClick) and accepts the surrender popup the board asks for (OnConfirmSurrender), so the whole
 //   player path runs (expected: bot 0 result=win, bot 1 result=loss, both reason=surrender, the bet paid).
+//   Opponent leaving and stuck waits: W3T_GWENT_EXIT_AT=<seq> makes bot 1 quit its game process once its board sent
+//   that seq (it logs "GWENT exit ..." and its own pass line first: quitting is its whole part; expected on bot 0:
+//   W3T_GWENT_EXPECT=nocontest, reason opponent_left). W3T_GWENT_IDLE_AT=<seq> makes bot 1 stop playing once its
+//   board sent that seq (the bot turns its board's autoplay off, so the board waits for a player who never acts;
+//   expected on both bots in Normal mode: nocontest, reason stuck_wait, bot 1 through the opponent's Y).
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
@@ -113,6 +118,11 @@ statemachine class W3T_Gwent
     public var surrenderGame : int;     // the game of W3T_GWENT_SURRENDER_AT=<game>:<n>, -1 for a plain seq
     public var surrenderSent : int;     // the board's messages of surrenderGame so far
     public var surrenderDue : bool;     // the board sent seq surrenderAt: surrender on the next frame
+    public var exitAt : int;            // W3T_GWENT_EXIT_AT on bot 1, else 0
+    public var exitDue : bool;          // the board sent seq exitAt: quit the game on the next frame
+    public var idleAt : int;            // W3T_GWENT_IDLE_AT on bot 1, else 0
+    public var idleDue : bool;          // the board sent seq idleAt: stop playing on the next frame
+    public var idle : bool;             // the board's autoplay was turned off (W3T_GWENT_IDLE_AT)
     public var duelPassed : bool;
     public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
     public var combatLogged : bool;     // EndCombat found this bot in combat once already
@@ -221,6 +231,19 @@ statemachine class W3T_Gwent
             W3T_Log("GWENT surrender (board sent " + W3T_GetEnv("W3T_GWENT_SURRENDER_AT") + "): presses the board's close button");
             menu.W3T_PressClose();
         }
+        if(duel && exitDue)
+        {
+            // quitting the game is this bot's whole part of the duel: its pass line goes first
+            W3T_Log("GWENT exit (board sent seq " + exitAt + "): quits the game");
+            W3T_Log("PASS condition met at t=" + FloatToStringPrec(theGame.w3t_bot.ElapsedS(), 1) + " scenario=gwent_duel");
+            W3T_Quit(0);
+        }
+        if(duel && idleDue && !idle)
+        {
+            idle = true;
+            W3T_Log("GWENT idle (board sent seq " + idleAt + "): autoplay off, the board waits for this player");
+            menu.W3T_SetAutoplay(false);
+        }
         if(duel || !boardOpen || surrendered)
         {
             return;
@@ -300,6 +323,11 @@ statemachine class W3T_Gwent
             if(surrenderAt > 0 && StrStartsWith(line, "DUEL SEND "))
             {
                 SurrenderCount(StrAfterFirst(line, "DUEL SEND "));
+            }
+            if(StrStartsWith(line, "DUEL SEND "))
+            {
+                exitDue = exitDue || (exitAt > 0 && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= exitAt);
+                idleDue = idleDue || (idleAt > 0 && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= idleAt);
             }
             if(StrStartsWith(line, "DUEL DYNAMIC "))
             {
@@ -419,9 +447,13 @@ statemachine class W3T_Gwent
             manager.duelDebugReplay = W3T_GetEnv("W3T_GWENT_REPLAY") == "1" || (host && W3T_GetEnv("W3T_GWENT_REPLAY") == "0");
             surrenderAt = 0;
             surrenderGame = -1;
+            exitAt = 0;
+            idleAt = 0;
             if(!host)
             {
                 SurrenderSetting(W3T_GetEnv("W3T_GWENT_SURRENDER_AT"));
+                exitAt = StringToInt(W3T_GetEnv("W3T_GWENT_EXIT_AT"), 0);
+                idleAt = StringToInt(W3T_GetEnv("W3T_GWENT_IDLE_AT"), 0);
             }
             duelBet = StringToInt(W3T_GetEnv("W3T_GWENT_BET"), 10);
             if(thePlayer.GetMoney() < duelBet)
@@ -435,7 +467,10 @@ statemachine class W3T_Gwent
                 + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", corrupt at "
                 + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan + ", leader first "
                 + manager.duelDebugLeaderFirst + ", force draw " + manager.duelDebugForceDraw + ", replay "
-                + manager.duelDebugReplay + ", surrender at " + surrenderAt);
+                + manager.duelDebugReplay + ", surrender at " + surrenderAt + ", exit at " + exitAt + ", idle at " + idleAt);
+            // the watcher (Poll: surrender, exit, idle) runs from now on: the host may challenge before this bot's own
+            // step 1, and once the board is up the paused game stalls the bot's steps, never the watcher's frames
+            GotoState('W3T_GwentWatching');
             duelStep = 1;
             duelStepAt = bot.ElapsedS();
             return false;
@@ -454,7 +489,6 @@ statemachine class W3T_Gwent
                     + (W3T_GetEnv("W3T_GWENT_TIMED") == "1") + ")");
                 client.W3T_GwentChallenge(peer.id, W3T_GetEnv("W3T_GWENT_TIMED") == "1", duelBet, seed);
             }
-            GotoState('W3T_GwentWatching');
             duelStep = 2;
             duelStepAt = bot.ElapsedS();
             return false;
@@ -998,6 +1032,14 @@ function W3T_PressClose()
     {
         fx.InvokeSelf();
     }
+}
+
+// gwent_duel: W3T_GWENT_IDLE_AT turns the board's autoplay off mid-match (the board then waits for a player who never
+// acts; Witcher Online's script only sets gwint.game.debug.autoplay when the menu opens)
+@addMethod(CR4GwintGameMenu)
+function W3T_SetAutoplay(enabled : bool)
+{
+    m_flashValueStorage.SetFlashBool("gwint.game.debug.autoplay", enabled);
 }
 
 // gwent_duel: the surrender popup the board asks for after the bot pressed its close button is accepted at once (as

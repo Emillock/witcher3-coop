@@ -380,6 +380,12 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
     {
         if(players.Size() < 1)
         {
+            // the peer may have quit its game (W3T_GWENT_EXIT_AT): a duel under way goes on to its verdict without it
+            // (only the challenge, step 1, needs the peer)
+            if(theGame.w3t_gwent && theGame.w3t_gwent.duelStep >= 2)
+            {
+                return W3T_GwentDuel(bot, client, NULL);
+            }
             return false;
         }
         return W3T_GwentDuel(bot, client, players[0]);

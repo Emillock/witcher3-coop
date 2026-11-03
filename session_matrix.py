@@ -18,7 +18,7 @@ from dataclasses import dataclass
 ENTRY_SETTINGS = ("W3T_GWENT_DECKS", "W3T_GWENT_SEED", "W3T_GWENT_MULLIGAN", "W3T_GWENT_LEADER_FIRST",
                   "W3T_GWENT_CORRUPT_AT", "W3T_GWENT_BREAK_TEMPLATES", "W3T_GWENT_EXPECT", "W3T_GWENT_REASON",
                   "W3T_GWENT_BET", "W3T_GWENT_TIMED", "W3T_GWENT_FORCE_DRAW", "W3T_GWENT_REPLAY",
-                  "W3T_GWENT_SURRENDER_AT")
+                  "W3T_GWENT_SURRENDER_AT", "W3T_GWENT_EXIT_AT", "W3T_GWENT_IDLE_AT")
 # per-entry settings only the harness reads (never sent to the bots)
 HARNESS_SETTINGS = ("W3T_GWENT_LOGDIFF",)
 SETTINGS = ENTRY_SETTINGS + HARNESS_SETTINGS
@@ -155,6 +155,18 @@ def entry_state(segments: list[str], scenario: str, elapsed: float, limit: float
     if all(pattern.search(s) or failed_marker(scenario) in s for s in segments):
         return "decided"
     return "hung" if elapsed > limit else "running"
+
+
+# the line bot 1 logs right before it quits its game on purpose (W3T_GWENT_EXIT_AT, w3test_gwent.ws)
+EXIT_MARKER = "GWENT exit (board sent seq "
+# the bot that quits with W3T_GWENT_EXIT_AT (the guest, bot 1)
+EXIT_BOT = 1
+
+
+def planned_exit(settings: dict[str, str], bot: int, rc: int, segment: str) -> bool:
+    """Whether a game that ended during an entry quit on purpose: the entry sets W3T_GWENT_EXIT_AT, it is bot 1's game,
+    it ended with exit code 0, and its log part says it quits (EXIT_MARKER)."""
+    return bool(settings.get("W3T_GWENT_EXIT_AT")) and bot == EXIT_BOT and rc == 0 and EXIT_MARKER in segment
 
 
 def entry_started(segments: list[str]) -> bool:

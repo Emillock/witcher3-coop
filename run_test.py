@@ -99,9 +99,10 @@ END_TOKEN_RE = re.compile(r"\b\d+\.[0-9a-f]+g\d+\.\d+\.E\.")
 OPPOSITE_RESULT = {"win": "loss", "loss": "win", "draw": "draw", "nocontest": "nocontest"}
 
 
-def gwent_results_agree(run_dir: str, n: int) -> tuple[bool, str]:
+def gwent_results_agree(run_dir: str, n: int, exited: bool = False) -> tuple[bool, str]:
     """Whether the two bots' last DUEL END results fit together (win with loss, draw with draw, no contest with no
-    contest); returns (ok, the two results)."""
+    contest; with exited, W3T_GWENT_EXIT_AT, bot 1 quit its game mid-match: bot 0 no contest, bot 1 none); returns
+    (ok, the two results)."""
     if n < 2:
         return True, "skipped (one bot)"
     texts = []
@@ -111,16 +112,20 @@ def gwent_results_agree(run_dir: str, n: int) -> tuple[bool, str]:
                 texts.append(f.read())
         except OSError:
             texts.append("")
-    return gwent_results_agree_texts(texts)
+    return gwent_results_agree_texts(texts, exited)
 
 
-def gwent_results_agree_texts(texts: list[str]) -> tuple[bool, str]:
+def gwent_results_agree_texts(texts: list[str], exited: bool = False) -> tuple[bool, str]:
     """gwent_results_agree on the two bots' log texts (or a session entry's parts of them)."""
     results = []
     for text in texts[:2]:
         found = DUEL_END_RE.findall(text)
         results.append(found[-1] if found else "none")
-    return OPPOSITE_RESULT.get(results[0]) == results[1], f"{bot_name(0)} {results[0]}, {bot_name(1)} {results[1]}"
+    if exited:
+        ok = results == ["nocontest", "none"]
+    else:
+        ok = OPPOSITE_RESULT.get(results[0]) == results[1]
+    return ok, f"{bot_name(0)} {results[0]}, {bot_name(1)} {results[1]}"
 
 
 def bot_settings(entry: sm.Entry, base_env: dict) -> dict[str, str]:
@@ -453,7 +458,7 @@ class MatrixRun:
         diff_ok, diff_why = gwent_logdiff_verdict(rc, text, settings["W3T_GWENT_CORRUPT_AT"])
         if not diff_ok and mode != "report" and ok:
             ok, why = False, diff_why
-        agree, results = gwent_results_agree_texts([logs[0], logs[1]])
+        agree, results = gwent_results_agree_texts([logs[0], logs[1]], bool(settings["W3T_GWENT_EXIT_AT"]))
         print(f"--- {entry.label} duel results: {results}", flush=True)
         if not agree and ok:
             ok, why = False, f"the bots' duel results do not fit together: {results}"
@@ -580,6 +585,11 @@ def launch(a: argparse.Namespace, game_args: list[str], run_dir: str, session: l
                         print(f"[{time.time() - t0:6.1f}s] {entry.label} hung: ending this launch", flush=True)
                         end = "hung"
                         break
+                    if any(("rc", i) in seen for i in range(len(procs))) and len(results) < len(session):
+                        # a game quit on purpose during this entry (W3T_GWENT_EXIT_AT): the next one gets fresh games
+                        print(f"[{time.time() - t0:6.1f}s] {entry.label} ended a game: the next entry gets fresh games", flush=True)
+                        end = "exited"
+                        break
                     sm.write_control(control, matrix.control(index + 1))
             elif session and len(procs) == a.bots and len(results) < len(session):
                 # the scenario under way: on to the next once every bot passed it (or reported its failure), or it
@@ -625,23 +635,30 @@ def launch(a: argparse.Namespace, game_args: list[str], run_dir: str, session: l
             if matrix:
                 # a game ended (crashed, or its bot cannot go on) before the session was over: the entry under way
                 # failed, the next one gets fresh games
-                exits = [f"{bot_name(i)} rc={seen[('rc', i)]}" for i in range(len(procs)) if ("rc", i) in seen]
+                gone = [i for i in range(len(procs)) if ("rc", i) in seen]
+                exits = [f"{bot_name(i)} rc={seen[('rc', i)]}" for i in gone]
                 if exits and len(results) < len(session):
                     index = len(results)
                     entry = matrix.entries[index]
                     logs = {i: sm.cut_entry(read_log(run_dir, i), index, entry.scenario) for i in range(a.bots)}
-                    if not sm.entry_started(list(logs.values())):
+                    if all(sm.planned_exit(matrix.settings[index], i, seen[("rc", i)], logs[i]) for i in gone):
+                        # bot 1 quit its game on purpose (W3T_GWENT_EXIT_AT): the entry goes on to its verdict
+                        if ("planned", index) not in seen:
+                            seen[("planned", index)] = True
+                            print(f"[{time.time() - t0:6.1f}s] {entry.label}: {', '.join(exits)} quit on purpose (W3T_GWENT_EXIT_AT)", flush=True)
+                    elif not sm.entry_started(list(logs.values())):
                         matrix.unstarted_why = f"a game ended before it started ({', '.join(exits)})"
                         print(f"[{time.time() - t0:6.1f}s] {entry.label} not started: {matrix.unstarted_why}", flush=True)
                         end = "unstarted"
                         break
-                    _, why = check(entry.scenario, logs, a.bots)
-                    why = f"a game ended during it ({', '.join(exits)}): {why}"
-                    matrix.judge(index, logs, False, why)
-                    results.append((entry.label, False, why))
-                    print(f"[{time.time() - t0:6.1f}s] RESULT {entry.label}: FAIL ({why}) [{time.time() - go_at:.0f}s]", flush=True)
-                    end = "exited"
-                    break
+                    else:
+                        _, why = check(entry.scenario, logs, a.bots)
+                        why = f"a game ended during it ({', '.join(exits)}): {why}"
+                        matrix.judge(index, logs, False, why)
+                        results.append((entry.label, False, why))
+                        print(f"[{time.time() - t0:6.1f}s] RESULT {entry.label}: FAIL ({why}) [{time.time() - go_at:.0f}s]", flush=True)
+                        end = "exited"
+                        break
             # a failed bot decides the run; its peers would only wait for the timeout
             elif any(seen.get(("rc", i)) not in (None, 0) for i in range(len(procs))):
                 print(f"[{time.time() - t0:6.1f}s] a bot failed; stopping the run", flush=True)
@@ -871,7 +888,7 @@ def main() -> int:
         diff_ok, diff_why = gwent_logdiff_verdict(rc, text, os.environ.get("W3T_GWENT_CORRUPT_AT", ""))
         if not diff_ok and mode != "report" and ok:
             ok, why = False, diff_why
-        agree, results = gwent_results_agree(run_dir, a.bots)
+        agree, results = gwent_results_agree(run_dir, a.bots, bool(os.environ.get("W3T_GWENT_EXIT_AT")))
         print(f"--- duel results: {results}")
         if not agree and ok:
             ok, why = False, f"the bots' duel results do not fit together: {results}"
