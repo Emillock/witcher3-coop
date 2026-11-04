@@ -40,6 +40,12 @@
 //   expected on both bots in Normal mode: nocontest, reason stuck_wait, bot 1 through the opponent's Y);
 //   W3T_GWENT_IDLE_AT=end once its board sent its E (with W3T_GWENT_FORCE_DRAW=1 and W3T_GWENT_REPLAY=0 bot 1 then
 //   never answers the end screen: bot 0 replays and ends draw replay_timeout, bot 1 draw opponent_leave).
+//   Timed mode: W3T_GWENT_IDLE_SEAT=<A|B> turns that seat's autoplay off from the start of the duel, the mulligan
+//   included, so only its board's turn timer acts for it (with W3T_GWENT_TIMED=1: the mulligan, each turn and each
+//   decision of that seat end after 60 s); once its board sent its E the bot turns autoplay on again, only so the end
+//   screen closes and the result settles. Expected: the idle seat loses (result=loss reason=match, at least one
+//   "DUEL TIMER expired" line), the other wins. Not combined with W3T_GWENT_IDLE_AT. Every duel without
+//   W3T_GWENT_TIMED=1 must log no "DUEL TIMER" line (Normal mode has no timer).
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
@@ -126,6 +132,11 @@ statemachine class W3T_Gwent
     public var idleAtEnd : bool;        // W3T_GWENT_IDLE_AT=end on bot 1: idle once its board sent its E
     public var idleDue : bool;          // the board sent seq idleAt: stop playing on the next frame
     public var idle : bool;             // the board's autoplay was turned off (W3T_GWENT_IDLE_AT)
+    public var idleSeat : bool;         // W3T_GWENT_IDLE_SEAT names this bot's seat: no autoplay from the start
+    public var idleSeatWakeDue : bool;  // the idle seat's board sent its E: autoplay on again on the next frame
+    public var idleSeatAwake : bool;    // autoplay is on again (the end screen closes)
+    public var timerLine : string;      // the board's first "DUEL TIMER" line
+    public var timerExpiries : int;     // its "DUEL TIMER expired" lines
     public var duelPassed : bool;
     public var challengePopup : CR4ItemSelectionPopup;   // the guest's open challenge popup, accepted on the next step
     public var combatLogged : bool;     // EndCombat found this bot in combat once already
@@ -247,6 +258,12 @@ statemachine class W3T_Gwent
             W3T_Log("GWENT idle (board sent " + W3T_GetEnv("W3T_GWENT_IDLE_AT") + "): autoplay off, the board waits for this player");
             menu.W3T_SetAutoplay(false);
         }
+        if(duel && idleSeatWakeDue && !idleSeatAwake)
+        {
+            idleSeatAwake = true;
+            W3T_Log("GWENT idle seat: its board sent its E, autoplay on again (closes the end screen)");
+            menu.W3T_SetAutoplay(true);
+        }
         if(duel || !boardOpen || surrendered)
         {
             return;
@@ -332,6 +349,15 @@ statemachine class W3T_Gwent
                 exitDue = exitDue || (exitAt > 0 && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= exitAt);
                 idleDue = idleDue || (idleAt > 0 && W3T_GwentTokenSeq(StrAfterFirst(line, "DUEL SEND ")) >= idleAt);
                 idleDue = idleDue || (idleAtEnd && W3T_GwentTokenType(StrAfterFirst(line, "DUEL SEND ")) == "E");
+                idleSeatWakeDue = idleSeatWakeDue || (idleSeat && W3T_GwentTokenType(StrAfterFirst(line, "DUEL SEND ")) == "E");
+            }
+            if(timerLine == "" && StrStartsWith(line, "DUEL TIMER"))
+            {
+                timerLine = line;
+            }
+            if(StrStartsWith(line, "DUEL TIMER expired"))
+            {
+                timerExpiries += 1;
             }
             if(StrStartsWith(line, "DUEL DYNAMIC "))
             {
@@ -436,7 +462,9 @@ statemachine class W3T_Gwent
             manager.SetHasDoneTutorial(true);
             manager.SetHasDoneDeckTutorial(true);
             manager.setDoubleAIEnabled(false);
-            manager.duelDebugAutoplay = true;
+            // W3T_GWENT_IDLE_SEAT: this seat's board waits for a player who never acts, from the mulligan on
+            idleSeat = W3T_GetEnv("W3T_GWENT_IDLE_SEAT") == W3T_GwentSeatName(host);
+            manager.duelDebugAutoplay = !idleSeat;
             // monsters roam near the test save; a dead bot never gets to its board
             thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
             manager.duelDebugMulligan = W3T_GetEnv("W3T_GWENT_MULLIGAN") == "1";
@@ -472,7 +500,8 @@ statemachine class W3T_Gwent
                 + " cards), host " + host + ", break templates " + manager.duelDebugBreakTemplates + ", corrupt at "
                 + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan + ", leader first "
                 + manager.duelDebugLeaderFirst + ", force draw " + manager.duelDebugForceDraw + ", replay "
-                + manager.duelDebugReplay + ", surrender at " + surrenderAt + ", exit at " + exitAt + ", idle at " + idleAt);
+                + manager.duelDebugReplay + ", surrender at " + surrenderAt + ", exit at " + exitAt + ", idle at " + idleAt
+                + ", idle seat " + idleSeat);
             // the watcher (Poll: surrender, exit, idle) runs from now on: the host may challenge before this bot's own
             // step 1, and once the board is up the paused game stalls the bot's steps, never the watcher's frames
             GotoState('W3T_GwentWatching');
@@ -643,6 +672,10 @@ statemachine class W3T_Gwent
                 why = MatchEndProblem(host, outcome, reason, game);
             }
         }
+        if(why == "" && W3T_GetEnv("W3T_GWENT_TIMED") != "1" && timerLine != "")
+        {
+            why = "a Normal duel shows no timer, got [" + timerLine + "]";
+        }
         if(why == "" && moneyAfter - moneyBefore != wanted)
         {
             why = "money moved by " + (moneyAfter - moneyBefore) + ", expected " + wanted;
@@ -689,6 +722,23 @@ statemachine class W3T_Gwent
             if(outcome != wanted || reason != "surrender")
             {
                 return "expected result=" + wanted + " reason=surrender";
+            }
+        }
+        if(W3T_GetEnv("W3T_GWENT_IDLE_SEAT") != "")
+        {
+            // only the idle seat's turn timer plays for it: it passes every round without a card
+            wanted = "win";
+            if(idleSeat)
+            {
+                wanted = "loss";
+            }
+            if(outcome != wanted || reason != "match")
+            {
+                return "expected result=" + wanted + " reason=match for idle seat " + W3T_GetEnv("W3T_GWENT_IDLE_SEAT");
+            }
+            if(idleSeat && timerExpiries < 1)
+            {
+                return "expected the idle seat's board to log DUEL TIMER expired";
             }
         }
         if(W3T_GetEnv("W3T_GWENT_FORCE_DRAW") != "1")

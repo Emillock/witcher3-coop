@@ -42,6 +42,8 @@ FRESH = ["quest_sync", "dialog_sync", "facts_sync", "real_encounter", "attack_vi
 # (both end nocontest, stuck_wait, bot 1 through bot 0's Y, after the 120 s limit), and, last because a game quits (the
 # harness then needs fresh games), bot 1 quits its game after its 6th message (bot 0 ends nocontest, opponent_left,
 # after the opponent's 30 s of silence).
+# Timed mode (Task 16): seat B never acts (W3T_GWENT_IDLE_SEAT=B), so only its board's 60 s timer plays for it: its
+# mulligan ends as done, each of its turns as a pass; seat A wins, B loses, the bet moves. And a Timed duel both play.
 GWENT_DUEL_MATRIX = [
     (f"pirate_ske-pirate_ske-s{seed}", {"W3T_GWENT_DECKS": "pirate_ske,pirate_ske", "W3T_GWENT_SEED": seed}) for seed in ["1", "2", "3", "4", "5"]
 ] + [
@@ -77,6 +79,9 @@ GWENT_DUEL_MATRIX = [
                                                    "W3T_GWENT_IDLE_AT": "end"}),
     ("idle4-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1", "W3T_GWENT_IDLE_AT": "4",
                                       "W3T_GWENT_EXPECT": "nocontest", "W3T_GWENT_REASON": "stuck_wait"}),
+    ("timed-idleB-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1", "W3T_GWENT_TIMED": "1",
+                                           "W3T_GWENT_IDLE_SEAT": "B"}),
+    ("timed-plain_nr-plain_nilf-s12345", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "12345", "W3T_GWENT_TIMED": "1"}),
     ("exit6-plain_nr-plain_nilf-s1", {"W3T_GWENT_DECKS": "plain_nr,plain_nilf", "W3T_GWENT_SEED": "1", "W3T_GWENT_EXIT_AT": "6",
                                       "W3T_GWENT_EXPECT": "nocontest", "W3T_GWENT_REASON": "opponent_left"}),
 ]

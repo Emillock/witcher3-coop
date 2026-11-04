@@ -161,8 +161,9 @@ def test_suite_matrix_file_matches_the_matrix():
     # only the switches some entry sets are cleared from the environment of the runs it starts (as before Task 13b)
     assert run_suite.GWENT_DUEL_SWITCHES == ["W3T_GWENT_CORRUPT_AT", "W3T_GWENT_DECKS", "W3T_GWENT_EXIT_AT",
                                              "W3T_GWENT_EXPECT", "W3T_GWENT_FORCE_DRAW", "W3T_GWENT_IDLE_AT",
-                                             "W3T_GWENT_LEADER_FIRST", "W3T_GWENT_MULLIGAN", "W3T_GWENT_REASON",
-                                             "W3T_GWENT_REPLAY", "W3T_GWENT_SEED", "W3T_GWENT_SURRENDER_AT"]
+                                             "W3T_GWENT_IDLE_SEAT", "W3T_GWENT_LEADER_FIRST", "W3T_GWENT_MULLIGAN",
+                                             "W3T_GWENT_REASON", "W3T_GWENT_REPLAY", "W3T_GWENT_SEED",
+                                             "W3T_GWENT_SURRENDER_AT", "W3T_GWENT_TIMED"]
 
 
 def test_suite_matrix_quits_a_game_only_in_its_last_entry() -> None:
@@ -183,6 +184,27 @@ def test_exit_and_idle_are_per_entry_settings_the_bots_read() -> None:
     text = sm.control_text(3, {"W3T_GWENT_EXIT_AT": "6"})
     assert text.splitlines()[0] == "go 3"
     assert "W3T_GWENT_EXIT_AT=6" in text.splitlines() and "W3T_GWENT_IDLE_AT=" in text.splitlines()
+
+
+def test_idle_seat_is_a_per_entry_setting_the_bots_read() -> None:
+    """R55: W3T_GWENT_IDLE_SEAT goes to the bots in the control file like W3T_GWENT_IDLE_AT."""
+    assert "W3T_GWENT_IDLE_SEAT" in sm.ENTRY_SETTINGS and "W3T_GWENT_IDLE_SEAT" not in sm.HARNESS_SETTINGS
+    lines = sm.control_text(5, {"W3T_GWENT_IDLE_SEAT": "B"}).splitlines()
+    assert lines[0] == "go 5" and "W3T_GWENT_IDLE_SEAT=B" in lines
+    assert "W3T_GWENT_IDLE_SEAT=" in sm.control_text(6, {}).splitlines()
+
+
+def test_suite_matrix_has_the_timed_duels() -> None:
+    """R55: a Timed duel whose seat B never acts (A must win, B lose, the bet moves: the verdict's default) and a Timed
+    duel both play; Timed is never combined with W3T_GWENT_IDLE_AT, and the idle seat's entry expects a result."""
+    timed = {name: s for name, s in run_suite.GWENT_DUEL_MATRIX if s.get("W3T_GWENT_TIMED") == "1"}
+    idle = [s for s in timed.values() if s.get("W3T_GWENT_IDLE_SEAT") == "B"]
+    played = [s for s in timed.values() if "W3T_GWENT_IDLE_SEAT" not in s]
+    assert len(idle) == 1 and played
+    assert all("W3T_GWENT_IDLE_AT" not in s for s in timed.values())
+    assert all(s.get("W3T_GWENT_EXPECT", "result") == "result" for s in timed.values())
+    seats = [s["W3T_GWENT_IDLE_SEAT"] for _, s in run_suite.GWENT_DUEL_MATRIX if "W3T_GWENT_IDLE_SEAT" in s]
+    assert set(seats) <= {"A", "B"}
 
 
 def test_planned_exit_only_for_bot_1_quitting_on_purpose() -> None:
