@@ -162,8 +162,8 @@ def test_suite_matrix_file_matches_the_matrix():
     assert run_suite.GWENT_DUEL_SWITCHES == ["W3T_GWENT_CORRUPT_AT", "W3T_GWENT_DECKS", "W3T_GWENT_EXIT_AT",
                                              "W3T_GWENT_EXPECT", "W3T_GWENT_FORCE_DRAW", "W3T_GWENT_IDLE_AT",
                                              "W3T_GWENT_IDLE_SEAT", "W3T_GWENT_LEADER_FIRST", "W3T_GWENT_MULLIGAN",
-                                             "W3T_GWENT_REASON", "W3T_GWENT_REPLAY", "W3T_GWENT_SEED",
-                                             "W3T_GWENT_SURRENDER_AT", "W3T_GWENT_TIMED"]
+                                             "W3T_GWENT_NO_BOARD", "W3T_GWENT_REASON", "W3T_GWENT_REPLAY",
+                                             "W3T_GWENT_SEED", "W3T_GWENT_SURRENDER_AT", "W3T_GWENT_TIMED"]
 
 
 def test_suite_matrix_quits_a_game_only_in_its_last_entry() -> None:
@@ -367,3 +367,12 @@ def test_focus_summary():
     assert "BotA 12:00:00.1 to 12:00:00.2, 12:10:00.0 to 12:10:00.0" in text
     watch.foreground = [("12:00:01", "BotB", "W2ViewportClass")]
     assert "foreground window 1 times (first 12:00:01 BotB W2ViewportClass)" in watch.summary()
+
+
+def test_suite_matrix_has_the_no_board_duel() -> None:
+    """Final review C2: one duel where bot 1's board runs as the vanilla board; both bots must end as no contest (the
+    verdict checks reason board on bot 1 and hello_timeout on bot 0) and no money moves. The bots read the switch."""
+    assert "W3T_GWENT_NO_BOARD" in sm.ENTRY_SETTINGS and "W3T_GWENT_NO_BOARD" not in sm.HARNESS_SETTINGS
+    entries = [s for _, s in run_suite.GWENT_DUEL_MATRIX if s.get("W3T_GWENT_NO_BOARD") == "1"]
+    assert len(entries) == 1
+    assert entries[0]["W3T_GWENT_EXPECT"] == "nocontest" and "W3T_GWENT_REASON" not in entries[0]

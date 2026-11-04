@@ -37,7 +37,9 @@ In a party (walk up to a friend's character, press the interact key and answer "
 - The hidden quest facts the leader's game sets during the session are shared too (also only
   forward), so your quests can follow the leader's progress. Loot stays per player.
 To play without shared monsters, turn on "MPGhosts_LocalEnemiesOnly" in the mod's options.
-Gwent duels between players are switched off in this version.
+Gwent duels between players need a Gwent board this package does not include: each player
+builds it from their own game (WitcherOnline's gwent/README.md; game build 5.0.0.1048522 only).
+Without it a duel is played against the AI and cancelled when it closes; no bet is paid.
 
 What you need
 -------------

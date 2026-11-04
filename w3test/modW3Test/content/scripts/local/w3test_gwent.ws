@@ -4,7 +4,8 @@
 // waits for the result (GWENT RESULT won|lost). The board's duel log lines (OnDuelLog, which Witcher Online hands to
 // r_MultiplayerClient.duelLog) go to the bot log as "GwentDuel: <line>" through a wrap of duelLog.
 // gwent_vanilla: until the board's autoplay also plays vanilla matches, the bot surrenders W3T_GWENT_HOLD seconds
-//   (default 1; longer to look at the board, e.g. with run_test.py --shots) after the board is up. Passes on the result.
+//   (default 1; longer to look at the board, e.g. with run_test.py --shots) after the board is up. Passes on the result,
+//   and fails if the board logged any duel line ("DUEL ...") during this single-player match.
 // gwent_selftest: the bot also sets CR4GwintManager.duelSelfTest, so Witcher Online's script turns on the board's
 //   gwint.game.debug.selfTest and the board replays the duel test vectors (DuelSelfTest). The bot surrenders
 //   W3T_GWENT_HOLD seconds after the "DUEL SELFTEST pass=<n> fail=<m>" line, or W3T_GWENT_SELFTEST_WAIT seconds
@@ -46,6 +47,11 @@
 //   screen closes and the result settles. Expected: the idle seat loses (result=loss reason=match, at least one
 //   "DUEL TIMER expired" line), the other wins. Not combined with W3T_GWENT_IDLE_AT. Every duel without
 //   W3T_GWENT_TIMED=1 must log no "DUEL TIMER" line (Normal mode has no timer).
+//   No duel board: W3T_GWENT_NO_BOARD=1 makes bot 1's board run as the vanilla board (Witcher Online's
+//   CR4GwintManager.duelDebugNoBoard: seed 0 to the board, the script still in the duel), as on a client without the
+//   rebuilt board. W3T_GWENT_HOLD seconds after its board is up the bot ends that match against the AI as a win and
+//   closes the menu. Expected (with W3T_GWENT_EXPECT=nocontest): bot 1 result=nocontest reason=board, bot 0 (its Hello
+//   never answered) result=nocontest reason=hello_timeout, no money on either side.
 //   Each bot logs its money before and after and passes when its board's duel lines match W3T_GWENT_EXPECT:
 //   "result" (default): DUEL HELLO ok with its seat, at least one DUEL ROUND, DUEL END result=win|loss|draw, and the
 //   money moved by +bet, -bet or 0; "nocontest": DUEL END result=nocontest (with reason W3T_GWENT_REASON if set) and
@@ -89,6 +95,7 @@ function W3T_ResetGwent()
     manager.duelDebugCorruptAt = 0;
     manager.duelDebugForceDraw = false;
     manager.duelDebugReplay = false;
+    manager.duelDebugNoBoard = false;
     W3T_Log("GWENT state reset (result " + w3t_gwent.result + ", money " + thePlayer.GetMoney() + ")");
     w3t_gwent = NULL;
 }
@@ -135,6 +142,10 @@ statemachine class W3T_Gwent
     public var idleSeat : bool;         // W3T_GWENT_IDLE_SEAT names this bot's seat: no autoplay from the start
     public var idleSeatWakeDue : bool;  // the idle seat's board sent its E: autoplay on again on the next frame
     public var idleSeatAwake : bool;    // autoplay is on again (the end screen closes)
+    public var noBoard : bool;          // W3T_GWENT_NO_BOARD on bot 1: its board runs as the vanilla board
+    public var noBoardEnded : bool;     // the bot ended that vanilla match as a win
+    public var vanillaDuelLines : int;  // gwent_vanilla: "DUEL " lines logged while no duel runs
+    public var vanillaDuelLine : string;    // the first of them
     public var timerLine : string;      // the board's first "DUEL TIMER" line
     public var timerExpiries : int;     // its "DUEL TIMER expired" lines
     public var duelPassed : bool;
@@ -258,6 +269,13 @@ statemachine class W3T_Gwent
             W3T_Log("GWENT idle (board sent " + W3T_GetEnv("W3T_GWENT_IDLE_AT") + "): autoplay off, the board waits for this player");
             menu.W3T_SetAutoplay(false);
         }
+        if(duel && noBoard && boardOpen && !noBoardEnded
+            && SecondsSince(boardAtMs) > StringToFloat(W3T_GetEnv("W3T_GWENT_HOLD"), 1.0))
+        {
+            noBoardEnded = true;
+            W3T_Log("GWENT no duel board: ends the match against the AI as a win and closes the menu");
+            menu.W3T_EndAsWin();
+        }
         if(duel && idleSeatWakeDue && !idleSeatAwake)
         {
             idleSeatAwake = true;
@@ -314,6 +332,14 @@ statemachine class W3T_Gwent
     // one line of the board's duel log, already in the bot log as "GwentDuel: <line>"
     public function DuelLine(line : string)
     {
+        if(!duel && StrStartsWith(line, "DUEL ") && !StrStartsWith(line, "DUEL SELFTEST"))
+        {
+            vanillaDuelLines += 1;
+            if(vanillaDuelLine == "")
+            {
+                vanillaDuelLine = line;
+            }
+        }
         if(duel && result == "")
         {
             if(helloLine == "" && StrStartsWith(line, "DUEL HELLO"))
@@ -400,6 +426,7 @@ statemachine class W3T_Gwent
         manager.duelDebugCorruptAt = 0;
         manager.duelDebugForceDraw = false;
         manager.duelDebugReplay = false;
+        manager.duelDebugNoBoard = false;
         minigame = thePlayer.GetGwintMinigameState();
         result = "lost";
         if(minigame == EMS_End_PlayerWon)
@@ -477,6 +504,8 @@ statemachine class W3T_Gwent
             }
             manager.duelDebugForceDraw = W3T_GetEnv("W3T_GWENT_FORCE_DRAW") == "1";
             manager.duelDebugReplay = W3T_GetEnv("W3T_GWENT_REPLAY") == "1" || (host && W3T_GetEnv("W3T_GWENT_REPLAY") == "0");
+            noBoard = !host && W3T_GetEnv("W3T_GWENT_NO_BOARD") == "1";
+            manager.duelDebugNoBoard = noBoard;
             surrenderAt = 0;
             surrenderGame = -1;
             exitAt = 0;
@@ -501,7 +530,7 @@ statemachine class W3T_Gwent
                 + manager.duelDebugCorruptAt + ", mulligan redraw " + manager.duelDebugMulligan + ", leader first "
                 + manager.duelDebugLeaderFirst + ", force draw " + manager.duelDebugForceDraw + ", replay "
                 + manager.duelDebugReplay + ", surrender at " + surrenderAt + ", exit at " + exitAt + ", idle at " + idleAt
-                + ", idle seat " + idleSeat);
+                + ", idle seat " + idleSeat + ", no board " + noBoard);
             // the watcher (Poll: surrender, exit, idle) runs from now on: the host may challenge before this bot's own
             // step 1, and once the board is up the paused game stalls the bot's steps, never the watcher's frames
             GotoState('W3T_GwentWatching');
@@ -639,6 +668,14 @@ statemachine class W3T_Gwent
             else if(W3T_GetEnv("W3T_GWENT_REASON") != "" && reason != W3T_GetEnv("W3T_GWENT_REASON"))
             {
                 why = "expected reason=" + W3T_GetEnv("W3T_GWENT_REASON");
+            }
+            else if(W3T_GetEnv("W3T_GWENT_NO_BOARD") == "1" && host && reason != "hello_timeout")
+            {
+                why = "expected reason=hello_timeout (the opponent's board never sent its Hello)";
+            }
+            else if(W3T_GetEnv("W3T_GWENT_NO_BOARD") == "1" && !host && reason != "board")
+            {
+                why = "expected reason=board (this board is not the duel board)";
             }
             else if(W3T_GetEnv("W3T_GWENT_CORRUPT_AT") != "" && (desyncLine == "" || reason != "desync"))
             {
@@ -888,6 +925,14 @@ function W3T_GwentMatch(bot : W3T_Bot, withSelfTest : bool) : bool
     {
         return false;
     }
+    if(!withSelfTest && gwent.vanillaDuelLines > 0)
+    {
+        // a single-player match must not run any duel code
+        W3T_Log("FAIL single-player match logged duel lines: " + gwent.vanillaDuelLine + " (" + gwent.vanillaDuelLines
+            + " in all)");
+        W3T_Quit(1);
+        return false;
+    }
     if(withSelfTest && !gwent.SelfTestPassed())
     {
         if(!gwent.scriptChecksOk)
@@ -1109,6 +1154,15 @@ function W3T_PressClose()
     {
         fx.InvokeSelf();
     }
+}
+
+// gwent_duel: W3T_GWENT_NO_BOARD, the vanilla board's match against the AI ends as a win for this player and the menu
+// closes (what the vanilla end screen's close does after OnMatchResult)
+@addMethod(CR4GwintGameMenu)
+function W3T_EndAsWin()
+{
+    OnMatchResult(true);
+    CloseMenu();
 }
 
 // gwent_duel: W3T_GWENT_IDLE_AT turns the board's autoplay off mid-match (the board then waits for a player who never

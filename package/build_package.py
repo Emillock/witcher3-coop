@@ -11,8 +11,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from config import BRIDGE, TOOLS, UAL, WO, WORK  # noqa: E402
 
-# 4.04 Gwent board files that would replace the Remastered Gwent UI, and the hooks that need them
-GWENT_ONLY = {"gwintManager.ws", "gwintGameMenu.ws", "gwentHooks.ws", "blob0.bundle", "metadata.store"}
+# Witcher Online's 4.04 Gwent files: the menu overrides that would replace the Remastered Gwent UI, and the mod's
+# 4.04 board bundle. gwentHooks.ws stays: on 5.01 it defines the methods gwentDuel.ws calls (NotifyGwentMatchEnded,
+# HandleOutgoingGwentAction), and without it the scripts do not compile. The 5.01 board is built by each player
+# (WitcherOnline gwent/README.md).
+GWENT_ONLY = {"gwintManager.ws", "gwintGameMenu.ws", "blob0.bundle", "metadata.store"}
+
+
+def skip_mod_file(name: str, path: str, mod_src: str) -> bool:
+    """True for a file under modWitcherOnline that the package leaves out: a 4.04 Gwent file or a root install note."""
+    return name in GWENT_ONLY or os.path.dirname(path) == mod_src
 
 
 def copy_tree(src, dst, skip=lambda name, path: False):
@@ -60,8 +68,7 @@ def main():
     w = os.path.join(WO, "witcher")
 
     mod_src = os.path.join(w, "mods", "modWitcherOnline")
-    copy_tree(mod_src, os.path.join(out, "mods", "modWitcherOnline"),
-              lambda f, p: f in GWENT_ONLY or os.path.dirname(p) == mod_src)  # root files are install notes
+    copy_tree(mod_src, os.path.join(out, "mods", "modWitcherOnline"), lambda f, p: skip_mod_file(f, p, mod_src))
     copy_tree(os.path.join(w, "mods", "modWitcherOnlineCompat"), os.path.join(out, "mods", "modWitcherOnlineCompat"))
     copy_tree(os.path.join(w, "dlc", "dlcWitcherOnline"), os.path.join(out, "dlc", "dlcWitcherOnline"))
     copy_tree(os.path.join(w, "bin", "config"), os.path.join(out, "bin", "config"))
