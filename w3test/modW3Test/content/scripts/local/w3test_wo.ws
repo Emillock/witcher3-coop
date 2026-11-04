@@ -3601,6 +3601,48 @@ function W3T_EffectsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
         && !puppet.HasBuff(EET_Hypnotized);
 }
 
+// Hits dealt here and how many of them left one of the base game's named hit sounds playing in the second after
+// (theGame fields: the test's own counters, kept where both roles can reach them)
+@addField(CR4Game)
+var w3t_hits : int;
+
+@addField(CR4Game)
+var w3t_hitSounds : int;
+
+@addMethod(CR4Game)
+function W3T_NoteHit()
+{
+    w3t_hits += 1;
+}
+
+@addMethod(CR4Game)
+function W3T_NoteHitSound()
+{
+    w3t_hitSounds += 1;
+}
+
+// A light hit of this player's own on a monster, as shared_enemy deals them, so the hit sound can be asked about
+function W3T_HitForSound(victim : CNewNPC)
+{
+    var action : W3DamageAction;
+
+    action = new W3DamageAction in theGame.damageMgr;
+    action.Initialize(thePlayer, victim, thePlayer, "W3T", EHRT_Light, CPS_Undefined, true, false, false, false);
+    action.AddDamage(theGame.params.DAMAGE_NAME_DIRECT, 0.02 * victim.GetMaxHealth());
+    theGame.damageMgr.ProcessAction(action);
+    delete action;
+    theGame.W3T_NoteHit();
+}
+
+// What the engine says is sounding on a monster: the named hit events the base game plays when no hit animation
+// carries the sound itself, and anything at all
+function W3T_SoundReport(npc : CNewNPC) : string
+{
+    return "any=" + npc.SoundIsActiveAny() + " light=" + npc.SoundIsActiveName('cmb_play_hit_light')
+        + " heavy=" + npc.SoundIsActiveName('cmb_play_hit_heavy') + " head=" + npc.SoundIsActive('head')
+        + " canHitAnim=" + npc.CanPlayHitAnim();
+}
+
 // enemy_sounds, leader: the drowner of enemy_attacks, with a report of what the engine says is sounding on it
 // while it fights - the counts are ticks, so "attacks=4 sounding=18" means it was audible on 18 of them.
 function W3T_EnemySoundsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
@@ -3621,6 +3663,21 @@ function W3T_EnemySoundsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
     }
     W3T_KeepOnGhost(monster, member.ghost);
     W3T_LookAt(monster.GetWorldPosition());
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.5)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        bot.scenarioFarSince = bot.ElapsedS();  // (the watch window after a hit)
+        W3T_HitForSound(monster);
+        W3T_Log("SOUND leader hit its own monster: " + W3T_SoundReport(monster));
+    }
+    if(bot.ElapsedS() - bot.scenarioFarSince < 1.0)
+    {
+        if(monster.SoundIsActiveName('cmb_play_hit_light') || monster.SoundIsActiveName('cmb_play_hit_heavy'))
+        {
+            theGame.W3T_NoteHitSound();
+            bot.scenarioFarSince = -999;  // one is enough for this hit
+        }
+    }
     if(monster.SoundIsActiveAny())
     {
         bot.scenarioStep += 1;
@@ -3631,9 +3688,10 @@ function W3T_EnemySoundsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
     }
     W3T_Log("SOUND leader attacks=" + coop.attacksSeen + " soundingTicks=" + bot.scenarioStep + " speakingTicks="
         + FloatToStringPrec(bot.scenarioValue, 0) + " any=" + monster.SoundIsActiveAny() + " speaking=" + monster.IsSpeaking()
-        + " head=" + monster.SoundIsActive('head') + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
-        + " myCombat=" + thePlayer.IsInCombat() + " itsCombat=" + monster.IsInCombat() + " music=" + theSound.GetCurrentGameState());
-    return coop.attacksSeen >= 3 && bot.scenarioStep > 0;
+        + " head=" + monster.SoundIsActive('head') + " hits=" + theGame.w3t_hits + " hitSounds=" + theGame.w3t_hitSounds + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+        + " myCombat=" + thePlayer.IsInCombat() + " forced=" + thePlayer.GetPlayerMode().GetForceCombatMode()
+        + " fightStates=" + coop.fightStates + " itsCombat=" + monster.IsInCombat() + " music=" + theSound.GetCurrentGameState());
+    return theGame.w3t_hits >= 6 && coop.attacksSeen >= 3;
 }
 
 // enemy_sounds, member: the same questions asked of the copy. It passes once it has watched the copy through
@@ -3679,6 +3737,21 @@ function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     }
     puppet = coop.PuppetAt(0);
     W3T_LookAt(puppet.GetWorldPosition());
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.5)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        bot.scenarioFarSince = bot.ElapsedS();
+        W3T_HitForSound(puppet);
+        W3T_Log("SOUND member hit the copy: " + W3T_SoundReport(puppet));
+    }
+    if(bot.ElapsedS() - bot.scenarioFarSince < 1.0)
+    {
+        if(puppet.SoundIsActiveName('cmb_play_hit_light') || puppet.SoundIsActiveName('cmb_play_hit_heavy'))
+        {
+            theGame.W3T_NoteHitSound();
+            bot.scenarioFarSince = -999;
+        }
+    }
     if(puppet.SoundIsActiveAny())
     {
         bot.scenarioStep += 1;
@@ -3687,14 +3760,14 @@ function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     {
         bot.scenarioValue += 1;
     }
-    W3T_Log("SOUND member twins=" + coop.twinsBound + " spawnedCopies=" + coop.puppetsSpawned
+    W3T_Log("SOUND member madeHeard=" + coop.hitSoundsPlayed + " twins=" + coop.twinsBound + " spawnedCopies=" + coop.puppetsSpawned
         + " played=" + coop.attacksPlayed + " soundingTicks=" + bot.scenarioStep + " speakingTicks="
         + FloatToStringPrec(bot.scenarioValue, 0) + " any=" + puppet.SoundIsActiveAny() + " speaking=" + puppet.IsSpeaking()
-        + " head=" + puppet.SoundIsActive('head') + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+        + " head=" + puppet.SoundIsActive('head') + " hits=" + theGame.w3t_hits + " hitSounds=" + theGame.w3t_hitSounds + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
         + " myCombat=" + thePlayer.IsInCombat() + " itsCombat=" + puppet.IsInCombat() + " attitude=" + puppet.GetAttitude(thePlayer)
         + " itsTarget=" + (puppet.GetTarget() == thePlayer) + " music=" + theSound.GetCurrentGameState()
         + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));
-    return coop.attacksPlayed >= 3;
+    return theGame.w3t_hits >= 6 && coop.attacksPlayed >= 3;
 }
 
 // enemy_projectiles, leader: the monster of enemy_attacks (a Baron's bandit with a bow unless W3T_MONSTER) shoots at
