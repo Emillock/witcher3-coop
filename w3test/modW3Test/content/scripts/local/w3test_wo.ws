@@ -230,6 +230,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemyAttacksMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "enemy_sounds")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_EnemySoundsLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_EnemySoundsMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "attack_view")
     {
         if(ghosts < 1)
@@ -3586,6 +3599,102 @@ function W3T_EffectsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
         + " bleeding=" + puppet.HasBuff(EET_Bleeding) + " hp=" + FloatToStringPrec(puppet.GetHealthPercents(), 3));
     return coop.effectsMirrorHeld >= 4 && coop.effectsMirrorEnded >= 4 && bot.scenarioFlag && coop.localEffectsDropped >= 1
         && !puppet.HasBuff(EET_Hypnotized);
+}
+
+// enemy_sounds, leader: the drowner of enemy_attacks, with a report of what the engine says is sounding on it
+// while it fights - the counts are ticks, so "attacks=4 sounding=18" means it was audible on 18 of them.
+function W3T_EnemySoundsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        return false;
+    }
+    monster = (CNewNPC)bot.scenarioEntity;
+    if(!monster)
+    {
+        W3T_Log("FAIL the monster is gone");
+        W3T_Quit(2);
+        return false;
+    }
+    W3T_KeepOnGhost(monster, member.ghost);
+    W3T_LookAt(monster.GetWorldPosition());
+    if(monster.SoundIsActiveAny())
+    {
+        bot.scenarioStep += 1;
+    }
+    if(monster.IsSpeaking())
+    {
+        bot.scenarioValue += 1;
+    }
+    W3T_Log("SOUND leader attacks=" + coop.attacksSeen + " soundingTicks=" + bot.scenarioStep + " speakingTicks="
+        + FloatToStringPrec(bot.scenarioValue, 0) + " any=" + monster.SoundIsActiveAny() + " speaking=" + monster.IsSpeaking()
+        + " head=" + monster.SoundIsActive('head') + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+        + " myCombat=" + thePlayer.IsInCombat() + " itsCombat=" + monster.IsInCombat() + " music=" + theSound.GetCurrentGameState());
+    return coop.attacksSeen >= 3 && bot.scenarioStep > 0;
+}
+
+// enemy_sounds, member: the same questions asked of the copy. It passes once it has watched the copy through
+// three mirrored attacks, whatever the answers are - the log is the point; the leader's side is the control.
+function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet, mine : CNewNPC;
+    var template : CEntityTemplate;
+    var rot : EulerAngles;
+    var spot : Vector;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    // W3T_SOUND_TWIN=1: this world's own monster of the same kind, standing where the leader's will be, so the
+    // mod takes that one over instead of spawning a copy
+    if(W3T_GetEnv("W3T_SOUND_TWIN") == "1" && bot.scenarioCount == 0)
+    {
+        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        if(!template)
+        {
+            W3T_Log("FAIL no drowner template");
+            W3T_Quit(2);
+            return false;
+        }
+        spot = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0;
+        mine = (CNewNPC)theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
+        if(mine)
+        {
+            mine.SetAttitude(thePlayer, AIA_Neutral);
+        }
+        W3T_Log("SOUND member brought its own drowner at " + W3T_VecStr(spot));
+        bot.scenarioCount = 1;
+        return false;
+    }
+    if(coop.PuppetCount() < 1)
+    {
+        return false;
+    }
+    puppet = coop.PuppetAt(0);
+    W3T_LookAt(puppet.GetWorldPosition());
+    if(puppet.SoundIsActiveAny())
+    {
+        bot.scenarioStep += 1;
+    }
+    if(puppet.IsSpeaking())
+    {
+        bot.scenarioValue += 1;
+    }
+    W3T_Log("SOUND member twins=" + coop.twinsBound + " spawnedCopies=" + coop.puppetsSpawned
+        + " played=" + coop.attacksPlayed + " soundingTicks=" + bot.scenarioStep + " speakingTicks="
+        + FloatToStringPrec(bot.scenarioValue, 0) + " any=" + puppet.SoundIsActiveAny() + " speaking=" + puppet.IsSpeaking()
+        + " head=" + puppet.SoundIsActive('head') + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+        + " myCombat=" + thePlayer.IsInCombat() + " itsCombat=" + puppet.IsInCombat() + " attitude=" + puppet.GetAttitude(thePlayer)
+        + " itsTarget=" + (puppet.GetTarget() == thePlayer) + " music=" + theSound.GetCurrentGameState()
+        + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));
+    return coop.attacksPlayed >= 3;
 }
 
 // enemy_projectiles, leader: the monster of enemy_attacks (a Baron's bandit with a bow unless W3T_MONSTER) shoots at

@@ -70,6 +70,33 @@ var w3t_bot : W3T_Bot;
 @addField(CR4Game)
 var w3t_loadRequested : bool;
 
+// voicesets played on monsters here, and the last one (W3T_NoteVoiceset)
+@addField(CR4Game)
+var w3t_voices : int;
+
+@addField(CR4Game)
+var w3t_lastVoice : string;
+
+@addMethod(CR4Game)
+function W3T_NoteVoiceset(who : string, voiceSet : string)
+{
+    w3t_voices += 1;
+    w3t_lastVoice = who + ":" + voiceSet;
+}
+
+// The task every growl and battle cry goes through. Its Main is latent and cannot be wrapped, so this counts the
+// moment the behaviour tree asks whether it may run: on the leader that happens for its own monsters, on a member
+// it should not happen for a copy at all (its AI is suppressed).
+@wrapMethod(CBTTaskPlayVoiceSet)
+function IsAvailable() : bool
+{
+    if(GetActor())
+    {
+        theGame.W3T_NoteVoiceset(GetActor().GetReadableName(), voiceSet);
+    }
+    return wrappedMethod();
+}
+
 // theGame is const outside CR4Game, so its added fields are changed through methods.
 @addMethod(CR4Game)
 function W3T_ClaimLoad() : bool
