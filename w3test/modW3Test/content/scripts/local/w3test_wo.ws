@@ -3621,6 +3621,131 @@ function W3T_NoteHitSound()
     w3t_hitSounds += 1;
 }
 
+// One tick of the sound measurement, the same code on both sides: ticks the monster sounds on, new sounds
+// starting, and whether each of its attacks could be heard (a window of 0.8 s from the attack being counted).
+function W3T_SoundWatch(bot : W3T_Bot, npc : CNewNPC, attacks : int)
+{
+    var on : bool;
+
+    on = npc.SoundIsActiveAny();
+    if(on)
+    {
+        bot.scenarioStep += 1;
+        if(bot.scenarioUntil > 0)
+        {
+            bot.scenarioWindowOn = true;
+        }
+        if(!bot.scenarioWasOn)
+        {
+            bot.scenarioOnsets += 1;
+            if(bot.scenarioUntil > 0)
+            {
+                bot.scenarioWindowOnset = true;
+            }
+        }
+    }
+    bot.scenarioWasOn = on;
+    if(npc.IsSpeaking())
+    {
+        bot.scenarioValue += 1;
+    }
+    if(attacks > bot.scenarioMark)
+    {
+        W3T_CloseSoundWindow(bot);
+        bot.scenarioMark = attacks;
+        bot.scenarioUntil = bot.ElapsedS() + 0.8;
+        return;
+    }
+    if(bot.scenarioUntil > 0)
+    {
+        if(bot.ElapsedS() >= bot.scenarioUntil)
+        {
+            W3T_CloseSoundWindow(bot);
+        }
+    }
+}
+
+function W3T_CloseSoundWindow(bot : W3T_Bot)
+{
+    if(bot.scenarioUntil <= 0)
+    {
+        return;
+    }
+    bot.scenarioWindows += 1;
+    if(bot.scenarioWindowOn)
+    {
+        bot.scenarioHeard += 1;
+    }
+    if(bot.scenarioWindowOnset)
+    {
+        bot.scenarioOnsetHits += 1;
+    }
+    bot.scenarioUntil = 0;
+    bot.scenarioWindowOn = false;
+    bot.scenarioWindowOnset = false;
+}
+
+// The bones a swing, a step or a cry would sound on, asked of both sides the same way
+function W3T_SoundBones() : array<name>
+{
+    var b : array<name>;
+
+    b.PushBack('r_weapon');
+    b.PushBack('l_weapon');
+    b.PushBack('head');
+    b.PushBack('torso3');
+    b.PushBack('pelvis');
+    return b;
+}
+
+function W3T_BoneLine(bot : W3T_Bot, npc : CNewNPC) : string
+{
+    var names : array<name>;
+    var line : string;
+    var i : int;
+
+    names = W3T_SoundBones();
+    while(bot.scenarioBones.Size() < names.Size())
+    {
+        bot.scenarioBones.PushBack(0);
+    }
+    for(i = 0; i < names.Size(); i += 1)
+    {
+        if(npc.SoundIsActive(names[i]))
+        {
+            bot.scenarioBones[i] += 1;
+        }
+        line += NameToString(names[i]) + "=" + bot.scenarioBones[i] + " ";
+    }
+    return line;
+}
+
+// Whether a hit of ours was answered with a hit animation (the base game's own condition for playing its named
+// hit sound instead): called every tick, with the window opened at the hit.
+function W3T_WatchHitAnim(bot : W3T_Bot, npc : CNewNPC)
+{
+    if(bot.scenarioAnimUntil <= 0)
+    {
+        return;
+    }
+    if(npc.IsInHitAnim())
+    {
+        bot.scenarioHitAnims += 1;
+        bot.scenarioAnimUntil = 0;
+        return;
+    }
+    if(bot.ElapsedS() >= bot.scenarioAnimUntil)
+    {
+        bot.scenarioAnimUntil = 0;
+    }
+}
+
+function W3T_SoundLine(bot : W3T_Bot) : string
+{
+    return "attackWindows=" + bot.scenarioWindows + " heard=" + bot.scenarioHeard + " withNewSound=" + bot.scenarioOnsetHits
+        + " onsets=" + bot.scenarioOnsets + " soundingTicks=" + bot.scenarioStep;
+}
+
 // A light hit of this player's own on a monster, as shared_enemy deals them, so the hit sound can be asked about
 function W3T_HitForSound(victim : CNewNPC)
 {
@@ -3661,15 +3786,45 @@ function W3T_EnemySoundsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
         W3T_Quit(2);
         return false;
     }
+    if(bot.scenarioTime == 0)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+    }
     W3T_KeepOnGhost(monster, member.ghost);
     W3T_LookAt(monster.GetWorldPosition());
+    W3T_SoundWatch(bot, monster, coop.attacksSeen);
+    // first its swings at the ghost, with no hit of ours to turn it on us
+    if(bot.scenarioPhase == 0)
+    {
+        W3T_Log("SOUND leader swings attacks=" + coop.attacksSeen + " " + W3T_SoundLine(bot) + " " + W3T_BoneLine(bot, monster)
+            + " any=" + monster.SoundIsActiveAny() + " speaking=" + monster.IsSpeaking() + " head=" + monster.SoundIsActive('head')
+            + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+            + " onMe=" + (monster.GetTarget() == thePlayer) + " music=" + theSound.GetCurrentGameState());
+        if(bot.scenarioWindows >= 6)
+        {
+            bot.scenarioPhase = 1;
+        }
+        else if(bot.ElapsedS() - bot.scenarioTime > 90.0)
+        {
+            bot.scenarioPhase = 1;
+        }
+        if(bot.scenarioPhase == 1)
+        {
+            bot.scenarioText = W3T_SoundLine(bot) + " " + W3T_BoneLine(bot, monster);
+            W3T_Log("SOUND leader swings measured: " + bot.scenarioText);
+            bot.scenarioActAt = bot.ElapsedS();
+        }
+        return false;
+    }
     if(bot.ElapsedS() - bot.scenarioActAt >= 1.5)
     {
         bot.scenarioActAt = bot.ElapsedS();
         bot.scenarioFarSince = bot.ElapsedS();  // (the watch window after a hit)
+        bot.scenarioAnimUntil = bot.ElapsedS() + 1.0;
         W3T_HitForSound(monster);
         W3T_Log("SOUND leader hit its own monster: " + W3T_SoundReport(monster));
     }
+    W3T_WatchHitAnim(bot, monster);
     if(bot.ElapsedS() - bot.scenarioFarSince < 1.0)
     {
         if(monster.SoundIsActiveName('cmb_play_hit_light') || monster.SoundIsActiveName('cmb_play_hit_heavy'))
@@ -3678,17 +3833,11 @@ function W3T_EnemySoundsLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_R
             bot.scenarioFarSince = -999;  // one is enough for this hit
         }
     }
-    if(monster.SoundIsActiveAny())
-    {
-        bot.scenarioStep += 1;
-    }
-    if(monster.IsSpeaking())
-    {
-        bot.scenarioValue += 1;
-    }
-    W3T_Log("SOUND leader attacks=" + coop.attacksSeen + " soundingTicks=" + bot.scenarioStep + " speakingTicks="
+    W3T_Log("SOUND leader attacks=" + coop.attacksSeen + " swings='" + bot.scenarioText
+        + "' soundingTicks=" + bot.scenarioStep + " speakingTicks="
         + FloatToStringPrec(bot.scenarioValue, 0) + " any=" + monster.SoundIsActiveAny() + " speaking=" + monster.IsSpeaking()
-        + " head=" + monster.SoundIsActive('head') + " hits=" + theGame.w3t_hits + " hitSounds=" + theGame.w3t_hitSounds + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+        + " head=" + monster.SoundIsActive('head') + " hits=" + theGame.w3t_hits + " hitSounds=" + theGame.w3t_hitSounds
+        + " hitAnims=" + bot.scenarioHitAnims + " inHitAnim=" + monster.IsInHitAnim() + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
         + " myCombat=" + thePlayer.IsInCombat() + " forced=" + thePlayer.GetPlayerMode().GetForceCombatMode()
         + " fightStates=" + coop.fightStates + " itsCombat=" + monster.IsInCombat() + " music=" + theSound.GetCurrentGameState());
     return theGame.w3t_hits >= 6 && coop.attacksSeen >= 3;
@@ -3714,10 +3863,10 @@ function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
     // mod takes that one over instead of spawning a copy
     if(W3T_GetEnv("W3T_SOUND_TWIN") == "1" && bot.scenarioCount == 0)
     {
-        template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
+        template = (CEntityTemplate)LoadResource(W3T_MonsterPath(), true);
         if(!template)
         {
-            W3T_Log("FAIL no drowner template");
+            W3T_Log("FAIL no template " + W3T_MonsterPath());
             W3T_Quit(2);
             return false;
         }
@@ -3727,7 +3876,7 @@ function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
         {
             mine.SetAttitude(thePlayer, AIA_Neutral);
         }
-        W3T_Log("SOUND member brought its own drowner at " + W3T_VecStr(spot));
+        W3T_Log("SOUND member brought its own " + W3T_MonsterPath() + " at " + W3T_VecStr(spot));
         bot.scenarioCount = 1;
         return false;
     }
@@ -3736,14 +3885,45 @@ function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
         return false;
     }
     puppet = coop.PuppetAt(0);
+    if(bot.scenarioTime == 0)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+    }
     W3T_LookAt(puppet.GetWorldPosition());
+    W3T_SoundWatch(bot, puppet, coop.attacksPlayed);
+    // the copy's own swings first, measured exactly as the leader measures its monster's
+    if(bot.scenarioPhase == 0)
+    {
+        W3T_Log("SOUND member swings played=" + coop.attacksPlayed + " " + W3T_SoundLine(bot) + " " + W3T_BoneLine(bot, puppet)
+            + " any=" + puppet.SoundIsActiveAny() + " speaking=" + puppet.IsSpeaking() + " head=" + puppet.SoundIsActive('head')
+            + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+            + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1)
+            + " music=" + theSound.GetCurrentGameState());
+        if(bot.scenarioWindows >= 6)
+        {
+            bot.scenarioPhase = 1;
+        }
+        else if(bot.ElapsedS() - bot.scenarioTime > 90.0)
+        {
+            bot.scenarioPhase = 1;
+        }
+        if(bot.scenarioPhase == 1)
+        {
+            bot.scenarioText = W3T_SoundLine(bot) + " " + W3T_BoneLine(bot, puppet);
+            W3T_Log("SOUND member swings measured: " + bot.scenarioText);
+            bot.scenarioActAt = bot.ElapsedS();
+        }
+        return false;
+    }
     if(bot.ElapsedS() - bot.scenarioActAt >= 1.5)
     {
         bot.scenarioActAt = bot.ElapsedS();
         bot.scenarioFarSince = bot.ElapsedS();
+        bot.scenarioAnimUntil = bot.ElapsedS() + 1.0;
         W3T_HitForSound(puppet);
         W3T_Log("SOUND member hit the copy: " + W3T_SoundReport(puppet));
     }
+    W3T_WatchHitAnim(bot, puppet);
     if(bot.ElapsedS() - bot.scenarioFarSince < 1.0)
     {
         if(puppet.SoundIsActiveName('cmb_play_hit_light') || puppet.SoundIsActiveName('cmb_play_hit_heavy'))
@@ -3752,18 +3932,11 @@ function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
             bot.scenarioFarSince = -999;
         }
     }
-    if(puppet.SoundIsActiveAny())
-    {
-        bot.scenarioStep += 1;
-    }
-    if(puppet.IsSpeaking())
-    {
-        bot.scenarioValue += 1;
-    }
-    W3T_Log("SOUND member madeHeard=" + coop.hitSoundsPlayed + " twins=" + coop.twinsBound + " spawnedCopies=" + coop.puppetsSpawned
+    W3T_Log("SOUND member swings='" + bot.scenarioText + "' madeHeard=" + coop.hitSoundsPlayed + " twins=" + coop.twinsBound + " spawnedCopies=" + coop.puppetsSpawned
         + " played=" + coop.attacksPlayed + " soundingTicks=" + bot.scenarioStep + " speakingTicks="
         + FloatToStringPrec(bot.scenarioValue, 0) + " any=" + puppet.SoundIsActiveAny() + " speaking=" + puppet.IsSpeaking()
-        + " head=" + puppet.SoundIsActive('head') + " hits=" + theGame.w3t_hits + " hitSounds=" + theGame.w3t_hitSounds + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
+        + " head=" + puppet.SoundIsActive('head') + " hits=" + theGame.w3t_hits + " hitSounds=" + theGame.w3t_hitSounds
+        + " hitAnims=" + bot.scenarioHitAnims + " inHitAnim=" + puppet.IsInHitAnim() + " voices=" + theGame.w3t_voices + " last='" + theGame.w3t_lastVoice + "'"
         + " myCombat=" + thePlayer.IsInCombat() + " itsCombat=" + puppet.IsInCombat() + " attitude=" + puppet.GetAttitude(thePlayer)
         + " itsTarget=" + (puppet.GetTarget() == thePlayer) + " music=" + theSound.GetCurrentGameState()
         + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), puppet.GetWorldPosition()), 1));

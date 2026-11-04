@@ -372,6 +372,19 @@ statemachine class W3T_Bot
     public var dialogsAnswered : int;    // system dialogs this bot answered (party_invite checks one was asked)
     public var scenarioName : name;
     public var scenarioText : string;
+    public var scenarioPhase : int;      // which part of a scenario measured in parts is running
+    public var scenarioMark : int;       // the counter value the open watch window belongs to
+    public var scenarioUntil : float;    // when that window closes (0: none open)
+    public var scenarioWindows : int;    // windows closed
+    public var scenarioHeard : int;      // ...with a sound active in them
+    public var scenarioOnsetHits : int;  // ...with a new sound starting in them
+    public var scenarioOnsets : int;     // new sounds in all
+    public var scenarioWasOn : bool;     // whether it was sounding on the last tick
+    public var scenarioWindowOn : bool;
+    public var scenarioWindowOnset : bool;
+    public var scenarioBones : array<int>;  // ticks each watched bone sounded on (W3T_SoundBones)
+    public var scenarioHitAnims : int;   // hits of ours the victim answered with a hit animation
+    public var scenarioAnimUntil : float;
 
     public var scenario : string;        // the one running (empty in a session until the harness says go)
     public var scenarioIndex : int;      // its place in the session
@@ -434,6 +447,19 @@ statemachine class W3T_Bot
         scenarioValue = 0;
         scenarioName = '';
         scenarioText = "";
+        scenarioPhase = 0;
+        scenarioMark = 0;
+        scenarioUntil = 0;
+        scenarioWindows = 0;
+        scenarioHeard = 0;
+        scenarioOnsetHits = 0;
+        scenarioOnsets = 0;
+        scenarioWasOn = false;
+        scenarioWindowOn = false;
+        scenarioWindowOnset = false;
+        scenarioBones.Clear();
+        scenarioHitAnims = 0;
+        scenarioAnimUntil = 0;
         scenarioIndex = index;
         scenario = next;
         settleUntil = ElapsedS() + 5;
