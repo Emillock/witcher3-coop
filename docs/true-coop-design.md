@@ -973,6 +973,92 @@ friend reported, with what the code says about each.
   (`FollowLeaderClock`, counted as `clocksFollowed`). `clock_sync` puts the leader 300 m away, out of reach of
   Witcher Online's own sync, and moves its clock a day and a half on; the member's must follow.
 
+## Sounds: what a copy does not play (2026-11-04)
+
+The base game plays its own hit sound (`cmb_play_hit_light`/`_heavy`, `CActor.ProcessHitSound`) **only when no hit
+animation played** - otherwise the sound rides the animation. A copy almost never plays a hit animation: measured
+with `enemy_sounds` (`IsInHitAnim` in the second after each hit of the test's own), a sword-wielding human answered
+6-7 of 7 hits with one, its copy 0-3; a drowner 5 of 7, its copy 1. So on a member's screen a hit on a copy often
+landed in silence, which is what the friend reported ("no attack sound", "his own hits landing"). `HearHit` fills
+exactly that hole: a frame after the hit, if neither named sound is active and the copy is not in a hit animation,
+the copy plays the sound the base game would have. It fired 3-6 times per run in both cases. The earlier reading
+that drowner copies were already at parity was that net's own doing, not evidence that nothing was missing.
+
+The swings themselves are fine. `SoundIsActiveAny()` cannot judge that on a human (it stays true the whole fight,
+with one onset at the start), so the scenario runs in two parts - first the monster's swings at the ghost with no
+hit of ours to turn it around, then our own hits - and samples sound per bone (`r_weapon`, `l_weapon`, `head`,
+`torso3`, `pelvis`). Leader and copy come out the same: 6 of 6 attack windows audible against 5 of 6, the same
+bones sounding.
+
+## A party member in a cutscene (2026-11-05)
+
+Cutscenes cannot be shown to both players: a scene starts at a named input (`PlayScene(scene, input)`), the inputs
+are arbitrary per scene (`AboutPainite`, `NephriteFound`, ... in `mq6005_geralt_oneliners.w2scene`), and a running
+scene does not tell scripts which one it is in, so a member cannot be told where to start the same scene. What a
+cutscene does to the fight is fixed instead.
+
+The presence message (`hz`) carries a last field: whether that game is in a cutscene or dialogue
+(`IsDialogOrCutscenePlaying`, `IsInNonGameplayCutscene`, or the scene the tests name). It is sent at once when a
+scene starts and ends, because the loop stops ticking while one plays. Then:
+
+- the others are told once ("X is watching a cutscene");
+- the leader leaves that member's character alone exactly as it leaves a dead member's: `ArmGhosts` stops arming
+  it, which also puts everything back by itself when the scene ends. Changing the monsters' attitudes directly did
+  not reverse - the monster never went back to the character afterwards;
+- the hits queued for them are dropped, and the monsters fighting them are told to forget them, because a monster
+  in mid-fight keeps the target it has even once the character is disarmed;
+- they are noticed again a beat (0.3 s) after the scene ends, in the leader's own tick so the character has been
+  armed again by then. Without that the fight never resumed: the monster stood with a target it could no longer
+  see;
+- a member in a scene is not named as a silent player, and while the *leader* is in one its copies are held
+  instead of going stale after 5 s.
+
+`cutscene_wait` covers it: the member says it is in a cutscene while the leader's monster is on it; nothing may
+reach it while it watches, and the fight must resume afterwards. Two things the test had to learn: a hit already
+in flight when the scene starts is not a hit sent into it, and the first hit after the scene lands in the same
+tick the scene ends.
+
+## Who is missing from the other world (2026-11-05)
+
+"Missing interesting NPCs" is the visible part of the two worlds keeping their own quest state. What the engine
+offers for telling people apart was measured first, on the 43 actors standing around the bots in Novigrad:
+`HasInteractionScene()` is **false for every one of them**, none is a `W3MerchantNPC`, and `GetReadableName()`
+answers with the entity template's path, not a display name. So the path is the identity: anything that is not
+under `community_npcs` or `crowd_npc`, not a monster, not a horse and not another player's character. Where the
+bots stand, that rule picks out four people - all of them characters of the Blanka theatre quest
+(`q305_theatre_ticket_man`, `q305_theatre_helper`, `q305_actor3_rich_man`) - out of 43 actors.
+
+The leader sends them as `np` every 2 s (at most 12, within 30 m of a party member's character). The member's game
+answers by name: who of them its own world does not have within 40 m, counted (`peopleMissing`) and named on
+screen at most once a minute, labelled with the last part of the path ("anabelle"). Generic names match loosely,
+so the count under-reports rather than invents. `npc_match` covers it: a person only the leader has must be named,
+and the name must disappear once that person stands in the member's world too.
+
+Two traps found doing it, both of which crashed the game:
+
+- **asking the world who stands nearby from inside the message pump faults the game.** The list is only written
+  down when it arrives; the comparison runs in the member's own tick, where the mod does all its other queries.
+- **pushing a freshly built `Vector(...)` into an array faults the game.** `heardSpots.PushBack(Vector(x, y, z))`
+  killed the member a second after it joined, in every scenario, not only this one; building the position in a
+  local first and pushing that is fine. The mod assigns Vectors to locals everywhere else, which is why this had
+  never shown up.
+
+This is a report, not a fix: mirroring those people as copies is possible with the machinery the monsters use, but
+a copy cannot be talked to, so it would show the person without the conversation.
+
+## A character that ends up somewhere else (2026-11-05)
+
+The known bug below (a member's character in the leader's world fell off the Novigrad pier and the monsters fought
+it in the water) now has a guard: if it stays more than 3 m away, or 1.5 m off in height, from where its player
+says it stands for a second, it is put there (`moveEntity`, `putBacks`). Diving is excluded, as Witcher Online's
+own 200 m teleport excludes it.
+
+**This one is not covered by a test, and that was not for want of trying.** The engine ignores `Teleport` on a
+character the movement adjustor owns - it never moves - and when the member itself jumps 15 m, Witcher Online
+snaps the character over at once, so the gap never lasts the second the rule waits for. The pathological case was
+physics holding the character below a pier, which the harness cannot stage. The counter is there so a real session
+can show whether it ever fires.
+
 ## Open questions
 
 - **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in

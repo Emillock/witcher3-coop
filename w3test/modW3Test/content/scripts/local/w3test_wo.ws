@@ -243,6 +243,32 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemySoundsMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "npc_match")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_NpcMatchLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_NpcMatchMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "cutscene_wait")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_CutsceneWaitLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_CutsceneWaitMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "attack_view")
     {
         if(ghosts < 1)
@@ -3766,6 +3792,236 @@ function W3T_SoundReport(npc : CNewNPC) : string
     return "any=" + npc.SoundIsActiveAny() + " light=" + npc.SoundIsActiveName('cmb_play_hit_light')
         + " heavy=" + npc.SoundIsActiveName('cmb_play_hit_heavy') + " head=" + npc.SoundIsActive('head')
         + " canHitAnim=" + npc.CanPlayHitAnim();
+}
+
+// npc_match, leader: stand a merchant next to the member's character, who is not in the member's own world.
+function W3T_NpcMatchLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var rot : EulerAngles;
+    var spot : Vector;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(!member.ghost)
+        {
+            return false;
+        }
+        template = (CEntityTemplate)LoadResource(W3T_PersonPath(), true);
+        if(!template)
+        {
+            W3T_Log("FAIL no template " + W3T_PersonPath());
+            W3T_Quit(2);
+            return false;
+        }
+        spot = member.ghost.GetWorldPosition() + VecFromHeading(member.ghost.GetHeading()) * 3.0;
+        bot.scenarioEntity = theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
+        W3T_Log("NPC leader stood " + W3T_PersonPath() + " at " + W3T_VecStr(spot));
+        bot.scenarioCount = 1;
+        return false;
+    }
+    if(!bot.scenarioEntity)
+    {
+        W3T_Log("FAIL the person is gone");
+        W3T_Quit(2);
+        return false;
+    }
+    W3T_LookAt(bot.scenarioEntity.GetWorldPosition());
+    W3T_Log("NPC leader shared=" + coop.peopleShared + " name='" + bot.scenarioEntity.GetReadableName() + "'");
+    if(bot.scenarioCount == 1 && coop.peopleShared >= 1)
+    {
+        W3T_Log("NPC leader lists " + coop.peopleShared + " people a member here could talk to");
+        bot.scenarioCount = 2;
+    }
+    return bot.scenarioCount == 2;
+}
+
+// npc_match, member: it must hear of that person and say it is missing, then stop once it stands here too.
+function W3T_NpcMatchMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var template : CEntityTemplate;
+    var rot : EulerAngles;
+    var spot : Vector;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    W3T_Log("NPC member heard=" + coop.peopleHeard + " listed=" + coop.peopleListed + " missing=" + coop.peopleMissing
+        + " names='" + coop.peopleMissingNames + "' phase=" + bot.scenarioPhase);
+    if(bot.scenarioPhase == 0)
+    {
+        if(coop.peopleHeard < 1 || coop.peopleMissing < 1)
+        {
+            return false;
+        }
+        W3T_Log("NPC member: " + coop.peopleMissing + " missing here (" + coop.peopleMissingNames + ")");
+        template = (CEntityTemplate)LoadResource(W3T_PersonPath(), true);
+        if(!template)
+        {
+            W3T_Log("FAIL no template " + W3T_PersonPath());
+            W3T_Quit(2);
+            return false;
+        }
+        spot = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0;
+        bot.scenarioEntity = theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
+        W3T_Log("NPC member stood the same person here at " + W3T_VecStr(spot));
+        bot.scenarioPhase = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioTime > 30.0)
+    {
+        W3T_Log("FAIL still missing with the same person standing here");
+        W3T_Quit(1);
+        return false;
+    }
+    return coop.peopleMissing == 0 && coop.peopleHeard >= 2;
+}
+
+// the person npc_match uses (W3T_PERSON overrides it)
+function W3T_PersonPath() : string
+{
+    if(W3T_GetEnv("W3T_PERSON") != "")
+    {
+        return W3T_GetEnv("W3T_PERSON");
+    }
+    return "characters\npc_entities\secondary_npc\anabelle.w2ent";
+}
+
+// cutscene_wait, leader: its monster fights the member's character, which then goes into a cutscene. While it
+// lasts the monster must turn away from it and no hit must be sent; afterwards both resume.
+function W3T_CutsceneWaitLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+    var target : CActor;
+    var onGhost : bool;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        return false;
+    }
+    monster = (CNewNPC)bot.scenarioEntity;
+    if(!monster)
+    {
+        W3T_Log("FAIL the monster is gone");
+        W3T_Quit(2);
+        return false;
+    }
+    W3T_LookAt(monster.GetWorldPosition());
+    target = monster.GetTarget();
+    if(target)
+    {
+        onGhost = target.HasTag('MPEntity');
+    }
+    // before the scene: keep it on the ghost, and remember the hits that landed
+    if(coop.scenesHeard < 1)
+    {
+        W3T_KeepOnGhost(monster, member.ghost);
+        bot.scenarioMark = coop.hurtsCaptured;
+    }
+    else if(bot.scenarioPhase == 0)
+    {
+        bot.scenarioPhase = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioMark = coop.hurtsCaptured;   // what was already on its way is not a hit sent into the scene
+        W3T_Log("CUTSCENE leader heard the member's cutscene, hits so far=" + bot.scenarioMark);
+    }
+    if(bot.scenarioPhase == 1 && bot.ElapsedS() - bot.scenarioTime > 1.5 && coop.PlayerInScene(member.username))
+    {
+        if(coop.hurtsCaptured > bot.scenarioMark)
+        {
+            W3T_Log("FAIL a hit was sent to a member watching a cutscene");
+            W3T_Quit(1);
+            return false;
+        }
+        if(coop.sceneTargetsTurned < 1 && bot.ElapsedS() - bot.scenarioTime > 4.0)
+        {
+            W3T_Log("FAIL the member watching a cutscene was not left alone");
+            W3T_Quit(1);
+            return false;
+        }
+    }
+    W3T_Log("CUTSCENE leader scenes=" + coop.scenesHeard + " hurtsDropped=" + coop.sceneHurtsDropped
+        + " turned=" + coop.sceneTargetsTurned + " hurts=" + coop.hurtsCaptured + "/" + bot.scenarioMark
+        + " onGhost=" + onGhost + " memberInScene=" + coop.PlayerInScene(member.username)
+        + " phase=" + bot.scenarioPhase);
+    // and once it is over, its character is fair game again
+    if(bot.scenarioPhase == 1 && !coop.PlayerInScene(member.username) && coop.scenesHeard >= 1)
+    {
+        bot.scenarioPhase = 2;
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_KeepOnGhost(monster, member.ghost);
+    }
+    if(bot.scenarioPhase == 2)
+    {
+        W3T_KeepOnGhost(monster, member.ghost);
+        if(bot.ElapsedS() - bot.scenarioTime > 25.0)
+        {
+            W3T_Log("FAIL the fight did not resume after the cutscene");
+            W3T_Quit(1);
+            return false;
+        }
+        if(coop.hurtsCaptured > bot.scenarioMark)
+        {
+            W3T_Log("CUTSCENE leader: hits resumed after the cutscene (" + coop.hurtsCaptured + ")");
+            return coop.sceneTargetsTurned >= 1;
+        }
+    }
+    return false;
+}
+
+// cutscene_wait, member: once the leader's monster has hit it, it says it is in a cutscene for 8 s, then leaves it.
+function W3T_CutsceneWaitMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Immortal, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.hurtsApplied < 1)
+    {
+        return false;
+    }
+    if(bot.scenarioPhase == 0)
+    {
+        bot.scenarioPhase = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        coop.SetSceneForTest("w3t\\test_scene.w2scene");
+        W3T_Log("CUTSCENE member is in a cutscene now, hits taken=" + coop.hurtsApplied);
+        bot.scenarioMark = coop.hurtsApplied;
+        return false;
+    }
+    if(bot.scenarioPhase == 1)
+    {
+        W3T_Log("CUTSCENE member watching, hurtsApplied=" + coop.hurtsApplied + "/" + bot.scenarioMark
+            + " for " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s");
+        if(bot.ElapsedS() - bot.scenarioTime < 1.5)
+        {
+            bot.scenarioMark = coop.hurtsApplied;   // ...the same for one already in flight to here
+        }
+        else if(coop.hurtsApplied > bot.scenarioMark)
+        {
+            W3T_Log("FAIL it took a hit while watching a cutscene");
+            W3T_Quit(1);
+            return false;
+        }
+        if(bot.ElapsedS() - bot.scenarioTime > 8.0)
+        {
+            bot.scenarioPhase = 2;
+            coop.SetSceneForTest("");
+            W3T_Log("CUTSCENE member left the cutscene");
+        }
+        return false;
+    }
+    W3T_Log("CUTSCENE member back, hurtsApplied=" + coop.hurtsApplied + "/" + bot.scenarioMark);
+    return coop.hurtsApplied > bot.scenarioMark;
 }
 
 // enemy_sounds, leader: the drowner of enemy_attacks, with a report of what the engine says is sounding on it
