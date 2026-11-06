@@ -17,6 +17,11 @@ function W3T_EndScenario(bot : W3T_Bot)
         W3T_EndEntity(bot.scenarioEntities[i]);
     }
     client = theGame.r_getMultiplayerClient();
+    coop = client.getCoopEnemies();
+    if(coop)
+    {
+        coop.SendEveryoneAway();   // figures standing for the leader's people must not block a later scenario
+    }
     if(client.getInParty())
     {
         client.leaveParty();
@@ -3822,6 +3827,10 @@ function W3T_NpcMatchLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remo
     }
     if(!bot.scenarioEntity)
     {
+        if(bot.scenarioCount >= 3)
+        {
+            return true;   // taken away on purpose
+        }
         W3T_Log("FAIL the person is gone");
         W3T_Quit(2);
         return false;
@@ -3832,8 +3841,17 @@ function W3T_NpcMatchLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remo
     {
         W3T_Log("NPC leader lists " + coop.peopleShared + " people a member here could talk to");
         bot.scenarioCount = 2;
+        bot.scenarioTime = bot.ElapsedS();
     }
-    return bot.scenarioCount == 2;
+    // after a while the person goes, so the member's mirrored figure must go too
+    if(bot.scenarioCount == 2 && bot.ElapsedS() - bot.scenarioTime > 20.0)
+    {
+        bot.scenarioEntity.Destroy();
+        bot.scenarioEntity = NULL;
+        W3T_Log("NPC leader took its person away");
+        bot.scenarioCount = 3;
+    }
+    return bot.scenarioCount >= 2;
 }
 
 // npc_match, member: it must hear of that person and say it is missing, then stop once it stands here too.
@@ -3859,27 +3877,65 @@ function W3T_NpcMatchMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : 
             return false;
         }
         W3T_Log("NPC member: " + coop.peopleMissing + " missing here (" + coop.peopleMissingNames + ")");
-        template = (CEntityTemplate)LoadResource(W3T_PersonPath(), true);
-        if(!template)
-        {
-            W3T_Log("FAIL no template " + W3T_PersonPath());
-            W3T_Quit(2);
-            return false;
-        }
-        spot = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0;
-        bot.scenarioEntity = theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
-        W3T_Log("NPC member stood the same person here at " + W3T_VecStr(spot));
         bot.scenarioPhase = 1;
         bot.scenarioTime = bot.ElapsedS();
         return false;
     }
-    if(bot.ElapsedS() - bot.scenarioTime > 30.0)
+    // the mod stands them here, and the figure is out of gameplay
+    if(bot.scenarioPhase == 1)
     {
-        W3T_Log("FAIL still missing with the same person standing here");
+        if(coop.peopleMirrored < 1)
+        {
+            if(bot.ElapsedS() - bot.scenarioTime > 20.0)
+            {
+                W3T_Log("FAIL the missing person was never stood here");
+                W3T_Quit(1);
+            }
+            return false;
+        }
+        bot.scenarioCount = W3T_MirrorCount();
+        W3T_Log("NPC member stands " + bot.scenarioCount + " of the leader's people here (mirrored="
+            + coop.peopleMirrored + ")");
+        if(bot.scenarioCount < 1)
+        {
+            W3T_Log("FAIL the mirrored person is not in this world");
+            W3T_Quit(1);
+            return false;
+        }
+        bot.scenarioPhase = 2;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    // ...and goes once the leader's person is gone
+    W3T_Log("NPC member heard=" + coop.peopleHeard + " missing=" + coop.peopleMissing + " mirrored="
+        + coop.peopleMirrored + " standing=" + W3T_MirrorCount());
+    if(bot.ElapsedS() - bot.scenarioTime > 60.0)
+    {
+        W3T_Log("FAIL the figure stayed after the leader's person was gone");
         W3T_Quit(1);
         return false;
     }
-    return coop.peopleMissing == 0 && coop.peopleHeard >= 2;
+    return coop.peopleMissing == 0 && W3T_MirrorCount() == 0;
+}
+
+// the figures W3Coop stands here for people of the leader's world (tagged W3CoopMirror)
+function W3T_MirrorCount() : int
+{
+    var actors : array<CActor>;
+    var i, n : int;
+
+    actors = thePlayer.GetNPCsAndPlayersInRange(60, 48, '', FLAG_ExcludePlayer);
+    for(i = 0; i < actors.Size(); i += 1)
+    {
+        if(actors[i])
+        {
+            if(actors[i].HasTag('W3CoopMirror'))
+            {
+                n += 1;
+            }
+        }
+    }
+    return n;
 }
 
 // the person npc_match uses (W3T_PERSON overrides it)

@@ -1043,8 +1043,19 @@ Two traps found doing it, both of which crashed the game:
   local first and pushing that is fine. The mod assigns Vectors to locals everywhere else, which is why this had
   never shown up.
 
-This is a report, not a fix: mirroring those people as copies is possible with the machinery the monsters use, but
-a copy cannot be talked to, so it would show the person without the conversation.
+**Standing them here (2026-11-06).** The report became a fix: the people the leader lists and this world does not
+have are stood here too, so both players see the same street. They are a sight only - tagged `W3CoopMirror`, out
+of gameplay (`SetGameplayVisibility(false)`), invulnerable, friendly, no hit animations - because the conversation
+belongs to the player whose quest it is, and a figure that could be walked up to but not talked to would be worse
+than an empty street. At most six stand at a time, and each goes as soon as the leader stops listing them, as does
+all of them when the party ends or the member leaves the leader's world (`ReleaseAll`).
+
+The matcher ignores anything tagged `W3CoopMirror`, and so does the leader's own list: without that, a figure
+would answer for the person it stands for, the miss would clear, the figure would be removed, and the whole thing
+would flicker once a second.
+
+`npc_match` covers the full cycle: a person only the leader has must be named, stood here, and taken away again
+once the leader's person is gone.
 
 ## A character that ends up somewhere else (2026-11-05)
 
