@@ -248,6 +248,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemySoundsMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "quest_behind")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_QuestBehindLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_QuestBehindMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "npc_match")
     {
         if(ghosts < 1)
@@ -3797,6 +3810,91 @@ function W3T_SoundReport(npc : CNewNPC) : string
     return "any=" + npc.SoundIsActiveAny() + " light=" + npc.SoundIsActiveName('cmb_play_hit_light')
         + " heavy=" + npc.SoundIsActiveName('cmb_play_hit_heavy') + " head=" + npc.SoundIsActive('head')
         + " canHitAnim=" + npc.CanPlayHitAnim();
+}
+
+// quest_behind, leader: start a quest this save has not begun, and leave it open
+function W3T_QuestBehindLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var manager : CWitcherJournalManager;
+    var quests : array<CJournalBase>;
+    var found : CJournalBase;
+    var i : int;
+
+    manager = theGame.GetJournalManager();
+    if(bot.scenarioCount == 0)
+    {
+        manager.GetActivatedOfType('CJournalQuest', quests);
+        for(i = 0; i < quests.Size(); i += 1)
+        {
+            if(quests[i])
+            {
+                if(manager.GetEntryStatus(quests[i]) == JS_Inactive)
+                {
+                    found = quests[i];
+                    break;
+                }
+            }
+        }
+        if(!found)
+        {
+            W3T_Log("FAIL this save has no quest left to start (" + quests.Size() + " known)");
+            W3T_Quit(2);
+            return false;
+        }
+        bot.scenarioName = found.GetUniqueScriptTag();
+        manager.ActivateEntry(found, JS_Active, true, true);
+        W3T_Log("QUEST leader started " + NameToString(bot.scenarioName));
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    found = manager.GetEntryByTag(bot.scenarioName);
+    W3T_Log("QUEST leader " + NameToString(bot.scenarioName) + " status=" + (int)manager.GetEntryStatus(found));
+    return bot.ElapsedS() - bot.scenarioTime > 20;
+}
+
+// quest_behind, member: finish the quest the leader just started, then its game must report the leader is behind
+function W3T_QuestBehindMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var manager : CWitcherJournalManager;
+    var found : CJournalBase;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        return false;
+    }
+    manager = theGame.GetJournalManager();
+    // which quest: the one the leader's journal sync just switched on here
+    if(bot.scenarioCount == 0)
+    {
+        if(!IsNameValid(coop.lastJournalApplied))
+        {
+            return false;
+        }
+        bot.scenarioName = coop.lastJournalApplied;
+        found = manager.GetEntryByTag(bot.scenarioName);
+        if(!found)
+        {
+            return false;
+        }
+        manager.ActivateEntry(found, JS_Success, true, true);
+        W3T_Log("QUEST member finished " + NameToString(bot.scenarioName) + ", which the leader has only started");
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    found = manager.GetEntryByTag(bot.scenarioName);
+    W3T_Log("QUEST member " + NameToString(bot.scenarioName) + " status=" + (int)manager.GetEntryStatus(found)
+        + " behind=" + coop.questsBehind + " last='" + coop.lastQuestBehind + "' messages=" + coop.journalMessages);
+    if(bot.ElapsedS() - bot.scenarioTime > 35.0)
+    {
+        W3T_Log("FAIL the leader being behind was never reported");
+        W3T_Quit(1);
+        return false;
+    }
+    return coop.questsBehind >= 1;
 }
 
 // npc_match, leader: stand a merchant next to the member's character, who is not in the member's own world.
