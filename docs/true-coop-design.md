@@ -1070,6 +1070,48 @@ snaps the character over at once, so the gap never lasts the second the rule wai
 physics holding the character below a pier, which the harness cannot stage. The counter is there so a real session
 can show whether it ever fires.
 
+## Waiting for someone's cutscene (2026-11-07)
+
+A party member walking into a cutscene is now offered to the others as a question - "X is watching a cutscene.
+Wait for them?" (dialog id 731104) - asked once per cutscene of theirs, only to players within 60 m who are free
+to answer (alive, not fighting, not in a scene of their own, no other window open).
+
+**Yes does not pause the game, on purpose.** Pausing would be the obvious way and it can strand a player: nothing
+that could let go runs while the game is paused, since timers and ticks stop with it (the harness notes the same
+thing about an open dialog stopping the bot's own loop). So waiting holds the character still in a world that
+keeps running - `BlockAllActions('W3CoopWait')` - and the hold is let go when their scene ends, when something
+attacks this player (fighting beats waiting), when their game goes quiet for ten seconds, when they leave the
+party, after three minutes, or on death. `cutscene_wait` asks that nobody is left waiting once the scene is over.
+
+## The leader being behind on a quest (2026-11-07)
+
+The journal sync only ever accepted progress: a status from the leader that was further back than this game's was
+dropped without a word. But the leader's world is the one everybody is playing in, so a quest this player has
+finished can stand unfinished around them, with the people and the state that go with it. The member's game now
+says so once per quest, with the journal's own title ("Q309 Novigrad Under Control 2" in the test), counted as
+`questsBehind`. `quest_behind` covers it: the leader starts a quest its save has not begun, the member finishes
+that same quest (learning which one from the sync itself), and the report must follow.
+
+## What "the same world" would really take
+
+Making a member's world equal to the leader's means their quest state, not their journal: quest phases live in the
+quest system, which scripts cannot set. The only honest way is for the member to play the leader's save, which is
+a file transfer, and the pieces of that are now measured:
+
+- a save is about 1.5 MB (`AutoSave_*.sav` in the test saves), so base64 over the wire is roughly 2 MB;
+- the transport is UDP datagrams relayed by the server (`DatagramSocket`, 64 KB buffer), where co-op channel
+  messages are forwarded on arrival and repeated for a tenth of a second against packet loss. A file needs its
+  own acknowledgements and retransmits on top of that - the channel's repeat is not a delivery guarantee;
+- there is room for the channel now: the server allowed **eight** co-op channels and the mod uses exactly eight
+  (en, hit, hurt, jr, fx, hz, pt and np, the last added 2026-11-06), so the next one would have been dropped in
+  silence. The limit is 16 as of this change, which needs the host's server to be the newer one;
+- the member's client would have to write the received file into its own saves folder and the player would load
+  it from the normal menu. Writing into a player's save folder is where this stops being a code question.
+
+So the transfer is buildable - a server channel, file reading and writing in the client, an ack protocol, and a
+load - but it changes what co-op means (everyone plays the host's world and their own progress waits in their own
+slots) and it writes into save folders, so it is the owner's call before any of it is built.
+
 ## Open questions
 
 - **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in
