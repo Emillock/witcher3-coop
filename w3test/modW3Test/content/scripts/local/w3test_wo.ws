@@ -4005,7 +4005,15 @@ function W3T_CutsceneWaitLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
     W3T_Log("CUTSCENE leader scenes=" + coop.scenesHeard + " hurtsDropped=" + coop.sceneHurtsDropped
         + " turned=" + coop.sceneTargetsTurned + " hurts=" + coop.hurtsCaptured + "/" + bot.scenarioMark
         + " onGhost=" + onGhost + " memberInScene=" + coop.PlayerInScene(member.username)
-        + " phase=" + bot.scenarioPhase);
+        + " offered=" + coop.waitsOffered + " taken=" + coop.waitsTaken
+        + " waitingFor='" + coop.WaitingForScene() + "' phase=" + bot.scenarioPhase);
+    // nobody may be left waiting once the scene is over
+    if(bot.scenarioPhase == 2 && coop.WaitingForScene() != "")
+    {
+        W3T_Log("FAIL it is still waiting after the cutscene ended");
+        W3T_Quit(1);
+        return false;
+    }
     // and once it is over, its character is fair game again
     if(bot.scenarioPhase == 1 && !coop.PlayerInScene(member.username) && coop.scenesHeard >= 1)
     {
@@ -4024,8 +4032,10 @@ function W3T_CutsceneWaitLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_
         }
         if(coop.hurtsCaptured > bot.scenarioMark)
         {
-            W3T_Log("CUTSCENE leader: hits resumed after the cutscene (" + coop.hurtsCaptured + ")");
-            return coop.sceneTargetsTurned >= 1;
+            W3T_Log("CUTSCENE leader: hits resumed after the cutscene (" + coop.hurtsCaptured + "), offered="
+                + coop.waitsOffered + " taken=" + coop.waitsTaken);
+            return coop.sceneTargetsTurned >= 1 && coop.waitsOffered >= 1 && coop.waitsTaken >= 1
+                && coop.WaitingForScene() == "";
         }
     }
     return false;

@@ -228,6 +228,14 @@ function ShowProgressDialog( messageId : int, title : string, message : string, 
         HideUserDialog(messageId);
         W3T_Log("DIALOG answered No");
     }
+    else if(type == UDB_YesNo && messageId == W3CoopWaitMessageId() && W3T_CurrentScenario() != "cutscene_wait")
+    {
+        // W3Coop's offer to wait for a party member's cutscene: taking it holds the bot still, which every other
+        // scenario reads as a bot that stopped working
+        UserDialogCallback(messageId, UMA_No);
+        HideUserDialog(messageId);
+        W3T_Log("DIALOG answered No");
+    }
     else if(type == UDB_YesNo && messageId == W3CoopTravelMessageId() && W3T_CurrentScenario() != "follow_travel")
     {
         // W3Coop's offer to follow the leader: only follow_travel takes it (other tests move the bots themselves)
