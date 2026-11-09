@@ -248,6 +248,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_EnemySoundsMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "kill_loot")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_KillLootLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_KillLootMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "quest_behind")
     {
         if(ghosts < 1)
@@ -3812,6 +3825,301 @@ function W3T_SoundReport(npc : CNewNPC) : string
         + " canHitAnim=" + npc.CanPlayHitAnim();
 }
 
+// kill_loot, leader: a monster the member kills in its own world; what its death leaves behind in this one
+function W3T_KillLootLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+
+    if(bot.scenarioCount == 0)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        return false;
+    }
+    monster = (CNewNPC)bot.scenarioEntity;
+    if(monster && monster.IsAlive())
+    {
+        bot.scenarioVec = monster.GetWorldPosition();
+        // the baseline: the leader killing its own monster, with nobody's hit forwarded
+        if(W3T_GetEnv("W3T_LOOT_KILLER") == "leader")
+        {
+            monster.SetAttitude(thePlayer, AIA_Hostile);
+            W3T_SwingOrKite(bot, monster);
+        }
+        else
+        {
+            W3T_LookAt(bot.scenarioVec);
+        }
+        W3T_Log("LOOT leader alive hp=" + FloatToStringPrec(monster.GetHealthPercents(), 2)
+            + " hits=" + coop.hitsApplied + " carries=" + W3T_ActorItems(monster) + " submersion="
+            + FloatToStringPrec(theGame.GetWorld().GetWaterLevel(bot.scenarioVec, true) - bot.scenarioVec.Z, 2));
+        return false;
+    }
+    if(bot.scenarioTime == 0)
+    {
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("LOOT leader its monster is down at " + W3T_VecStr(bot.scenarioVec));
+    }
+    W3T_Log("LOOT leader dead " + W3T_RemainsReport(bot.scenarioVec) + " sent=" + coop.dropsSent
+        + " items=" + coop.dropItemsSent + " last=" + coop.lastDrop + " names=" + coop.lastDropNames
+        + " killer=" + W3T_GetEnv("W3T_LOOT_KILLER"));
+    // a drowner's loot is a roll of the dice and can come out empty; with nothing dropped there is nothing to
+    // compare, so another one is sent for
+    if(bot.ElapsedS() - bot.scenarioTime > 6 && coop.dropsSent >= 1 && coop.dropItemsSent == 0)
+    {
+        W3T_Log("LOOT leader that one dropped nothing; another monster");
+        bot.scenarioCount = 0;
+        bot.scenarioTime = 0;
+        bot.scenarioEntity = NULL;
+        return false;
+    }
+    return bot.ElapsedS() - bot.scenarioTime > 10 && coop.dropItemsSent >= 1;
+}
+
+// kill_loot, member: fights the copy until the leader reports it dead, then looks for anything to loot where it fell
+function W3T_KillLootMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var puppet : CNewNPC;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() >= 1)
+    {
+        puppet = coop.PuppetAt(0);
+    }
+    if(puppet && puppet.IsAlive())
+    {
+        bot.scenarioVec = puppet.GetWorldPosition();
+        bot.scenarioCount = W3T_MyItemCount();   // what this player carried before the kill
+        W3T_SwingOrKite(bot, puppet);
+        W3T_Log("LOOT member fighting hp=" + FloatToStringPrec(puppet.GetHealthPercents(), 2)
+            + " sent=" + coop.hitsSent + " submersion="
+            + FloatToStringPrec(theGame.GetWorld().GetWaterLevel(bot.scenarioVec, true) - bot.scenarioVec.Z, 2));
+        return false;
+    }
+    if(bot.scenarioTime == 0)
+    {
+        if(bot.scenarioVec.X == 0 && bot.scenarioVec.Y == 0)
+        {
+            return false;   // no copy has stood here yet
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("LOOT member the copy is gone from " + W3T_VecStr(bot.scenarioVec) + ", puppets=" + coop.PuppetCount());
+    }
+    W3T_Log("LOOT member " + W3T_RemainsReport(bot.scenarioVec) + " heard=" + coop.dropsHeard
+        + " filled=" + coop.dropsGiven + " items=" + coop.dropItemsGiven + " last=" + coop.lastDrop
+        + " mine=" + W3T_MyItemCount() + "/" + bot.scenarioCount);
+    if(coop.dropItemsGiven < 1)
+    {
+        // the leader may still be rolling for a monster that drops something: keep waiting, the harness times out
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    // what the leader's body holds must be here too, and it must be possible to take it
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioStep = W3T_RemainsItems(bot.scenarioVec);
+        bot.scenarioText = W3T_RemainsNames(bot.scenarioVec);
+        W3T_Log("LOOT member the copy's body holds " + bot.scenarioStep + " item(s) " + bot.scenarioText
+            + ", told " + coop.lastDropNames);
+        if(bot.scenarioStep < 1)
+        {
+            W3T_Log("FAIL the copy left nothing to loot though the leader's body held " + coop.dropItemsGiven);
+            W3T_Quit(1);
+            return false;
+        }
+        // the same things, not just the same number of them
+        if(!W3T_NamesWithin(coop.lastDropNames, bot.scenarioText))
+        {
+            W3T_Log("FAIL the copy's body holds " + bot.scenarioText + ", the leader's held " + coop.lastDropNames);
+            W3T_Quit(1);
+            return false;
+        }
+        W3T_Log("LOOT member took " + W3T_TakeRemains(bot.scenarioVec) + " container(s); mine=" + W3T_MyItemCount()
+            + " (was " + bot.scenarioCount + ")");
+        return false;
+    }
+    if(W3T_MyItemCount() <= bot.scenarioCount)
+    {
+        W3T_Log("FAIL looting the copy gave this player nothing (" + W3T_MyItemCount() + ")");
+        W3T_Quit(1);
+        return false;
+    }
+    return true;
+}
+
+// the names in the remains near a spot, as "|item|item|"
+function W3T_RemainsNames(spot : Vector) : string
+{
+    var entities : array<CGameplayEntity>;
+    var remains : W3ActorRemains;
+    var inv : CInventoryComponent;
+    var ids : array<SItemUniqueId>;
+    var names : string;
+    var i, j : int;
+
+    names = "|";
+    FindGameplayEntitiesInSphere(entities, spot, 8.0, 48, '', FLAG_ExcludePlayer);
+    for(i = 0; i < entities.Size(); i += 1)
+    {
+        remains = (W3ActorRemains)entities[i];
+        if(remains)
+        {
+            inv = (CInventoryComponent)remains.GetComponentByClassName('CInventoryComponent');
+            if(inv)
+            {
+                ids.Clear();
+                inv.GetAllItems(ids);
+                for(j = 0; j < ids.Size(); j += 1)
+                {
+                    names += NameToString(inv.GetItemName(ids[j])) + "|";
+                }
+            }
+        }
+    }
+    return names;
+}
+
+// is every name of the first list in the second ("|a|b|" within "|b|a|c|")
+function W3T_NamesWithin(wanted : string, have : string) : bool
+{
+    var parts : array<string>;
+    var i : int;
+
+    parts = StrSplit(wanted, "|");
+    for(i = 0; i < parts.Size(); i += 1)
+    {
+        if(parts[i] != "" && StrFindFirst(have, "|" + parts[i] + "|") < 0)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+// how many items the remains near a spot hold in all
+function W3T_RemainsItems(spot : Vector) : int
+{
+    var entities : array<CGameplayEntity>;
+    var remains : W3ActorRemains;
+    var inv : CInventoryComponent;
+    var items : int;
+    var i : int;
+
+    FindGameplayEntitiesInSphere(entities, spot, 8.0, 48, '', FLAG_ExcludePlayer);
+    for(i = 0; i < entities.Size(); i += 1)
+    {
+        remains = (W3ActorRemains)entities[i];
+        if(remains)
+        {
+            inv = (CInventoryComponent)remains.GetComponentByClassName('CInventoryComponent');
+            if(inv)
+            {
+                items += inv.GetAllItemsQuantity();
+            }
+        }
+    }
+    return items;
+}
+
+// what a death left to loot near a spot
+function W3T_RemainsReport(spot : Vector) : string
+{
+    var entities : array<CGameplayEntity>;
+    var remains : W3ActorRemains;
+    var inv : CInventoryComponent;
+    var found : int;
+    var items : int;
+    var empty : int;
+    var questItems : int;
+    var i : int;
+
+    FindGameplayEntitiesInSphere(entities, spot, 8.0, 48, '', FLAG_ExcludePlayer);
+    for(i = 0; i < entities.Size(); i += 1)
+    {
+        remains = (W3ActorRemains)entities[i];
+        if(remains)
+        {
+            found += 1;
+            inv = (CInventoryComponent)remains.GetComponentByClassName('CInventoryComponent');
+            if(inv)
+            {
+                items += inv.GetAllItemsQuantity();
+            }
+            if(remains.IsEmpty())
+            {
+                empty += 1;
+            }
+            if(remains.HasQuestItem())
+            {
+                questItems += 1;
+            }
+        }
+    }
+    return "remains=" + found + " items=" + items + " empty=" + empty + " questItems=" + questItems;
+}
+
+// takes everything from the remains near a spot, as a player clicking on them would
+function W3T_TakeRemains(spot : Vector) : int
+{
+    var entities : array<CGameplayEntity>;
+    var remains : W3ActorRemains;
+    var taken : int;
+    var i : int;
+
+    FindGameplayEntitiesInSphere(entities, spot, 8.0, 48, '', FLAG_ExcludePlayer);
+    for(i = 0; i < entities.Size(); i += 1)
+    {
+        remains = (W3ActorRemains)entities[i];
+        if(remains)
+        {
+            remains.TakeAllItems();
+            taken += 1;
+        }
+    }
+    return taken;
+}
+
+function W3T_MyItemCount() : int
+{
+    return thePlayer.GetInventory().GetAllItemsQuantity();
+}
+
+// what an actor carries, which is what its remains would hold (-1: it is gone)
+function W3T_ActorItems(actor : CActor) : int
+{
+    var inv : CInventoryComponent;
+
+    if(!actor)
+    {
+        return -1;
+    }
+    inv = actor.GetInventory();
+    if(!inv)
+    {
+        return -2;
+    }
+    return inv.GetAllItemsQuantity();
+}
+
+function W3T_IsDead(actor : CActor) : string
+{
+    if(!actor)
+    {
+        return "gone";
+    }
+    if(actor.isDead)
+    {
+        return "true";
+    }
+    return "false";
+}
+
 // quest_behind, leader: start a quest this save has not begun, and leave it open
 function W3T_QuestBehindLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
 {
@@ -4488,10 +4796,22 @@ function W3T_HandoffMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
             W3T_Quit(1);
         }
     }
-    else if(bot.scenarioCount == 2 && coop.PuppetCount() > 0)
+    else if(bot.scenarioCount == 2)
     {
-        W3T_Log("HANDOFF member mirrors the drowner again after " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s");
-        bot.scenarioCount = 3;
+        if(coop.PuppetCount() > 0)
+        {
+            W3T_Log("HANDOFF member mirrors the drowner again after " + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " s");
+            bot.scenarioCount = 3;
+        }
+        // the engine drops a teleport sent while the world from the last one is still streaming in
+        else if(VecDistance(thePlayer.GetWorldPosition(), bot.scenarioVec) > 10
+            && bot.ElapsedS() - bot.scenarioActAt > 2.0)
+        {
+            bot.scenarioActAt = bot.ElapsedS();
+            thePlayer.Teleport(bot.scenarioVec);
+            W3T_Log("HANDOFF member sending it back again (" + W3T_VecStr(thePlayer.GetWorldPosition())
+                + " -> " + W3T_VecStr(bot.scenarioVec) + ")");
+        }
     }
     return bot.scenarioCount == 3;
 }
