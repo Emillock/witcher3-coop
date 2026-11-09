@@ -7,7 +7,8 @@ In a party (walk up to a friend's character, press the interact key and answer "
 "Join ...'s party?"), the party leader's world is the one that counts:
 - Monsters are shared: everyone fights the leader's monsters. They walk, run, attack, cast,
   dodge, taunt and shoot along with the leader's monsters (the same attack or spell, with the
-  same animation). Your hits count in the leader's world, their attacks reach
+  same animation), described thirty times a second so their copies move as yours do.
+  A member's fight is the leader's fight too: the leader's own game goes into combat for it. Your hits count in the leader's world, their attacks reach
   you (dodge them as usual), and they die for everyone. Your Axii and Yrden hold them in the
   leader's world too. A monster that burns, is frozen,
   knocked down, blinded or dazed by Axii looks that way for everyone.
@@ -19,8 +20,21 @@ In a party (walk up to a friend's character, press the interact key and answer "
   in the same dialogue (also if you get there a few seconds later), and when the leader skips a
   line or cutscene, it is skipped for you too.
 - You see each other's signs, not only the casting gesture: Igni's fire, Aard's wave, Axii,
-  Yrden's trap on the ground and Quen's shield. Bombs and crossbow bolts fly and explode for
-  everyone too.
+  Yrden's trap on the ground and Quen's shield, and the sign gathering in the caster's hand.
+  Bombs and crossbow bolts fly and explode for everyone too.
+- A monster you kill leaves you its loot: what it dropped in the leader's world is on its body in
+  yours, the same items, for you to loot as usual. The leader's own body is untouched - neither of
+  you takes the other's drop.
+- Hits land with the sound they would have in your own game, on the copies as on your own monsters.
+- While you watch a cutscene the leader's monsters leave your character alone, and they pick their
+  fights again when it ends. Your friends are asked whether to wait for you; whoever says yes stands
+  still until your scene is over (the world around them keeps running, and anything that attacks
+  them ends the wait).
+- People the leader can talk to and your world has not got - a smith at his anvil, a merchant - are
+  named for you and stood where the leader sees them, as a sight: you cannot talk to them, but you
+  can see who the leader means.
+- If the leader has not got as far as you on a quest, your game says so once, with the quest's name:
+  their world is the one you are both in, so what you finished may still be standing there.
 - Farther than about 60 m from the leader, your own world's monsters take over again.
 - If you die, load your save as usual: you stay in the party, and the leader's monsters leave
   your character alone until you are back.
@@ -35,7 +49,7 @@ In a party (walk up to a friend's character, press the interact key and answer "
   means an older W3Coop on their side, or an older server on the host's.
 - A player who burns, is frozen, poisoned or knocked down looks that way to the others too.
 - The hidden quest facts the leader's game sets during the session are shared too (also only
-  forward), so your quests can follow the leader's progress. Loot stays per player.
+  forward), so your quests can follow the leader's progress. What is in your bags stays yours.
 To play without shared monsters, turn on "MPGhosts_LocalEnemiesOnly" in the mod's options.
 Gwent duels between players are switched off in this version.
 
@@ -76,10 +90,9 @@ If something goes wrong
   If the errors name WO_ functions (WO_Send, WO_Str, ...) and a "WitcherNativeBridge" message
   came first: a game update changed what the mod needs. Look for a newer W3Coop release; until
   then, uninstall it (below) to play without it.
-- Trading, emotes and the Gwent invite open Witcher Online's round menu, which shows nothing
-  on Remastered (the party does not need it). Until that is fixed, start the game with
-  -debugscripts (Steam: Properties > General > Launch options), press ~ in game and use
-  cooptrade() to trade with the player next to you, coopmenu() to try the menu itself,
+- The round player menu (trading, emotes) is built again for Remastered in this version. If it
+  still comes up empty for you, start the game with -debugscripts (Steam: Properties > General >
+  Launch options), press ~ in game and use cooptrade() to trade with the player next to you,
   coopjoin(Name) and coopleave() for the party. Witcher Online's own commands work there too:
   chat("..."), teleport(Name) and the emotes (wave(), bow(), dance(), ...).
 - The game crashes right at startup after a game update: the same; an older W3Coop than 0.3.1
@@ -101,10 +114,17 @@ WitcherNativeBridge by Flawkee and rejuvenate7 (MIT). Ultimate ASI Loader by Thi
 Licenses and the full source of the modified parts are in W3Coop\licenses and W3Coop\source.
 Status: tested with automated bots, two game copies on one PC, also through real Steam between
 two accounts. Covered: seeing each other, movement, riding, chat, emotes and trading; shared
-monsters (hits, attacks, hit reactions, status effects, bombs and bolts, deaths, summoned creatures,
-big fights of up to 48 monsters, leaving and coming back; their copies walk and run like the
-leader's monsters); a player's death and respawn; journal progress, quest facts and dialogue choices.
+monsters (hits, attacks, hit reactions, hit sounds, status effects, bombs and bolts, deaths,
+summoned creatures, big fights of up to 48 monsters, leaving and coming back; their copies walk and
+run like the leader's monsters); a player's death and respawn; journal progress, quest facts and
+dialogue choices; the loot of a shared kill; a cutscene keeping the monsters off; the leader's
+people stood in a member's world.
+Each of this version's new pieces passed its own test. The full run of all forty tests in one
+sitting did not finish cleanly for this build - the failures were in the test harness rather than
+the mod, but they are not ruled out, which is why this is a pre-release.
 Not yet tested on two different PCs over the internet, or with three or more players.
 Known limits: a monster's copy plays the same attacks, dodges, parries and taunts, but for a few
 swings (some of the bear's, the water hag's) it starts about 0.1-0.3 s late and then catches up.
-Finishers on a shared monster are not shown to the others (it just dies).
+Finishers on a shared monster are not shown to the others (it just dies). A cutscene itself is not
+shared: each game plays its own when its quest gets there, which is why waiting for a friend is
+offered instead. The leader's people stood in your world are a sight only - no talking, no trading.
