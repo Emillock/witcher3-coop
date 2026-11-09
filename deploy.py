@@ -61,11 +61,19 @@ def is_under(path, folder):
     return os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(folder)) + os.sep)
 
 
+BACKSLASH = chr(92)
+EXTENDED_PREFIX = BACKSLASH * 2 + "?" + BACKSLASH   # the extended-length prefix, which Win32 takes unnormalised
+
+
 def lp(path):
-    r"""`path` in the extended form (\\?\C:\...), so copies work from or to folders deeper than MAX_PATH (260
-    characters) without Windows' long-path setting (e.g. clones under a deep temp folder)."""
+    """`path` in the extended-length form once it is long enough to need it, so copies work from or to folders deeper
+    than MAX_PATH (260 characters) without Windows' long-path setting (e.g. a clone under a deep temp folder). Such a
+    path reaches Win32 unnormalised, so every separator in it must be a backslash: MSYS2's Python leaves forward
+    slashes in os.path.abspath, and a prefixed path that keeps them fails with "file not found"."""
     path = os.path.abspath(path)
-    return path if os.name != "nt" or path.startswith("\\\\?\\") else "\\\\?\\" + path
+    if os.name != "nt" or path.startswith(EXTENDED_PREFIX) or len(path) < 240:
+        return path
+    return EXTENDED_PREFIX + path.replace("/", BACKSLASH)
 
 
 def norm(rel):
