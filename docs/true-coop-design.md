@@ -1112,6 +1112,31 @@ So the transfer is buildable - a server channel, file reading and writing in the
 load - but it changes what co-op means (everyone plays the host's world and their own progress waits in their own
 slots) and it writes into save folders, so it is the owner's call before any of it is built.
 
+## What a shared kill leaves behind (2026-11-07)
+
+A member that kills one of the leader's monsters was credited with the kill (experience as for its own, since
+2026-10-28) and got nothing to show for it: measured three times over, the copy's body held nothing at all
+(`remains=0`), while the body in the leader's world held what the monster dropped.
+
+The reason is that dropping loot is the work of the **death behaviour tree** (`btTaskDeath.LootDrop`, which calls
+`UpdateLoot` then `ThrowAwayLootableItems` and leaves a `W3ActorRemains`), and a copy has no AI of its own: its
+behaviour tree was taken away so that the leader's world could drive it. The body stays, and stays empty. A
+baseline where the leader killed the same monster itself showed the engine working as usual (`remains=1 items=1`),
+which is what told the two apart.
+
+What it does now: when one of the leader's monsters dies, the leader waits up to four seconds for the engine to
+make the body, reads the items off it, and sends the list (`lt epoch netId count {item quantity}`, twelve items at
+most). The member's game holds the list until its copy is dead, puts those items in the copy's inventory and makes
+the same `ThrowAwayLootableItems` call the death task would have, so the copy leaves a body holding **what the
+monster really dropped in the leader's world**. Nothing is taken from the leader's own body: each player loots
+their own copy of the same things, which is the only version that works when the two worlds are separate.
+
+`kill_loot` is the scenario: the member fights a copy until the leader reports it dead, then its body must hold
+the same items by name as the ones the leader sent, and looting them must put them in the member's bags (19819 ->
+19821 items in the run that proved it, a Drowned dead tongue and a Monstrous eye). A drowner's loot is a roll of
+the dice and can come out empty, so the leader sends for another monster when that happens rather than passing a
+test on nothing.
+
 ## Open questions
 
 - **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in
