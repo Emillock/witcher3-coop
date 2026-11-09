@@ -1,0 +1,52 @@
+# Named Gwent decks for the gwent_duel scenario. run_test.py replaces a name in W3T_GWENT_DECKS by its card list.
+# One deck per line: "name: leader+card+card+...", card names as in GetCardDefs/GetLeaderDefs (the game's
+# def_gwint_*_cards.xml). A card may repeat. No special card (the scenario's inline decks have none).
+#
+# plain_*: unit cards without abilities that ask a question (no medic, spy, decoy, scorch, weather, horn, agile, muster)
+#   and a leader whose ability has no choice, so no dialog opens during the match.
+# medic_nr: Northern Realms with medics: the medic's pick is a decision (D NUR), except against an Invader of the North
+#   leader (invader_nilf), where non-hero medics resurrect at random (the hero medic yennefer still asks).
+# leaders_nilf: Nilfgaard with a leader whose ability asks a choice (emhyr_gold: resurrect from the enemy graveyard,
+#   D LRES when the enemy graveyard holds more than one target).
+# agile_medic: a medic and agile cards (the medic's row choice on agile resurrects, spec 7.3); its only medic is the hero
+#   yennefer, whose pick is always a decision (D NUR).
+# invader_nilf: Nilfgaard with Invader of the North (emhyr_platinium: every non-hero medic of both decks and the
+#   resurrect leaders pick at random), non-hero medics and the agile olgierd (the medic's row choice, spec 7.3).
+# res_nml: Monsters with a resurrect leader (eredin_silver: D LRES with more than one target, random against
+#   invader_nilf).
+# crach_ske: Skellige with Crach an Craite (shuffles both graveyards into the decks, no choice).
+# tricks_nr, tricks_nilf: plain units plus decoys, scorch, the four weather cards and a horn, so moves onto a card
+#   (decoy: C), global moves (scorch: G), weather plays (P to the weather slot, seat N) and horns go over the wire;
+#   none of them asks a choice.
+# weather_nml: Monsters with eredin_bronze (pick a weather card from the deck: D LWEA, since the deck holds three
+#   different weather cards).
+# bin_nml: Monsters with eredin_gold (discard two hand cards, then take one from the deck: two D LBIN and one D LPICK).
+#   The vanilla AI never plays this leader (its AI value is -1): use W3T_GWENT_LEADER_FIRST=1 to reach them.
+# view_nilf: Nilfgaard with emhyr_bronze (shows three of the opponent's hand cards on the leader owner's board only;
+#   nothing is sent). The AI rarely plays it or eredin_bronze either; W3T_GWENT_LEADER_FIRST=1 makes autoplay do so.
+# pirate_ske: Skellige (king_bran) heavy on clan_dimun_pirate (scorch when it lands), with muster (light_drakkar), tight
+#   bonds, a cow (spawns its Chort at round end) and birna_bran (a non-hero medic: D NUR). Its round 3 perk brings back
+#   two graveyard cards for each Skellige seat at once, so pirate_ske,pirate_ske lands four cards together (spec 7.4).
+# muster_nml: Monsters (eredin_copper) with muster groups (arachas, nekker, ghoul, crones), toad and villen (row scorch
+#   when they land) and a cow: several cards land in one move, and the Monsters perk keeps a creature at round end.
+#
+# Built-in deck names (W3T_GWENT_DECKS=North,...) come from def_gwint_decks.xml through GetDeck(name, 1): North and
+# NilfEasy hold cards, while Nilf, nml, scotial and ske are the player's starter decks with a leader and no cards.
+
+plain_nr: foltest_silver+vernon+natalis+esterad+philippa+ves+siegfried+yarpen+keira+sile+sabrina+sheldon+dethmold+trebuchet+trebuchet2+redanian+redanian2+ballista+ballista2+siege_tower+catapult+catapult2+blue_stripes
+plain_nilf: emhyr_copper+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+black_archer+black_archer2+heavy_zerri+zerri+combat_engineer+impera_brigade+impera_brigade2
+plain_nml: eredin_copper+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental+fogling+wyvern+vesemir+zoltan+emiel+roach
+plain_ske: king_bran+hemdal+hjalmar+madman_lugos+donar_an_hindar+udalryk+blueboy_lugos+svanrige+holger_blackhand+clan_brokvar_archer+clan_tordarroch_armorsmith+clan_heymaey_skald+clan_an_craite_warrior+clan_drummond_shieldmaiden+clan_drummond_shieldmaiden2+clan_drummond_shieldmaiden3+war_drakkar+vesemir+zoltan+emiel+roach+geralt+triss
+medic_nr: foltest_silver+dun_banner_medic+dun_banner_medic+yennefer+vernon+natalis+esterad+philippa+ves+siegfried+yarpen+keira+sile+sabrina+sheldon+dethmold+trebuchet+trebuchet2+redanian+redanian2+ballista+ballista2+siege_tower
+leaders_nilf: emhyr_gold+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+black_archer+black_archer2+heavy_zerri+zerri+combat_engineer+impera_brigade+impera_brigade2
+agile_medic: eredin_copper+yennefer+harpy+celaeno_harpy+kayran+olgierd+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental
+invader_nilf: emhyr_platinium+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+archer_support+archer_support2+siege_support+olgierd+heavy_zerri+zerri+combat_engineer
+res_nml: eredin_silver+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental+fogling+wyvern+vesemir+zoltan+emiel+roach
+crach_ske: Crach_an_Craite+hemdal+hjalmar+madman_lugos+donar_an_hindar+udalryk+blueboy_lugos+svanrige+holger_blackhand+clan_brokvar_archer+clan_tordarroch_armorsmith+clan_heymaey_skald+clan_an_craite_warrior+clan_drummond_shieldmaiden+clan_drummond_shieldmaiden2+clan_drummond_shieldmaiden3+war_drakkar+vesemir+zoltan+emiel+roach+geralt+triss
+tricks_nr: foltest_silver+vernon+natalis+esterad+philippa+ves+siegfried+yarpen+keira+sile+sabrina+sheldon+dethmold+trebuchet+ballista+siege_tower+redanian+dummy+dummy+scorch+frost+fog+rain+clear_sky+horn
+tricks_nilf: emhyr_copper+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+dummy+dummy+scorch+frost+fog+rain+clear_sky+horn
+weather_nml: eredin_bronze+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental+fogling+wyvern+frost+fog+rain
+bin_nml: eredin_gold+draug+imlerith+leshen+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+botchling+frightener+ice_giant+endrega+cockatrice+gargoyle+grave_hag+fire_elemental+fogling+wyvern+vesemir+zoltan+emiel+roach
+view_nilf: emhyr_bronze+letho+moorvran+tibor+albrich+assire+cynthia+fringilla+morteisen+rainfarn+renuald+rotten+sweers+vanhemar+vreemde+cahir+puttkammer+black_archer+black_archer2+heavy_zerri+zerri+combat_engineer+impera_brigade+impera_brigade2
+pirate_ske: king_bran+clan_dimun_pirate+clan_dimun_pirate+clan_dimun_pirate+clan_dimun_pirate+clan_dimun_pirate+clan_dimun_pirate+light_drakkar+light_drakkar+light_drakkar+clan_drummond_shieldmaiden+clan_drummond_shieldmaiden2+clan_drummond_shieldmaiden3+madman_lugos+donar_an_hindar+udalryk+blueboy_lugos+svanrige+holger_blackhand+clan_brokvar_archer+clan_an_craite_warrior+war_drakkar+vesemir+zoltan+cow+birna_bran
+muster_nml: eredin_copper+arachas+arachas2+arachas3+arachas_behemoth+nekker+nekker2+nekker3+ghoul+ghoul2+ghoul3+crone_brewess+crone_weavess+crone_whispess+toad+villen+cow+forktail+earth_elemental+fiend+plague_maiden+griffin+werewolf+frightener+fogling

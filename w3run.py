@@ -7,6 +7,7 @@ import ctypes.wintypes as wt
 import os
 import subprocess
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -67,6 +68,20 @@ def windows_of(pid):
 SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE = 0x0001, 0x0004, 0x0010
 user32.GetWindowRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]
 user32.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wt.UINT]
+user32.IsIconic.argtypes = [wt.HWND]
+user32.IsWindow.argtypes = [wt.HWND]
+user32.GetForegroundWindow.restype = wt.HWND
+
+# test games start without taking the focus: minimized, or shown without being activated (w3test.asi keeps it so)
+SHOW_COMMANDS = {"minimized": 7, "noactivate": 4}  # SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE
+
+
+def startup_info(mode: str) -> subprocess.STARTUPINFO:
+    """STARTUPINFO for a test game whose window starts as `mode` says ("minimized" or "noactivate")."""
+    info = subprocess.STARTUPINFO()
+    info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    info.wShowWindow = SHOW_COMMANDS[mode]
+    return info
 
 
 def game_window(pid):
@@ -79,14 +94,14 @@ def game_window(pid):
 
 def arrange(pids):
     """Places the games' windows left to right along the top of the primary screen's work area, without resizing
-    or focusing them; wraps to a new row when the screen is full. Call repeatedly: the game moves its window
-    while it starts."""
+    or focusing them; wraps to a new row when the screen is full. Minimized windows are left alone (moving one
+    would put its caption on the screen). Call repeatedly: the game moves its window while it starts."""
     area = wt.RECT()
     user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(area), 0)  # SPI_GETWORKAREA
     x, y, row_height = area.left, area.top, 0
     for pid in pids:
         hwnd = game_window(pid)
-        if not hwnd:
+        if not hwnd or user32.IsIconic(hwnd):
             continue
         r = wt.RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(r))
@@ -97,6 +112,102 @@ def arrange(pids):
             user32.SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE)
         x += w
         row_height = max(row_height, h)
+
+
+class FocusWatch(threading.Thread):
+    """Samples the foreground window every `every` seconds while test games run: whether it belonged to a game
+    (GetForegroundWindow), and whether each game's main window was minimized."""
+
+    def __init__(self, every: float = 0.1):
+        super().__init__(daemon=True)
+        self.every = every
+        self.lock = threading.Lock()
+        self.names = {}        # pid -> bot name, while the game runs
+        self.windows = {}      # pid -> its main window
+        self.polls = 0
+        self.started = time.time()
+        self.foreground = []   # (time, bot name, window class) whenever a game window was the foreground window
+        self.minimized = {}    # bot name -> [samples with its main window minimized, samples with a main window]
+        self.shown = {}        # bot name -> stretches [first, last, last as seconds] its main window was not minimized
+        self.halt = threading.Event()
+
+    def add(self, pid: int, name: str) -> None:
+        """Watches this game from now on."""
+        with self.lock:
+            self.names[pid] = name
+
+    def remove(self, pid: int) -> None:
+        """Stops watching this game (it was stopped)."""
+        with self.lock:
+            self.names.pop(pid, None)
+            self.windows.pop(pid, None)
+
+    def run(self) -> None:
+        """The sampling loop (until stop)."""
+        found_at = 0.0
+        while not self.halt.wait(self.every):
+            with self.lock:
+                names = dict(self.names)
+            foreground = user32.GetForegroundWindow()
+            owner = wt.DWORD()
+            if foreground:
+                user32.GetWindowThreadProcessId(foreground, ctypes.byref(owner))
+            self.polls += 1
+            if owner.value in names:
+                self.foreground.append((time.strftime("%H:%M:%S"), names[owner.value], class_name(foreground)))
+            if time.time() - found_at > 2:
+                found_at = time.time()
+                for pid in names:
+                    if not (self.windows.get(pid) and user32.IsWindow(self.windows[pid])):
+                        hwnd = game_window(pid)
+                        with self.lock:
+                            if pid in self.names and hwnd:
+                                self.windows[pid] = hwnd
+            with self.lock:
+                windows = dict(self.windows)
+            for pid, hwnd in windows.items():
+                # a destroyed window (its game is exiting) is neither shown nor minimized: IsIconic would say FALSE
+                if not user32.IsWindow(hwnd):
+                    with self.lock:
+                        if self.windows.get(pid) == hwnd:
+                            del self.windows[pid]
+                    continue
+                name = names.get(pid, str(pid))
+                counts = self.minimized.setdefault(name, [0, 0])
+                iconic = bool(user32.IsIconic(hwnd))
+                counts[0] += iconic
+                counts[1] += 1
+                if not iconic:
+                    now = time.time()
+                    stamp = time.strftime("%H:%M:%S") + f".{int(now * 10) % 10}"
+                    stretches = self.shown.setdefault(name, [])
+                    if stretches and now - stretches[-1][2] < 1.0:
+                        stretches[-1][1:] = [stamp, now]
+                    else:
+                        stretches.append([stamp, stamp, now])
+
+    def stop(self) -> None:
+        """Ends the sampling."""
+        self.halt.set()
+        if self.is_alive():
+            self.join(5)
+
+    def summary(self) -> str:
+        """One line: how often a game window was the foreground window, and how long each was minimized."""
+        seconds = time.time() - self.started
+        text = (f"{self.polls} samples of the foreground window over {seconds:.0f} s: a game window was the foreground "
+                f"window {len(self.foreground)} times")
+        if self.foreground:
+            text += " (first " + ", ".join(f"{t} {name} {cls}" for t, name, cls in self.foreground[:5]) + ")"
+        if self.minimized:
+            text += "; main window minimized in " + ", ".join(f"{name} {m}/{n}" for name, (m, n) in sorted(self.minimized.items()))
+            text += " samples"
+        if self.shown:
+            text += " (not minimized: " + "; ".join(
+                f"{name} " + ", ".join(f"{first} to {last}" for first, last, _ in stretches[:6])
+                + (f" and {len(stretches) - 6} more" if len(stretches) > 6 else "")
+                for name, stretches in sorted(self.shown.items())) + ")"
+        return text
 
 
 class BITMAPINFOHEADER(ctypes.Structure):
@@ -201,9 +312,12 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from sandbox import make_sandbox
         make_sandbox(a.sandbox)
-        env.update(W3T_SCENARIO="verify", W3T_DOCUMENTS=a.sandbox, W3T_LOG=os.path.join(a.sandbox, "w3test.log"))
+        env.update(W3T_SCENARIO="verify", W3T_DOCUMENTS=a.sandbox, W3T_LOG=os.path.join(a.sandbox, "w3test.log"),
+                   W3T_WINDOW="minimized")
     t0 = time.time()
-    proc = subprocess.Popen([EXE] + a.game_args, cwd=os.path.dirname(EXE), env=env)
+    # a test-mode game (compile.sh's script check) starts minimized, as run_test.py's do
+    proc = subprocess.Popen([EXE] + a.game_args, cwd=os.path.dirname(EXE), env=env,
+                            startupinfo=startup_info("minimized") if a.sandbox else None)
     print(f"[{a.tag}] started pid={proc.pid} args={a.game_args}", flush=True)
     seen = {}
     while True:
