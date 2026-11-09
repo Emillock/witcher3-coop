@@ -152,7 +152,8 @@ def run_gwent_matrix(label: str, sessions: bool = True) -> list[tuple]:
         entry_env = dict(env, **settings)
         t0 = time.time()
         with open(out, "w") as f:
-            subprocess.run([sys.executable, os.path.join(HERE, "run_test.py"), GWENT_DUEL], stdout=f, stderr=subprocess.STDOUT, env=entry_env)
+            subprocess.run([sys.executable, os.path.join(HERE, "run_test.py"), GWENT_DUEL]
+                           + (["--save", a.save] if a.save else []), stdout=f, stderr=subprocess.STDOUT, env=entry_env)
         text = open(out, encoding="utf-8", errors="replace").read()
         m = re.search(r"RESULT: (PASS|FAIL) \((.*)\)", text)
         rows.append((f"{GWENT_DUEL} {name}", m.group(1) if m else "ERROR", int(time.time() - t0), m.group(2) if m else "no result line"))
@@ -174,6 +175,7 @@ def main():
     ap.add_argument("--all", action="store_true", help="every scenario, also over Steam")
     ap.add_argument("--duration", type=int, default=300)
     ap.add_argument("--no-session", action="store_true", help="fresh games for every scenario (slower)")
+    ap.add_argument("--save", default="", help="part of the save name to test on (default: the newest save, which changes as soon as anyone plays the game, so runs stop being comparable)")
     a = ap.parse_args()
     if not a.scenarios:
         a.scenarios = STEAM_SCENARIOS if a.steam_box and not a.all else SCENARIOS
@@ -190,7 +192,7 @@ def main():
         rows += run_gwent_matrix(label, not a.no_session)
     for run in plan(a.scenarios, not a.no_session):
         out = os.path.join(WORK, "runs", f"suite_{label}_{run.split(',')[0]}_{time.strftime('%H%M%S')}.out")
-        cmd = [sys.executable, os.path.join(HERE, "run_test.py"), run, "--duration", str(a.duration), "--timeout", "3600" if "," in run else "900"]
+        cmd = [sys.executable, os.path.join(HERE, "run_test.py"), run, "--duration", str(a.duration), "--timeout", "3600" if "," in run else "900", *(("--save", a.save) if a.save else ())]
         if a.steam_box:
             cmd += ["--steam-box", a.steam_box]
         t0 = time.time()
