@@ -14,7 +14,7 @@ int main()
 	assert(w3coop::ParseUdpPort(L"00080", port) && port == 80);
 
 	for (const wchar_t *invalid : {L"", L"0", L"00000", L"65536", L"99999", L"99999999999999999999",
-	                               L"-1", L"+80", L"80junk", L" 80", L"80 ", L"a", L"１２３"})
+	                               L"-1", L"+80", L"80junk", L" 80", L"80 ", L"a", L"\uFF11\uFF12\uFF13"})
 	{
 		port = 1234;
 		assert(!w3coop::ParseUdpPort(invalid, port));
