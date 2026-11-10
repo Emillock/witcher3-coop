@@ -66,12 +66,19 @@ def main():
         if collect(bob, 1.0).get(("Alice", "en")) != ["en", "7", "2", "0"]:
             failures.append("Alice's updated 'en' state did not replace the old one")
 
-        # at most 8 channels per player, names up to 8 characters
-        for channel in ("c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "toolongname"):
+        # The server allows 16 channels per player, each named with at most 8 characters.
+        # "en" already occupies one slot; the 16th new channel must be rejected.
+        accepted = {f"c{i}" for i in range(1, 16)}
+        for channel in (*sorted(accepted), "c16", "toolongname"):
             send(alice, "COOP", "Alice", channel, "x")
         channels = sorted(ch for (who, ch) in collect(bob, 1.0) if who == "Alice")
-        if len(channels) != 8 or "toolongname" in channels or "en" not in channels:
-            failures.append(f"channel limit not applied: Alice's channels {channels}")
+        if set(channels) != accepted | {"en"}:
+            failures.append(f"channel limit not applied: expected en and c1..c15, got {channels}")
+
+        # At capacity, an update to an existing channel must still be accepted.
+        send(alice, "COOP", "Alice", "en", "7", "4", "0")
+        if collect(bob, 1.0).get(("Alice", "en")) != ["en", "7", "4", "0"]:
+            failures.append("Alice's 'en' channel stopped updating at capacity")
 
         # the old opcodes still work next to COOP
         send(alice, "MOVE", "Alice", "1", "0", "0", "0", "1", "0", "0", "0")
