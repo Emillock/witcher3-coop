@@ -470,6 +470,17 @@ statemachine class W3T_Bot
             begun = true;
         }
         W3T_Log("BOT start scenario=" + W3T_GetEnv("W3T_SCENARIO"));
+        // the mod's own strings, as the game decodes them (en.csv: "Witcher Online", "Witcher Online
+        // Settings", "Hide All Players"). Anything else and its options panel is unreadable.
+        W3T_Log("STRINGS panel=[" + GetLocStringById(2111114001) + "] preset=["
+            + GetLocStringById(2111114002) + "] option=[" + GetLocStringById(2111114003)
+            + "] vanilla=[" + GetLocStringById(1061945) + "]");
+        W3T_Log("STRINGS byKey panel=[" + GetLocStringByKeyExt("panel_MPGhosts_name") + "] option=["
+            + GetLocStringByKeyExt("option_MPGhosts_HideGhosts") + "] vanillaKey=["
+            + GetLocStringByKeyExt("panel_gameplay") + "]");
+        // what the menus and the party HUD actually show now (the mod's own text, not its string table)
+        W3T_Log("STRINGS woText morphs=[" + WO_Text(2111114097) + "] emotes=[" + WO_Text(2111114099)
+            + "] waitingFor=[" + WO_Text(2111114102) + "]");
         GotoState('W3T_Running');
     }
 
