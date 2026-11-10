@@ -269,6 +269,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_KillLootMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "kill_quiet")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_KillQuietLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_KillQuietMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "quest_behind")
     {
         if(ghosts < 1)
@@ -2859,6 +2872,98 @@ function W3T_PartyInviteMember(bot : W3T_Bot, client : r_MultiplayerClient, lead
         return false;
     }
     return true;
+}
+
+// kill_quiet, leader: shares a drowner, enters a scene, then kills it and stops sending in the same breath,
+// as its game does while a scene plays. scenarioCount 2 shared, 3 in a scene, 4 killed and quiet, 5 speaking
+// again. The scene matters: without it the member just times the copy out and the death is never missed.
+function W3T_KillQuietLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    if(bot.scenarioCount < 2)
+    {
+        // it spawns the monster; whether it manages to hit the ghost is not this test's business
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(coop.HostEnemyCount() < 1)
+        {
+            return false;
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+        return false;
+    }
+    if(bot.scenarioCount == 2)
+    {
+        // the member needs a moment to copy it
+        if(bot.ElapsedS() - bot.scenarioTime < 8 || coop.HostEnemyCount() < 1)
+        {
+            return false;
+        }
+        // a scene here: this is what holds the member's copies instead of letting them time out, and it is what a
+        // real session had when the monster was left standing
+        coop.SetSceneForTest("w3t\\test_scene.w2scene");
+        W3T_Log("QUIET leader enters a scene");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 3;
+        return false;
+    }
+    if(bot.scenarioCount == 3)
+    {
+        // let the member hear about the scene before anything else happens
+        if(bot.ElapsedS() - bot.scenarioTime < 2)
+        {
+            return false;
+        }
+        coop.HostEnemyAt(0).Kill('W3T', true);
+        coop.muteHost = true;
+        W3T_Log("QUIET leader killed its monster and went quiet at once");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 4;
+        return false;
+    }
+    if(bot.scenarioCount == 4)
+    {
+        // longer than the four seconds a dead monster used to be kept in the list for
+        if(bot.ElapsedS() - bot.scenarioTime < 6)
+        {
+            return false;
+        }
+        coop.muteHost = false;
+        coop.SetSceneForTest("");
+        W3T_Log("QUIET leader leaves the scene and speaks again, " + coop.HostEnemyCount()
+            + " monster(s) still in its list");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 5;
+        return false;
+    }
+    return bot.ElapsedS() - bot.scenarioTime >= 10;
+}
+
+// kill_quiet, member: copies the leader's drowner, and once the leader speaks again that copy must have DIED.
+// Timing out instead is the fault, not a pass: a timed-out copy of this world's own monster is handed back alive,
+// which is how a friend met a monster walking about, unhittable, after the leader had killed it.
+function W3T_KillQuietMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() > 0)
+    {
+        bot.scenarioFlag = true;  // it had a copy
+    }
+    W3T_Log("QUIET member puppets=" + coop.PuppetCount() + " killed=" + coop.puppetsKilled + " timedOut="
+        + coop.puppetsTimedOut + " freed=" + coop.puppetsFreed + " hadCopy=" + bot.scenarioFlag
+        + " leaderInScene=" + leader.inScene + " leaderInCutscene=" + leader.inCutscene);
+    if(coop.puppetsTimedOut > 0)
+    {
+        // say it plainly in the log; the run then fails on its time, with the reason above it
+        W3T_Log("QUIET the copy timed out instead of dying: this world has its monster back, alive");
+        return false;
+    }
+    return bot.scenarioFlag && coop.puppetsKilled >= 1;
 }
 
 // puppet_timeout, leader: shares a drowner and then stops sending anything at all (muteHost), as a leader whose
