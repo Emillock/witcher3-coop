@@ -13,6 +13,8 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include "xml_config.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -476,7 +478,7 @@ namespace
 		xml = std::regex_replace(xml, std::regex("<ServerIP>[^<]*</ServerIP>"), "<ServerIP>127.0.0.1</ServerIP>");
 		xml = std::regex_replace(xml, std::regex("<Port>[^<]*</Port>"), "<Port>" + std::to_string(port) + "</Port>");
 		if (!name.empty())
-			xml = std::regex_replace(xml, std::regex("<Username>[^<]*</Username>"), "<Username>" + name + "</Username>");
+			w3coop::ReplaceUsername(xml, name);
 		std::ofstream(path) << xml;
 		printf("Witcher Online now connects to 127.0.0.1:%u (previous config kept as config.xml.before-w3relay).\n", port);
 	}
