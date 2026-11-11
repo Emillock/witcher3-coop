@@ -13,6 +13,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include "port_arg.h"
 #include "xml_config.h"
 
 #include <cstdint>
@@ -755,9 +756,21 @@ int wmain(int argc, wchar_t **argv)
 		const std::wstring arg = argv[i];
 		const bool hasValue = i + 1 < argc;
 		if (arg == L"--server-port" && hasValue)
-			serverPort = static_cast<uint16_t>(_wtoi(argv[++i]));
+		{
+			if (!w3coop::ParseUdpPort(argv[++i], serverPort))
+			{
+				printf("Invalid server port (expected 1-65535).\n");
+				return 2;
+			}
+		}
 		else if (arg == L"--local-port" && hasValue)
-			localPort = static_cast<uint16_t>(_wtoi(argv[++i]));
+		{
+			if (!w3coop::ParseUdpPort(argv[++i], localPort))
+			{
+				printf("Invalid local port (expected 1-65535).\n");
+				return 2;
+			}
+		}
 		else if ((arg == L"--lobby" || arg == L"+connect_lobby") && hasValue)
 			lobby = _wcstoui64(argv[++i], nullptr, 10);
 		else if (arg == L"--server-jar" && hasValue)
