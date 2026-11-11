@@ -45,6 +45,7 @@ function W3T_EndScenario(bot : W3T_Bot)
     coop.versionOverride = "";
     coop.muteHz = false;
     coop.muteHost = false;
+    coop.muteMove = false;
     coop.muteWoClock = false;
     coop.ResetDiagnostics();
     // facing as at the start too: scenarios spawn monsters ahead of the player (after a ride a drowner landed on a ledge)
@@ -267,6 +268,45 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_KillLootLeader(bot, client.getCoopEnemies(), players[0]);
         }
         return W3T_KillLootMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "leader_bolt")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_LeaderBoltLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_LeaderBoltMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "pause_still")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_PauseStillMover(bot, client.getCoopEnemies());
+        }
+        return W3T_PauseStillWatcher(bot, client, players[0]);
+    }
+
+    if(scenario == "igni_damage")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_IgniDamageLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_IgniDamageMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
     if(scenario == "kill_quiet")
@@ -2872,6 +2912,211 @@ function W3T_PartyInviteMember(bot : W3T_Bot, client : r_MultiplayerClient, lead
         return false;
     }
     return true;
+}
+
+// leader_bolt, leader: shares a drowner and shoots it with the crossbow, over and over. The member must see a
+// copy of each bolt fly from the leader's character. scenarioCount 2 shared.
+function W3T_LeaderBoltLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+
+    if(bot.scenarioCount < 2)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(coop.HostEnemyCount() < 1)
+        {
+            return false;
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+        return false;
+    }
+    monster = coop.HostEnemyAt(0);
+    if(!monster || bot.ElapsedS() - bot.scenarioTime < 6)
+    {
+        return false;   // the member needs a moment to copy it
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 2.5)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_LookAt(monster.GetWorldPosition());
+        W3T_ShootBolt(monster);
+        bot.scenarioStep += 1;
+    }
+    W3T_Log("BOLT leader shots=" + bot.scenarioStep + " sent=" + coop.throwsSent);
+    return bot.scenarioStep >= 3 && coop.throwsSent >= 3;
+}
+
+// leader_bolt, member: a copy of the leader's bolt must be thrown here by its character (throwCopies), not only
+// its damage. A friend saw the damage arrive with no bolt and no shooting to go with it.
+function W3T_LeaderBoltMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    W3T_Log("BOLT member copies=" + coop.throwCopies + " failures=" + coop.throwCopyFailures
+        + " puppets=" + coop.PuppetCount());
+    return coop.throwCopies >= 1;
+}
+
+// pause_still, mover: walks about, then stops sending anything at all, as its game does on a menu or the map.
+// scenarioCount 1 walking, 2 quiet.
+function W3T_PauseStillMover(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    var spot : Vector;
+
+    if(bot.scenarioCount < 1)
+    {
+        bot.scenarioVec = thePlayer.GetWorldPosition();
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+    }
+    if(bot.scenarioCount == 1)
+    {
+        // step to and fro, so the watcher has the ghost chasing a target when the silence starts
+        if(bot.ElapsedS() - bot.scenarioActAt >= 1.5)
+        {
+            bot.scenarioActAt = bot.ElapsedS();
+            spot = bot.scenarioVec;
+            if(bot.scenarioStep % 2 == 0)
+            {
+                spot.X += 5.0;
+            }
+            bot.scenarioStep += 1;
+            thePlayer.Teleport(spot);
+        }
+        if(bot.ElapsedS() - bot.scenarioTime < 8)
+        {
+            return false;
+        }
+        // everything, as a paused game does: its loop does not run, so no channel of it is heard
+        coop.muteMove = true;
+        coop.muteHz = true;
+        coop.muteHost = true;
+        W3T_Log("PAUSE mover says nothing from here");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioTime < 12)
+    {
+        return false;
+    }
+    // speak again, or the rest of a session is run against a game nobody can hear
+    coop.muteMove = false;
+    coop.muteHz = false;
+    coop.muteHost = false;
+    return true;
+}
+
+// pause_still, watcher: once the other has gone quiet its ghost must be standing, not walking on the spot. A
+// friend watched a paused player stride in place: the ghost had not quite reached the last position sent, and a
+// centimetre of that gap kept a walk direction classified.
+function W3T_PauseStillWatcher(bot : W3T_Bot, client : r_MultiplayerClient, peer : r_RemotePlayer) : bool
+{
+    if(!peer.ghost)
+    {
+        return false;
+    }
+    W3T_Log("PAUSE watcher targetMoving=" + peer.targetMoving + " moveDir=" + peer.lastMoveDir
+        + " walked=" + bot.scenarioFlag + " stillSince=" + FloatToStringPrec(bot.scenarioValue, 1)
+        + " now=" + FloatToStringPrec(bot.ElapsedS(), 1));
+    if(peer.lastMoveDir != 'none')
+    {
+        bot.scenarioFlag = true;     // it was walking at some point, so there is something to stop
+        bot.scenarioValue = 0;
+        return false;
+    }
+    if(bot.scenarioValue == 0)
+    {
+        bot.scenarioValue = bot.ElapsedS();
+    }
+    // its ghost stands, and the position we are told is not moving, three seconds together
+    return bot.scenarioFlag && !peer.targetMoving && bot.ElapsedS() - bot.scenarioValue >= 3.0;
+}
+
+// igni_damage, leader: shares a drowner and burns it with Igni until a tenth of its health is gone. The monster
+// is mortal here, unlike the one enemy_effects uses.
+function W3T_IgniDamageLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var monster : CNewNPC;
+    var rot : EulerAngles;
+
+    if(bot.scenarioCount < 2)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(coop.HostEnemyCount() < 1)
+        {
+            return false;
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioValue = coop.HostEnemyAt(0).GetHealthPercents();
+        bot.scenarioCount = 2;
+        return false;
+    }
+    monster = coop.HostEnemyAt(0);
+    if(!monster)
+    {
+        return false;
+    }
+    // the member needs a moment to copy it before anything is burnt
+    if(bot.ElapsedS() - bot.scenarioTime < 6)
+    {
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 2.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_LookAt(monster.GetWorldPosition());
+        rot.Yaw = VecHeading(monster.GetWorldPosition() - thePlayer.GetWorldPosition());
+        thePlayer.TeleportWithRotation(thePlayer.GetWorldPosition(), rot);
+        thePlayer.GoToCombatIfNeeded(monster);
+        GetWitcherPlayer().SetEquippedSign(ST_Igni);
+        thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
+        thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
+    }
+    W3T_Log("IGNI leader hp=" + FloatToStringPrec(monster.GetHealthPercents(), 3) + " start="
+        + FloatToStringPrec(bot.scenarioValue, 3) + " burning=" + monster.HasBuff(EET_Burning));
+    return monster.GetHealthPercents() <= bot.scenarioValue - 0.10;
+}
+
+// igni_damage, member: its copy of that drowner must lose the health the leader's monster loses. Both numbers are
+// logged: the copy's own, and the one the leader reports for it, so a drop that was never sent can be told from a
+// drop that was never applied.
+function W3T_IgniDamageMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
+{
+    var copy : CNewNPC;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(coop.PuppetCount() < 1)
+    {
+        return false;
+    }
+    copy = coop.PuppetAt(0);
+    if(!copy)
+    {
+        return false;
+    }
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioValue = copy.GetHealthPercents();
+    }
+    W3T_Log("IGNI member copyHp=" + FloatToStringPrec(copy.GetHealthPercents(), 3) + " hostHp="
+        + FloatToStringPrec(coop.PuppetHostHp(0), 3) + " start=" + FloatToStringPrec(bot.scenarioValue, 3)
+        + " burning=" + copy.HasBuff(EET_Burning) + " hitAnims=" + coop.hitAnimsSeen
+        + " inHitAnim=" + coop.PuppetInHitAnim(0));
+    return copy.GetHealthPercents() <= bot.scenarioValue - 0.08;
 }
 
 // kill_quiet, leader: shares a drowner, enters a scene, then kills it and stops sending in the same breath,
