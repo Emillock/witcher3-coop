@@ -50,16 +50,11 @@ In a party (walk up to a friend's character, press the interact key and answer "
 - A player who burns, is frozen, poisoned or knocked down looks that way to the others too.
 - The hidden quest facts the leader's game sets during the session are shared too (also only
   forward), so your quests can follow the leader's progress. What is in your bags stays yours.
-The mod's own section of the game's options (Options, Mods, Witcher Online) has no readable labels
-on Remastered: the game cannot read the text file the mod ships, so the rows come up blank. The
-settings themselves work, and everything else the mod shows you - the party HUD, the round menu,
-its prompts and its warnings - reads properly from this version on. In order, the rows are:
-   1  Hide all players                      7  Nametag render distance (slider)
-   2  Show players in cutscenes             8  Horse appearance (brown/white/black/Wild Hunt)
-   3  Show your own player                  9  Auto-decline trade requests
-   4  Players always look invisible        10  Auto-decline Gwent duels
-   5  Hide join and leave messages         11  Local enemies only - play without shared monsters
-   6  Hide the party HUD
+The mod's own section of the game's options (Options, Mods, Witcher Online) is labelled from this
+version on, in English whatever language the game runs in: its eleven rows are Hide all players,
+Show players in cutscenes, Show your own player, Players always look invisible, Hide join and leave
+messages, Hide the party HUD, Nametag render distance, Horse appearance, Auto-decline trade
+requests, Auto-decline Gwent duels, and Local enemies only (play without shared monsters).
 Gwent duels between players need a Gwent board this package does not include: each player
 builds it from their own game (WitcherOnline's gwent/README.md). What has to match is the
 board, the game's own file, and not the version of the game: the board of build 5.0.0.1048522

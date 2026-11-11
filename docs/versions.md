@@ -5,6 +5,13 @@ The current release is **v0.6.0**; see
 
 ## Not released yet
 
+The mod's own text reads in any language the game runs in, its section of the game's options included, which
+was blank for every player whose game was not English. Remastered reads a string table in a format of its own,
+and reads each language's file with that language's own key; the port shipped its English 4.x table under all
+seventeen language names, so nothing in it resolved. The eighteen tables are written from the mod's own
+en.csv now (and Ukrainian, which the port never had, is among them).
+
+
 Gwent duels between players, on the 5.01 Gwent board rebuilt with Witcher Online's duel code. The duel
 scripts are in the release, the board is not: it is built from each player's own game (see WitcherOnline
 `gwent/README.md`), so it cannot be shipped.

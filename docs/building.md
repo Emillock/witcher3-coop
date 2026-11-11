@@ -37,6 +37,15 @@ python package\build_package.py 0.4.0
 The last step writes `<root>\work\dist\W3Coop-0.4.0` and its zip. [config.py](config.py) finds the game
 through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
 
+## The mod's text
+
+The mod's strings live in `WitcherOnline\witcher\mods\modWitcherOnline\content\en.csv`. After editing it, run
+`mod_strings.py` to rewrite the eighteen `.w3strings` tables beside it, one per language the game ships, each
+under its own language key. `w3strings.py decode <file>` reads any of them, the game's own included, and its
+header comment describes the format. A table in the 4.x format, or one written under another language's key,
+resolves to nothing in game: that is a silent failure, so `run_test.py` prints a STRINGS line at every bot's
+start saying whether the mod's own ids and keys decode.
+
 ## Repo layout
 
 | Path | Contents |
