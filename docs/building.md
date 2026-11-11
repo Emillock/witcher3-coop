@@ -34,6 +34,9 @@ w3test\build.cmd
 python package\build_package.py 0.4.0
 ```
 
+`relay\build.cmd` also builds and runs the relay helpers' own tests (`tests\test_relay_xml.cpp`,
+`tests\test_port_arg.cpp`), so a broken helper fails the build instead of going unnoticed.
+
 The last step writes `<root>\work\dist\W3Coop-0.4.0` and its zip. [config.py](config.py) finds the game
 through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
 
