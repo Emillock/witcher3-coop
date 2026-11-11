@@ -1,14 +1,37 @@
 # What each version added
 
-The current release is **v0.5.0**; see
+The current release is **v0.6.0**; see
 [Releases](https://github.com/Emillock/witcher3-coop/releases) for the packages themselves.
 
 ## Not released yet
 
-Gwent duels between players, on the 5.01 Gwent board rebuilt with Witcher Online's duel code. Merged into
-`main` and `shared-enemies`, and not in any package: the board is built from each player's own game (see
-WitcherOnline `gwent/README.md`), so it cannot be shipped.
+Gwent duels between players, on the 5.01 Gwent board rebuilt with Witcher Online's duel code. The duel
+scripts are in the release, the board is not: it is built from each player's own game (see WitcherOnline
+`gwent/README.md`), so it cannot be shipped.
 
+
+## New in v0.6.0
+
+The first session on two PCs with a friend found ten faults. These are the fixes.
+
+- A monster killed in the leader's world no longer lives on in yours. Its copy could be left standing,
+  walking and unhittable: a death during the leader's cutscene was never told, because the leader's own
+  code does not run while a scene plays, and the copies a member holds through such a scene were dropped
+  the moment it ended. Both are fixed; a held copy now survives a scene of up to 30 seconds.
+- The mod's own text reads again. Every line it shows - the party HUD's names, the round menu's sections,
+  the join, trade and duel prompts, the version warnings - came from a text file Remastered cannot read, so
+  it came up blank or as a row of question marks. Those 94 lines are in the scripts now. (The mod's own
+  section of the game's options is still unlabelled; the package's README.txt names its rows in order.)
+- A player standing still is seen standing still. Anyone whose game was paused, in a menu or in the
+  inventory was seen striding on the spot by everyone else.
+- You are asked whether to follow the leader's fast travel again, which is what 0.4.0 promised. The
+  leader's own loading screen looked to your game like a new leader arriving, so the journey was never
+  recognised as one.
+- Villagers asleep in bed are no longer stood to attention in your world: only people on their feet are
+  stood in it.
+
+Shown working in that session's other two reports, and most likely the same orphaned copies as the first
+fault: the leader's Igni damage mirrors exactly, and the leader's crossbow bolt is copied for members.
 
 ## New in v0.5.0
 

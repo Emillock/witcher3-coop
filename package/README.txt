@@ -52,7 +52,8 @@ In a party (walk up to a friend's character, press the interact key and answer "
   forward), so your quests can follow the leader's progress. What is in your bags stays yours.
 The mod's own section of the game's options (Options, Mods, Witcher Online) has no readable labels
 on Remastered: the game cannot read the text file the mod ships, so the rows come up blank. The
-settings themselves work. In order, the rows are:
+settings themselves work, and everything else the mod shows you - the party HUD, the round menu,
+its prompts and its warnings - reads properly from this version on. In order, the rows are:
    1  Hide all players                      7  Nametag render distance (slider)
    2  Show players in cutscenes             8  Horse appearance (brown/white/black/Wild Hunt)
    3  Show your own player                  9  Auto-decline trade requests
@@ -131,12 +132,15 @@ summoned creatures, big fights of up to 48 monsters, leaving and coming back; th
 run like the leader's monsters); a player's death and respawn; journal progress, quest facts and
 dialogue choices; the loot of a shared kill; a cutscene keeping the monsters off; the leader's
 people stood in a member's world.
-Each of this version's new pieces passed its own test. The full run of all forty tests in one
-sitting did not finish cleanly for this build - the failures were in the test harness rather than
-the mod, but they are not ruled out, which is why this is a pre-release.
-Not yet tested on two different PCs over the internet, or with three or more players.
+A session of two players on two PCs over the internet, on the previous version, reported ten
+faults; eight are fixed or measured working here, and the two still open are below. Of the
+forty-six automated tests, this build passes forty-four in one sitting, and both of the others
+pass on their own - long fights that have come and gone before. It stays a pre-release.
+Not tested with three or more players.
 Known limits: a monster's copy plays the same attacks, dodges, parries and taunts, but for a few
 swings (some of the bear's, the water hag's) it starts about 0.1-0.3 s late and then catches up.
-Finishers on a shared monster are not shown to the others (it just dies). A cutscene itself is not
+Finishers on a shared monster are not shown to the others (it just dies). A rider is sometimes seen
+without his horse, and a copy's crossbow shot can come without the bow being raised first; both were
+reported in a session whose other faults are fixed here, so they may have gone with them. A cutscene itself is not
 shared: each game plays its own when its quest gets there, which is why waiting for a friend is
 offered instead. The leader's people stood in your world are a sight only - no talking, no trading.
