@@ -6,4 +6,10 @@ call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1 || exit /b 1
 if not exist "%~dp0build\mock" mkdir "%~dp0build\mock"
 cl /nologo /EHsc /O2 /MT /std:c++17 /W3 /DUNICODE /D_UNICODE "%~dp0w3relay.cpp" /Fo"%~dp0build\\" /Fe"%~dp0build\w3relay.exe" /link user32.lib || exit /b 1
 cl /nologo /LD /EHsc /O2 /MT /std:c++17 /W3 "%~dp0steam_mock.cpp" /Fo"%~dp0build\mock\\" /Fe"%~dp0build\mock\steam_api64.dll" || exit /b 1
+rem The relay helpers' own tests (header-only): built and run here, because nothing else in the repo
+rem compiles a .cpp under tests\. No /O2, so their asserts stay in.
+for %%t in (test_relay_xml test_port_arg) do (
+  cl /nologo /EHsc /MT /std:c++17 /W3 /DUNICODE /D_UNICODE "%~dp0..\tests\%%t.cpp" /Fo"%~dp0build\\" /Fe"%~dp0build\%%t.exe" || exit /b 1
+  "%~dp0build\%%t.exe" || exit /b 1
+)
 echo BUILD_OK

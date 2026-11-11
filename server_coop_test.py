@@ -81,6 +81,9 @@ def main():
             failures.append("Alice's 'en' channel stopped updating at capacity")
 
         # the old opcodes still work next to COOP
+        # the server drops a player after 5 s of silence, and the checks above spend about that long
+        # listening: both players say something here, or the rest of the test measures an empty session
+        send(bob, "COOP", "Bob", "hit", "Alice", "7", "1")
         send(alice, "MOVE", "Alice", "1", "0", "0", "0", "1", "0", "0", "0")
         seen_move = False
         end = time.time() + 1.0
