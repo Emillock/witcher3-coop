@@ -13,8 +13,12 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from config import WORK  # noqa: E402
+from config import GAME, WORK  # noqa: E402
 from run_test import missing_test_build  # noqa: E402
+
+# the 5.01 duel board, which the scenarios below need and which no package ships (each player builds it)
+BOARD = os.path.join(GAME, "mods", "modWitcherOnline", "content", "blob0.bundle")
+NEEDS_BOARD = ("gwent_selftest", "gwent_duel")
 
 # enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "version_check", "party_hud", "horse_ride", "social", "trade", "player_effects", "shared_enemy", "enemy_attacks", "mounted_fight", "reactions", "twin_match", "encounter_mismatch", "handoff", "quest_sync",
@@ -184,6 +188,13 @@ def main():
     if missing:
         print(f"the test build is not deployed ({', '.join(missing)} missing; compile.sh deploys it)")
         return 2
+    if not os.path.exists(BOARD):
+        # compile.sh deploys --no-gwent, so a suite run after it would fail these for want of a board, which
+        # says nothing about the duel code: deploy.py --extra <WO>\gwent\out\... puts the board in
+        skipped = [s for s in a.scenarios if s in NEEDS_BOARD]
+        if skipped:
+            print(f"no duel board installed: leaving out {', '.join(skipped)}")
+            a.scenarios = [s for s in a.scenarios if s not in NEEDS_BOARD]
     label = "steam" if a.steam_box else "local"
     os.makedirs(os.path.join(WORK, "runs"), exist_ok=True)
     rows = []
