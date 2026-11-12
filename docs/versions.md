@@ -5,6 +5,10 @@ The current release is **v0.6.0**; see
 
 ## Not released yet
 
+A player carried on another player's horse is put back on when its attachment is lost - a destroyed horse, a
+scene, a teleport - instead of being left standing where it was dropped, unable to move and invisible to the
+rider once it was 100 m behind.
+
 The mod's own text reads in any language the game runs in, its section of the game's options included, which
 was blank for every player whose game was not English. Remastered reads a string table in a format of its own,
 and reads each language's file with that language's own key; the port shipped its English 4.x table under all
