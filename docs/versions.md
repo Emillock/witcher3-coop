@@ -5,6 +5,16 @@ The current release is **v0.6.0**; see
 
 ## Not released yet
 
+A member can watch the cutscene its leader is watching, instead of standing around while it plays. It is off
+until you turn it on (Options, Mods, Witcher Online, "Watch Leader's Cutscenes"), because the scene plays
+against your own save as well as the leader's. It needs the scene's people to be in your world, which is the
+case when you are both at the same point of the same quest; when they are not, nothing happens and you are
+told about the cutscene as before.
+
+A member also catches up on a leader's quest progress from before it joined: the leader pages its whole
+journal out, active quests first, where it used to send only what changed during the session and only the last
+48 of those.
+
 A player carried on another player's horse is put back on when its attachment is lost - a destroyed horse, a
 scene, a teleport - instead of being left standing where it was dropped, unable to move and invisible to the
 rider once it was 100 m behind.

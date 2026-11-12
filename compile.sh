@@ -10,7 +10,13 @@ cfg() { python -c "import config; print(config.$1)"; }
 TW=$(cygpath -w "$T"); WO=$(cfg WO); WORK=$(cfg WORK)
 mkdir -p "$(cygpath -u "$WORK")/compile"
 rm -f "$(cygpath -u "$WORK")/compile/$tag.txt"  # a report left by an earlier run with this tag
+# the scene input table (scene_inputs.py), when it has been built: without it no member can follow a cutscene
+table=""
+if [ -f "$(cygpath -u "$WORK")/scene_inputs.txt" ]; then
+  table="$WORK\\scene_inputs.txt=mods\\modWitcherOnline\\scene_inputs.txt"
+fi
 if ! deploy_out=$(python -I deploy.py install --scripts-only --dlc --no-gwent \
+  ${table:+--extra "$table"} \
   --extra "$WO\\client\\build\\Release\\WitcherOnlineClient.asi=bin\\x64_dx12\\WitcherOnlineClient.asi" \
   --extra "$TW\\w3test\\modW3Test=mods\\modW3Test" \
   --extra "$TW\\w3test\\build\\w3test.asi=bin\\x64_dx12\\w3test.asi" \

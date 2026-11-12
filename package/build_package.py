@@ -73,6 +73,14 @@ def main():
     copy_tree(os.path.join(w, "dlc", "dlcWitcherOnline"), os.path.join(out, "dlc", "dlcWitcherOnline"))
     copy_tree(os.path.join(w, "bin", "config"), os.path.join(out, "bin", "config"))
 
+    # The scene input table: a member needs a scene's input name to play the cutscene its leader is watching,
+    # and the names are only in the game's own scene resources. Built from them once (scene_inputs.py), and
+    # the same for everyone on this game version, so the package carries it.
+    table = os.path.join(WORK, "scene_inputs.txt")
+    if not os.path.exists(table):
+        subprocess.run([sys.executable, os.path.join(TOOLS, "scene_inputs.py"), "--quiet"], check=True)
+    shutil.copy2(table, os.path.join(out, "mods", "modWitcherOnline", "scene_inputs.txt"))
+
     x64 = os.path.join(out, "bin", "x64_dx12")
     os.makedirs(x64)
     shutil.copy2(os.path.join(UAL, "dinput8.dll"), x64)

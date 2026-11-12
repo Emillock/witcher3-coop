@@ -329,6 +329,32 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_LeaderAimMember(bot, client, players[0]);
     }
 
+    if(scenario == "quest_catchup")
+    {
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_CatchupLeader(bot, client.getCoopEnemies());
+        }
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        return W3T_CatchupMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "scene_follow")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_SceneFollowLeader(bot, client.getCoopEnemies());
+        }
+        return W3T_SceneFollowMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "pause_still")
     {
         if(ghosts < 1)
@@ -3007,6 +3033,208 @@ function W3T_LeaderBoltMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
     W3T_Log("BOLT member copies=" + coop.throwCopies + " failures=" + coop.throwCopyFailures
         + " puppets=" + coop.PuppetCount());
     return coop.throwCopies >= 1;
+}
+
+// the name of the other player this bot can see (the leader's member, in a two bot run)
+function W3T_FirstGhostName() : string
+{
+    var players : array<r_RemotePlayer>;
+    var i : int;
+
+    players = theGame.r_getMultiplayerClient().getPlayers();
+    for(i = 0; i < players.Size(); i += 1)
+    {
+        if(players[i] && players[i].username != "")
+        {
+            return players[i].username;
+        }
+    }
+    return "";
+}
+
+// quest_catchup: the leader moves a quest on and then forgets that it did (ClearJournalChangesForTest), which
+// is the state a member joining an hour into a session finds its leader in - the change list it hears carries
+// nothing about the first hour. Only the journal snapshot can get the objective across.
+function W3T_CatchupLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    var manager : CWitcherJournalManager;
+    var quests, phases, objectives : array<CJournalBase>;
+    var objective : CJournalBase;
+    var i, j, k : int;
+
+    manager = theGame.GetJournalManager();
+    if(bot.scenarioCount == 0)
+    {
+        if(coop.GetRole() != 1)
+        {
+            return false;   // wait for the member to be in the party
+        }
+        manager.GetActivatedOfType('CJournalQuest', quests);
+        for(i = 0; i < quests.Size() && !objective; i += 1)
+        {
+            if(manager.GetEntryStatus(quests[i]) != JS_Active)
+            {
+                continue;
+            }
+            phases.Clear();
+            manager.GetAllChildren(quests[i], phases);
+            for(j = 0; j < phases.Size() && !objective; j += 1)
+            {
+                objectives.Clear();
+                manager.GetAllChildren(phases[j], objectives);
+                for(k = 0; k < objectives.Size() && !objective; k += 1)
+                {
+                    if((CJournalQuestObjective)objectives[k] && manager.GetEntryStatus(objectives[k]) == JS_Inactive
+                        && IsNameValid(objectives[k].GetUniqueScriptTag()))
+                    {
+                        objective = objectives[k];
+                    }
+                }
+            }
+        }
+        if(!objective)
+        {
+            W3T_Log("FAIL no inactive objective in an active quest (" + quests.Size() + " quests)");
+            W3T_Quit(2);
+            return false;
+        }
+        bot.scenarioName = objective.GetUniqueScriptTag();
+        manager.ActivateEntry(objective, JS_Active, true, true);
+        coop.ClearJournalChangesForTest();
+        W3T_Log("CATCHUP leader activated " + NameToString(bot.scenarioName) + " and forgot the change");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 1;
+        return false;
+    }
+    // it must not creep back into the change list (a status the leader changes again would be sent the old way)
+    if(coop.JournalRecorded(bot.scenarioName))
+    {
+        W3T_Log("FAIL the change list holds the objective again, so this measures nothing");
+        W3T_Quit(2);
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 2.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("CATCHUP leader waiting, status here=" + coop.JournalStatusOf(bot.scenarioName)
+            + " activeInSnapshot=" + coop.snapActive);
+    }
+    return bot.ElapsedS() - bot.scenarioTime > 60.0;
+}
+
+function W3T_CatchupMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies,
+    leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 2.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("CATCHUP member pages=" + coop.snapPages + " applied=" + coop.snapsApplied
+            + " last=" + NameToString(coop.lastSnapApplied) + " wanted=" + coop.lastSnapStatus
+            + " status=" + coop.JournalStatusOf(coop.lastSnapApplied)
+            + " fromChangeList=" + coop.journalApplied);
+    }
+    return coop.snapsApplied >= 1 && coop.JournalStatusOf(coop.lastSnapApplied) == coop.lastSnapStatus;
+}
+
+// scene_follow: the leader plays a cutscene and the member has to end up watching the same one. The scene is
+// the game's own movie player (what vanilla's PlayMovieScene debug function plays), the one cutscene that needs
+// no quest and no other actors, so what this measures is the following itself: the leader's scene line, the
+// input table the client reads, and the member's own PlayScene.
+function W3T_SceneFollowLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
+{
+    var scene : CStoryScene;
+
+    if(bot.scenarioCount == 0)
+    {
+        if(bot.ElapsedS() < 8.0 || coop.GetRole() != 1)
+        {
+            return false;   // wait for a settled save and for the member to be in the party
+        }
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioText = W3T_FirstGhostName();
+        scene = (CStoryScene)LoadResource("movies\cutscenes\movie_player.w2scene", true);
+        if(!scene)
+        {
+            W3T_Log("FAIL the leader could not load the scene");
+            W3T_Quit(2);
+            return false;
+        }
+        theGame.GetStorySceneSystem().PlayScene(scene, "Input");
+        W3T_Log("FOLLOW leader started a cutscene");
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("FOLLOW leader role=" + coop.GetRole() + " scene=" + coop.SceneNow()
+            + " memberInScene=" + coop.PlayerInScene(bot.scenarioText));
+    }
+    if(bot.ElapsedS() - bot.scenarioTime > 8.0 && coop.SceneNow() == "" && bot.scenarioPhase == 0)
+    {
+        W3T_Log("FAIL the leader's own scene never started");
+        W3T_Quit(2);
+        return false;
+    }
+    // once the member is watching it too, say the scene is over: a member must not be left alone in a
+    // cutscene it only followed. (This scene ignores a skip signal, so saying so is how the leader leaves it.)
+    if(bot.scenarioPhase == 0 && coop.PlayerInScene(bot.scenarioText))
+    {
+        bot.scenarioPhase = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        coop.SetSceneForTest("");
+        W3T_Log("FOLLOW leader has told the member its scene is over");
+    }
+    return bot.scenarioPhase == 1 && bot.ElapsedS() - bot.scenarioTime > 30.0;
+}
+
+function W3T_SceneFollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies,
+    leader : r_RemotePlayer) : bool
+{
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        return false;
+    }
+    if(bot.scenarioCount == 0)
+    {
+        bot.scenarioCount = 1;
+        coop.SetFollowForTest(true);
+        W3T_Log("FOLLOW member switched following on: " + coop.FollowCutscenesOn());
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("FOLLOW member role=" + coop.GetRole() + " lines=" + coop.sceneLines
+            + " leaderInScene=" + leader.inScene + " cutscene=" + leader.inCutscene
+            + " heard=" + coop.LeaderSceneSeen() + " tries=" + coop.sceneFollowTries
+            + " input=" + coop.lastFollowInput + " follows=" + coop.sceneFollows
+            + " scene=" + coop.SceneNow() + " skips=" + coop.followSkips
+            + " why=" + coop.lastFollowFault);
+    }
+    if(bot.scenarioPhase == 0 && coop.sceneFollows >= 1 && coop.SceneNow() != "")
+    {
+        bot.scenarioPhase = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        W3T_Log("FOLLOW member is watching the leader's cutscene after " + coop.sceneFollowTries + " try(s)");
+    }
+    // the leader says its scene is over a moment later: the member must not sit in a cutscene of its own
+    if(bot.scenarioPhase == 1 && bot.ElapsedS() - bot.scenarioTime > 25.0 && coop.followSkips == 0)
+    {
+        W3T_Log("FAIL the leader left the scene and the member did nothing to come out of it");
+        W3T_Quit(2);
+        return false;
+    }
+    // watched the same cutscene, and worked its own way out once the leader had left
+    return bot.scenarioPhase == 1 && (coop.SceneNow() == "" || coop.followSkips >= 1);
 }
 
 // ride_broken, passenger: boards, then has its attachment torn away once, which is what a destroyed horse or a

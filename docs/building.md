@@ -58,5 +58,6 @@ start saying whether the mod's own ids and keys decode.
 | `package/` | Package builder, `Host co-op.cmd`, `Join co-op.cmd`, player README |
 | `w3test/` | The test bot: ASI (test-mode hooks, env natives) and script mod (scenarios) |
 | `run_test.py`, `w3run.py`, `sandbox.py`, `preset_expand.py`, `deploy.py`, `compile.sh` | Harness |
+| `scene_inputs.py` | Reads every `.w2scene` out of the game's bundles and writes `<root>\work\scene_inputs.txt`, the path-to-inputs table a member needs to play the cutscene its leader is watching. `compile.sh` installs it when it is there, `build_package.py` builds it when it is not, and `tests/test_scene_inputs.py` checks it against two of the game's own scenes. |
 | `ws_*_check.py`, `wnb_static_check.py`, `port_edits/`, `exe_strings.py`, `pe_imports.py` | Static checks and scripted edits used during the port |
 | `docs/` | Design notes |

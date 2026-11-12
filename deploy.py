@@ -37,9 +37,10 @@ def mappings(a):
     yield os.path.join(w, "mods", "modWitcherOnlineCompat"), os.path.join("mods", "modWitcherOnlineCompat")
     if a.dlc or not a.scripts_only:
         yield os.path.join(w, "dlc", "dlcWitcherOnline"), os.path.join("dlc", "dlcWitcherOnline")
+    # the options panel's definitions: the scripts read those vars, so they go even with --scripts-only
+    yield os.path.join(w, "bin", "config"), os.path.join("bin", "config")
     if a.scripts_only:
         return
-    yield os.path.join(w, "bin", "config"), os.path.join("bin", "config")
     yield os.path.join(REPO, "client", "build", "Release", "WitcherOnlineClient.asi"), os.path.join("bin", "x64_dx12", "WitcherOnlineClient.asi")
 
 

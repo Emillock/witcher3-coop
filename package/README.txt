@@ -14,11 +14,19 @@ In a party (walk up to a friend's character, press the interact key and answer "
   knocked down, blinded or dazed by Axii looks that way for everyone.
 - Quest progress is shared through the journal: objectives the leader reaches show up in your
   journal too (only forward; nothing you finished is undone). The quest the leader tracks becomes
-  your tracked quest when the leader switches it.
+  your tracked quest when the leader switches it. Joining an hour into someone's session is fine:
+  the leader keeps sending its whole journal in the background, active quests first, so you catch
+  up on what it did before you arrived and not only on what happens next.
 - Cutscenes and dialogues play in each player's own game when their quest gets there; stay near
   the leader (within 8 m) to share them. The leader's dialogue choices are picked for everyone
   in the same dialogue (also if you get there a few seconds later), and when the leader skips a
   line or cutscene, it is skipped for you too.
+- Watch Leader's Cutscenes (off by default, in the mod's options) plays the cutscene your leader
+  has just entered in your own game, so you watch it together instead of standing around. It
+  needs the people of that scene to be in your world, which they are when you are both at the
+  same point of the same quest; when they are not, nothing happens and you are told about the
+  cutscene as before. Keep it off if you would rather your own save was untouched: the scene
+  runs in your game as well, so whatever it sets there is set for you too.
 - You see each other's signs, not only the casting gesture: Igni's fire, Aard's wave, Axii,
   Yrden's trap on the ground and Quen's shield, and the sign gathering in the caster's hand.
   Bombs and crossbow bolts fly and explode for everyone too.
@@ -51,10 +59,11 @@ In a party (walk up to a friend's character, press the interact key and answer "
 - The hidden quest facts the leader's game sets during the session are shared too (also only
   forward), so your quests can follow the leader's progress. What is in your bags stays yours.
 The mod's own section of the game's options (Options, Mods, Witcher Online) is labelled from this
-version on, in English whatever language the game runs in: its eleven rows are Hide all players,
+version on, in English whatever language the game runs in: its twelve rows are Hide all players,
 Show players in cutscenes, Show your own player, Players always look invisible, Hide join and leave
 messages, Hide the party HUD, Nametag render distance, Horse appearance, Auto-decline trade
-requests, Auto-decline Gwent duels, and Local enemies only (play without shared monsters).
+requests, Auto-decline Gwent duels, Local enemies only (play without shared monsters), and Watch
+Leader's Cutscenes.
 Gwent duels between players need a Gwent board this package does not include: each player
 builds it from their own game (WitcherOnline's gwent/README.md). What has to match is the
 board, the game's own file, and not the version of the game: the board of build 5.0.0.1048522

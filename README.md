@@ -24,11 +24,13 @@ version. `W3Coop\README.txt` inside the package covers hosting, joining and unin
 - **The loot of a shared kill.** What a monster dropped in the leader's world is on its body in yours, the same
   items. Neither player takes the other's drop.
 - **Quest progress.** The journal and the game's quest facts, and members follow the leader's tracked quest.
+  A member that joins late catches up: the leader pages its whole journal out, not only this session's changes.
 - **Dialogue.** The leader's choices and skips apply to members in the same scene.
 - **Signs, bombs and bolts.** Everyone sees each other's Igni, Aard, Axii, Yrden and Quen, the sign gathering in
   the caster's hand, and bombs and bolts flying and exploding.
-- **Room for a cutscene.** While you watch one the leader's monsters leave your character alone, and your
-  friends are asked whether to wait for you.
+- **Cutscenes.** A member can watch the leader's cutscene itself, in its own world (an option, off by
+  default). When it cannot - its world has not got the scene's people, or it is fighting - the leader's
+  monsters leave its character alone while it watches its own, and your friends are asked whether to wait.
 - **The leader's people.** Someone the leader can talk to and your world has not got is named for you and stood
   where the leader sees him, as a sight.
 
