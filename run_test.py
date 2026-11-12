@@ -31,7 +31,7 @@ GAME_ARGS = os.environ.get("W3T_GAME_ARGS", "-windowed -width 640 -height 360 -d
 # scenarios where the leader waits for the member to load and join before acting
 LONG_SCENARIOS = ("shared_enemy", "enemy_attacks", "handoff", "reactions", "twin_match", "quest_sync", "dialog_sync",
                   "facts_sync", "puppet_follow", "puppet_walk", "puppet_glide", "enemy_moves", "enemy_summons", "enemy_spells", "real_encounter",
-                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "enemy_sounds", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout", "player_menu", "clock_sync", "sign_anim", "sign_cast", "cutscene_wait", "npc_match", "quest_behind", "kill_loot", "kill_quiet", "igni_damage", "pause_still", "leader_bolt", "gwent_vanilla", "gwent_selftest", "gwent_duel")
+                  "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "showcase", "attack_view", "member_death", "leader_death", "enemy_crowd", "enemy_sounds", "trade", "encounter_mismatch", "player_effects", "mounted_fight", "party_hud", "follow_travel", "party_invite", "puppet_timeout", "player_menu", "clock_sync", "sign_anim", "sign_cast", "cutscene_wait", "npc_match", "quest_behind", "kill_loot", "kill_quiet", "igni_damage", "pause_still", "leader_bolt", "leader_aim", "ride_along", "ride_broken", "gwent_vanilla", "gwent_selftest", "gwent_duel")
 # scenarios for one game (no co-op): their default --bots
 SINGLE_BOT_SCENARIOS = ("gwent_vanilla", "gwent_selftest")
 

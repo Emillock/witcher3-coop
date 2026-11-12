@@ -48,6 +48,13 @@ function W3T_EndScenario(bot : W3T_Bot)
     coop.muteMove = false;
     coop.muteWoClock = false;
     coop.ResetDiagnostics();
+    // riding someone, or sat on a horse, would be carried into the next scenario: a passenger with its
+    // collisions off and its input ignored made horse_ride fail right after ride_along
+    client.stopRiding();
+    if(thePlayer.IsUsingHorse())
+    {
+        thePlayer.SignalGameplayEventParamInt('RidingManagerDismountHorse', DT_instant | DT_fromScript);
+    }
     // facing as at the start too: scenarios spawn monsters ahead of the player (after a ride a drowner landed on a ledge)
     if(bot.homeSet)
     {
@@ -281,6 +288,45 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_LeaderBoltLeader(bot, client.getCoopEnemies(), players[0]);
         }
         return W3T_LeaderBoltMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "ride_broken")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_RideAlongRider(bot, client, players[0]);
+        }
+        return W3T_RideBrokenPassenger(bot, client, players[0]);
+    }
+
+    if(scenario == "ride_along")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_RideAlongRider(bot, client, players[0]);
+        }
+        return W3T_RideAlongPassenger(bot, client, players[0]);
+    }
+
+    if(scenario == "leader_aim")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_LeaderAimLeader(bot);
+        }
+        return W3T_LeaderAimMember(bot, client, players[0]);
     }
 
     if(scenario == "pause_still")
@@ -2961,6 +3007,185 @@ function W3T_LeaderBoltMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
     W3T_Log("BOLT member copies=" + coop.throwCopies + " failures=" + coop.throwCopyFailures
         + " puppets=" + coop.PuppetCount());
     return coop.throwCopies >= 1;
+}
+
+// ride_broken, passenger: boards, then has its attachment torn away once, which is what a destroyed horse or a
+// scene leaves behind. It must end up back on the rider instead of standing where it was dropped with its
+// collisions off and its input ignored. The rider's half (W3T_RideAlongRider) rides off, so a passenger left
+// behind fails there too.
+function W3T_RideBrokenPassenger(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
+{
+    if(!leader.ghost || !leader.isMounted)
+    {
+        return false;
+    }
+    if(!client.isRiding())
+    {
+        if(bot.ElapsedS() - bot.scenarioActAt >= 3.0)
+        {
+            bot.scenarioActAt = bot.ElapsedS();
+            thePlayer.Teleport(leader.ghost.GetWorldPosition());
+            client.ridePlayer(leader.ghost);
+            W3T_Log("RIDE passenger climbs onto " + leader.username);
+        }
+        return false;
+    }
+    if(bot.scenarioCount < 1 && thePlayer.HasAttachment())
+    {
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        client.detachRiderSafe(thePlayer, false);   // the fault: carried, and suddenly attached to nothing
+        W3T_Log("RIDE passenger attachment torn away");
+        return false;
+    }
+    W3T_Log("RIDE passenger riding=" + client.isRiding() + " attached=" + thePlayer.HasAttachment()
+        + " since=" + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1) + " dist="
+        + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), leader.ghost.GetWorldPosition()), 2));
+    // back on the horse within 5 s of losing the attachment, and still near the rider
+    return bot.scenarioCount >= 1 && bot.ElapsedS() - bot.scenarioTime > 5.0 && thePlayer.HasAttachment()
+        && VecDistance(thePlayer.GetWorldPosition(), leader.ghost.GetWorldPosition()) < 6.0;
+}
+
+// ride_along, rider: mounts its horse and carries the other player. What is measured is the rider's own view of
+// its passenger: a friend reported that someone carried was sometimes not seen by the host at all.
+function W3T_RideAlongRider(bot : W3T_Bot, client : r_MultiplayerClient, peer : r_RemotePlayer) : bool
+{
+    var dist : float;
+    var ghostAt : Vector;
+    var spot : Vector;
+
+    if(!thePlayer.IsUsingHorse())
+    {
+        if(bot.ElapsedS() - bot.scenarioTime >= 5.0)
+        {
+            bot.scenarioTime = bot.ElapsedS();
+            InstantMountPlayer('None', EVT_Horse, false, false);
+            W3T_Log("RIDE rider mounts");
+        }
+        return false;
+    }
+    if(peer.ghost)
+    {
+        ghostAt = peer.ghost.GetWorldPosition();
+        dist = VecDistance(thePlayer.GetWorldPosition(), ghostAt);
+    }
+    W3T_Log("RIDE rider hop=" + bot.scenarioCount + " mounted=" + thePlayer.IsUsingHorse()
+        + " passengerRiding=" + peer.isRiding + " ridingMe=" + (peer.ridingPlayerId == client.getServerId())
+        + " ghost=" + (bool)peer.ghost + " dist=" + FloatToStringPrec(dist, 2) + " at=" + W3T_VecStr(ghostAt));
+    // carried: the passenger's own game puts it on this horse, so its ghost must be here, not where it boarded
+    if(peer.isRiding && peer.ridingPlayerId == client.getServerId() && peer.ghost && dist < 6.0)
+    {
+        bot.scenarioStep += 1;
+    }
+    else
+    {
+        bot.scenarioStep = 0;
+    }
+    if(bot.scenarioStep < 4)
+    {
+        return false;
+    }
+    // standing still proves nothing: ride away twice, and the passenger must still be on the horse
+    if(bot.scenarioCount < 2)
+    {
+        bot.scenarioCount += 1;
+        bot.scenarioStep = 0;
+        spot = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 12.0);
+        if(spot.W == 0)
+        {
+            W3T_Log("RIDE rider found nowhere to ride to");
+            bot.scenarioCount -= 1;      // try again next tick rather than counting a hop nobody made
+            return false;
+        }
+        thePlayer.Teleport(spot);
+        W3T_Log("RIDE rider rode off to " + W3T_VecStr(spot) + " (hop " + bot.scenarioCount + ")");
+        return false;
+    }
+    return true;
+}
+
+// ride_along, passenger: climbs onto the rider's horse the way the player menu does (ridePlayer).
+function W3T_RideAlongPassenger(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
+{
+    if(!leader.ghost || !leader.isMounted)
+    {
+        W3T_Log("RIDE passenger waits: ghost=" + (bool)leader.ghost + " leaderMounted=" + leader.isMounted);
+        return false;
+    }
+    if(!client.isRiding())
+    {
+        if(bot.ElapsedS() - bot.scenarioActAt >= 3.0)
+        {
+            bot.scenarioActAt = bot.ElapsedS();
+            thePlayer.Teleport(leader.ghost.GetWorldPosition());
+            client.ridePlayer(leader.ghost);
+            W3T_Log("RIDE passenger climbs onto " + leader.username);
+        }
+        return false;
+    }
+    W3T_Log("RIDE passenger riding=" + client.isRiding() + " dist="
+        + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), leader.ghost.GetWorldPosition()), 2));
+    bot.scenarioStep += 1;
+    return bot.scenarioStep >= 5;
+}
+
+// leader_aim, leader: equips the crossbow and holds the aim, as a player does before shooting. The flag rides in
+// the "wo" packet, which the native client gathers every 50 ms.
+function W3T_LeaderAimLeader(bot : W3T_Bot) : bool
+{
+    var crossbow : SItemUniqueId;
+    var ids : array<SItemUniqueId>;
+
+    if(bot.scenarioCount < 1)
+    {
+        if(!GetWitcherPlayer().GetItemEquippedOnSlot(EES_RangedWeapon, crossbow))
+        {
+            ids = thePlayer.inv.AddAnItem('Crossbow 1', 1);
+            if(ids.Size() > 0)
+            {
+                GetWitcherPlayer().EquipItem(ids[0], EES_RangedWeapon);
+            }
+        }
+        bot.scenarioCount = 1;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    thePlayer.SetIsAimingCrossbow(true);   // held: the member must see the pose, not a shot
+    W3T_Log("AIM leader aiming=" + thePlayer.GetIsAimingCrossbow()
+        + " ranged=" + GetWitcherPlayer().GetItemEquippedOnSlot(EES_RangedWeapon, crossbow));
+    return bot.ElapsedS() - bot.scenarioTime > 12;
+}
+
+// leader_aim, member: the leader's ghost must have the crossbow in its hand while the leader aims. A friend saw a
+// bolt arrive with no crossbow and no aiming to go with it, so the flag, the item and the mount are each measured.
+function W3T_LeaderAimMember(bot : W3T_Bot, client : r_MultiplayerClient, leader : r_RemotePlayer) : bool
+{
+    var inv : CInventoryComponent;
+    var ids : array<SItemUniqueId>;
+    var held : bool;
+    var mounted : bool;
+
+    if(!leader.ghost)
+    {
+        W3T_Log("AIM member has no ghost for " + leader.username);
+        return false;
+    }
+    inv = leader.ghost.GetInventory();
+    if(inv && leader.eq_crossbow != '')
+    {
+        ids = inv.GetItemsByName(leader.eq_crossbow);
+        if(ids.Size() > 0)
+        {
+            mounted = inv.IsItemMounted(ids[0]);
+            held = inv.IsItemHeld(ids[0]);
+        }
+    }
+    W3T_Log("AIM member flag=" + leader.aimingCrossbow + " item=" + leader.eq_crossbow
+        + " inGhostInv=" + ids.Size() + " mounted=" + mounted + " held=" + held
+        + " aimStarts=" + leader.aimStarts);
+    // aimStarts proves the ghost took the aiming branch, which is what plays the pose: the crossbow alone
+    // could be in its hand from the ordinary equipment refresh
+    return leader.aimingCrossbow && ids.Size() > 0 && (mounted || held) && leader.aimStarts > 0;
 }
 
 // pause_still, mover: walks about, then stops sending anything at all, as its game does on a menu or the map.
