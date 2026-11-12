@@ -64,9 +64,9 @@ It loads the game's own `steam_api64.dll`. No Steamworks SDK files are in this r
 | What is tested, and the known limits | [docs/status.md](docs/status.md) |
 | Version history | [docs/versions.md](docs/versions.md) |
 
-The mod itself lives in the fork [Emillock/WitcherOnline](https://github.com/Emillock/WitcherOnline), branch
-`shared-enemies`, and is included here as the submodule `WitcherOnline`, pinned to the commit these tools were
-tested with. Clone with `git clone --recurse-submodules`. This repo holds what goes around it: **w3relay**,
+The mod itself lives in the fork [Emillock/WitcherOnline](https://github.com/Emillock/WitcherOnline) on
+`main`, and is included here as the submodule `WitcherOnline`, pinned to the commit these tools were tested
+with. Clone with `git clone --recurse-submodules`. This repo holds what goes around it: **w3relay**,
 which carries the game's traffic over Steam; the **player package** builder; and the **test harness** that runs
 two game copies on one PC with an in-game bot.
 

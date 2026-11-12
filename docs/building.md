@@ -5,8 +5,9 @@ Put the repos side by side:
 
 ```
 <root>\witcher3-coop            this repo (any folder name)
-<root>\WitcherOnline            Emillock/WitcherOnline, branch shared-enemies (remastered-5.01 for v0.1.0); without it,
-                                the tools use this repo's WitcherOnline submodule (git submodule update --init)
+<root>\WitcherOnline            Emillock/WitcherOnline, branch main (the only branch: the port and the co-op
+                                work were merged into it on 2026-11-12); without it, the tools use this repo's
+                                WitcherOnline submodule (git submodule update --init)
 <root>\WitcherNativeBridge      rejuvenate7/WitcherNativeBridge (master supports 5.01; the 5.0.0.1090142 fix is a local
                                 commit, its source in the package's W3Coop\source\WitcherNativeBridge.zip)
 <root>\deps\ultimate-asi-loader-9.7.4\dinput8.dll and LICENSE
@@ -48,7 +49,7 @@ python package\build_package.py 0.4.0
    `deploy.py install --no-repo --extra <dist>\W3Coop-<version>=. --extra <tools>\w3test\modW3Test=mods\modW3Test
    --extra <tools>\w3test\build\w3test.asi=bin\x64_dx12\w3test.asi`, then `run_suite.py scene_follow version_check`.
    0.6.1 shipped a table that a deploy dropped on the way in, and only this step saw it.
-4. Push the mod to the **fork** (`git push fork shared-enemies`) and this repo to `origin main`.
+4. Push the mod to the **fork** (`git push fork main`) and this repo to `origin main`.
 5. `python gh_release.py Emillock/witcher3-coop v<version> <dist>\W3Coop-<version>.zip --prerelease`. With no
    notes file it takes the release title and body from the changelog's section for that tag, and refuses to
    publish a version that has none.
@@ -70,7 +71,7 @@ start saying whether the mod's own ids and keys decode.
 
 | Path | Contents |
 |---|---|
-| `WitcherOnline/` | Submodule: the mod (the Emillock/WitcherOnline fork, GPL-3.0), pinned to the tested `shared-enemies` commit |
+| `WitcherOnline/` | Submodule: the mod (the Emillock/WitcherOnline fork, GPL-3.0), pinned to the tested `main` commit |
 | `relay/` | w3relay (host and join), the mock `steam_api64.dll` for one-PC tests, self-test |
 | `package/` | Package builder, `Host co-op.cmd`, `Join co-op.cmd`, player README |
 | `w3test/` | The test bot: ASI (test-mode hooks, env natives) and script mod (scenarios) |
