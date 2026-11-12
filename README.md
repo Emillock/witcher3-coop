@@ -10,6 +10,7 @@ die as the leader's do.
 **[v0.6.1](https://github.com/Emillock/witcher3-coop/releases/tag/v0.6.1)** is the current release. Take
 `W3Coop-0.6.1.zip`, copy its four folders into your Witcher 3 folder, and make sure both players run the same
 version. `W3Coop\README.txt` inside the package covers hosting, joining and uninstalling.
+[CHANGELOG.md](CHANGELOG.md) lists every published version and what it brought.
 
 - Game build 5.0.0.1048522, or Steam's update of 2026-10-29 (5.0.0.1090142).
 - The host needs Java 21 or newer. Nobody opens a port or shares an IP address - the traffic goes over Steam.

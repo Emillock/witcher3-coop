@@ -37,7 +37,24 @@ python package\build_package.py 0.4.0
 `relay\build.cmd` also builds and runs the relay helpers' own tests (`tests\test_relay_xml.cpp`,
 `tests\test_port_arg.cpp`), so a broken helper fails the build instead of going unnoticed.
 
-The last step writes `<root>\work\dist\W3Coop-0.4.0` and its zip. [config.py](config.py) finds the game
+## Publishing a version
+
+1. Set `CoopVersion()` in `coopEnemies.ws` to the new version (`build_package.py` refuses to build until the
+   scripts say the same version) and move what the release brings from `docs/versions.md`'s "Not released
+   yet" into a new `CHANGELOG.md` section, headed `## [<version>] - <date> - <what it is about>`. The
+   changelog is written at this moment and at no other.
+2. `compile.sh <tag>` for a clean compile, then `python package\build_package.py <version>`.
+3. Install the built package and run against it, not only against the dev build:
+   `deploy.py install --no-repo --extra <dist>\W3Coop-<version>=. --extra <tools>\w3test\modW3Test=mods\modW3Test
+   --extra <tools>\w3test\build\w3test.asi=bin\x64_dx12\w3test.asi`, then `run_suite.py scene_follow version_check`.
+   0.6.1 shipped a table that a deploy dropped on the way in, and only this step saw it.
+4. Push the mod to the **fork** (`git push fork shared-enemies`) and this repo to `origin main`.
+5. `python gh_release.py Emillock/witcher3-coop v<version> <dist>\W3Coop-<version>.zip --prerelease`. With no
+   notes file it takes the release title and body from the changelog's section for that tag, and refuses to
+   publish a version that has none.
+6. Put the game folder back on the released package, and record the run in `work\CHANGES.md`.
+
+The package step writes `<root>\work\dist\W3Coop-0.4.0` and its zip. [config.py](config.py) finds the game
 through Steam's library folders. You can override paths with `W3_GAME_DIR`, `W3C_ROOT` and `W3C_WORK`.
 
 ## The mod's text

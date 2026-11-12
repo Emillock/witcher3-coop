@@ -3,6 +3,10 @@
 The current release is **v0.6.1**; see
 [Releases](https://github.com/Emillock/witcher3-coop/releases) for the packages themselves.
 
+This file is the working history and carries whatever is merged but not released yet, under "Not released
+yet". [CHANGELOG.md](../CHANGELOG.md) is the published history: a version is written there as it is
+published, and that file changes at no other time.
+
 ## New in v0.6.1
 
 A member can watch the cutscene its leader is watching, instead of standing around while it plays. It is off
