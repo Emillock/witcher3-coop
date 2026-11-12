@@ -1,9 +1,9 @@
 # What each version added
 
-The current release is **v0.6.0**; see
+The current release is **v0.6.1**; see
 [Releases](https://github.com/Emillock/witcher3-coop/releases) for the packages themselves.
 
-## Not released yet
+## New in v0.6.1
 
 A member can watch the cutscene its leader is watching, instead of standing around while it plays. It is off
 until you turn it on (Options, Mods, Witcher Online, "Watch Leader's Cutscenes"), because the scene plays
@@ -13,7 +13,19 @@ told about the cutscene as before.
 
 A member also catches up on a leader's quest progress from before it joined: the leader pages its whole
 journal out, active quests first, where it used to send only what changed during the session and only the last
-48 of those.
+48 of those. The pager waits out a fight, having nothing urgent to say.
+
+The last two of the ten reports from the 2026-11-09 session: a player carried on another player's horse is put
+back on when its attachment is lost - a destroyed horse, a scene, a teleport - instead of being left standing
+where it was dropped, unable to move and invisible to the rider once it was 100 m behind; and the crossbow
+half of "arbalest not shooting", which measures working on this build (the aiming flag goes out every 50 ms,
+the leader's own crossbow is in its ghost's hand and the ghost plays the aiming pose), so that report went
+with the orphaned copies 0.6.0 fixed.
+
+The mod's own text, including its section of the game's options, reads in any language the game runs in.
+Remastered decodes each language's string table with that language's own key and in a format of its own, so
+the port's tables - the English one copied under all seventeen names - gave nothing at all outside an English
+game.
 
 A player carried on another player's horse is put back on when its attachment is lost - a destroyed horse, a
 scene, a teleport - instead of being left standing where it was dropped, unable to move and invisible to the

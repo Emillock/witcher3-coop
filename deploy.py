@@ -52,8 +52,10 @@ def skipped(a, rel, src):
         return "drop"
     if rel in {norm(p) for p in GWENT_BUNDLE} and (a.no_gwent or is_under(src, REPO_GAME_FILES)):
         return "drop"
-    # install notes at the mod root (input.settings.txt etc.) are not game files
-    if rel.rsplit("\\", 1)[0] == "mods\\modWitcherOnline" and name.endswith((".txt", ".csv")):
+    # install notes at the mod root (input.settings.txt etc.) are not game files; the scene input table is
+    # one, and the client reads it from exactly there
+    if (rel.rsplit("\\", 1)[0] == "mods\\modWitcherOnline" and name.endswith((".txt", ".csv"))
+            and name != "scene_inputs.txt"):
         return "note"
     return None
 
