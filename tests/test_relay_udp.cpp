@@ -20,6 +20,10 @@ int main()
 	assert(address.sin_port != 0);
 	assert(w3coop::UdpSocket(ntohs(address.sin_port)) == INVALID_SOCKET);
 
+	// Bound the receive even if a regression leaves the socket blocking.
+	DWORD receiveTimeout = 1000;
+	assert(setsockopt(receiver, SOL_SOCKET, SO_RCVTIMEO,
+	                  reinterpret_cast<const char *>(&receiveTimeout), sizeof(receiveTimeout)) == 0);
 	// Receiving on a fresh socket must not block the relay's event loop.
 	char data[8];
 	assert(recv(receiver, data, sizeof(data), 0) == SOCKET_ERROR);
