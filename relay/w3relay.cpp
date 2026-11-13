@@ -511,6 +511,8 @@ namespace
 	int RunHost(uint16_t serverPort, const std::wstring &jar, bool invite)
 	{
 		HANDLE server = jar.empty() ? nullptr : StartServer(jar, serverPort);
+		if (!jar.empty() && !server)
+			return 1;
 		const sockaddr_in serverAddr = Loopback(serverPort);
 		const uint64_t self = S.GetSteamID(S.user);
 		S.CreateLobby(S.matchmaking, 1, 8);

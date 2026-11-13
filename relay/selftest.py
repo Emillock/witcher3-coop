@@ -44,7 +44,32 @@ def echo_server(stop, seen):
     s.close()
 
 
+def host_start_failure():
+    """An explicitly requested server that cannot start must not leave a lobby running."""
+    with tempfile.TemporaryDirectory(prefix="w3relay-start-failure-") as root:
+        mock_dir = os.path.join(root, "mocksteam")
+        os.makedirs(mock_dir)
+        host = relay_dir(root, "host")
+        env = dict(os.environ, MOCK_STEAM_DIR=mock_dir, MOCK_STEAM_ID="1001", MOCK_STEAM_NAME="Host")
+        # StartServer uses the jar's parent as the process working directory. A missing
+        # parent makes CreateProcessW fail even on a machine that has Java installed.
+        jar = os.path.join(root, "missing", "WitcherServer.jar")
+        try:
+            result = subprocess.run([os.path.join(host, "w3relay.exe"), "host", "--server-jar", jar, "--no-invite"],
+                                    cwd=host, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            print("FAIL: host kept running after server startup failed")
+            return False
+        print(result.stdout.strip())
+        no_lobby = not any(name.startswith("lobby_") for name in os.listdir(mock_dir))
+        return result.returncode == 1 and "Could not start the Witcher Online server" in result.stdout and no_lobby
+
+
 def main():
+    if not host_start_failure():
+        print("RESULT: FAIL (host server startup)")
+        return 1
     root = tempfile.mkdtemp(prefix="w3relay-test-")
     mock_dir = os.path.join(root, "mocksteam")
     os.makedirs(mock_dir)
