@@ -13,6 +13,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include "job_process.h"
 #include "port_arg.h"
 #include "xml_config.h"
 
@@ -489,23 +490,17 @@ namespace
 	HANDLE StartServer(const std::wstring &jar, uint16_t port)
 	{
 		std::wstring cmd = L"java -jar \"" + jar + L"\" " + std::to_wstring(port);
-		STARTUPINFOW si{sizeof(si)};
-		PROCESS_INFORMATION pi{};
 		const std::wstring dir = jar.substr(0, jar.find_last_of(L"\\/"));
-		if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NEW_PROCESS_GROUP, nullptr, dir.c_str(), &si, &pi))
+		// Keep the job alive for the relay's lifetime.
+		static w3coop::JobProcess job;
+		HANDLE server = job.Start(cmd, dir.c_str());
+		if (!server)
 		{
 			printf("Could not start the Witcher Online server (is Java 21 installed?).\n");
 			return nullptr;
 		}
-		// the server never outlives the relay
-		HANDLE job = CreateJobObjectW(nullptr, nullptr);
-		JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-		limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-		SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
-		AssignProcessToJobObject(job, pi.hProcess);
-		CloseHandle(pi.hThread);
 		printf("Witcher Online server started on UDP %u.\n", port);
-		return pi.hProcess;
+		return server;
 	}
 
 	int RunHost(uint16_t serverPort, const std::wstring &jar, bool invite)

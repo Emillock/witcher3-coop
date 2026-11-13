@@ -12,4 +12,7 @@ for %%t in (test_relay_xml test_port_arg) do (
   cl /nologo /EHsc /MT /std:c++17 /W3 /DUNICODE /D_UNICODE "%~dp0..\tests\%%t.cpp" /Fo"%~dp0build\\" /Fe"%~dp0build\%%t.exe" || exit /b 1
   "%~dp0build\%%t.exe" || exit /b 1
 )
+rem Job ownership test starts and stops a child process, without Steam or Java.
+cl /nologo /EHsc /MT /std:c++17 /W3 /DUNICODE /D_UNICODE "%~dp0..\tests\test_relay_job.cpp" /Fo"%~dp0build\\" /Fe"%~dp0build\test_relay_job.exe" || exit /b 1
+"%~dp0build\test_relay_job.exe" || exit /b 1
 echo BUILD_OK
