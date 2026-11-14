@@ -394,6 +394,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_KillQuietMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "kill_wound")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_KillWoundLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_KillWoundMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "quest_behind")
     {
         if(ghosts < 1)
@@ -3570,6 +3583,101 @@ function W3T_IgniDamageMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         + " burning=" + copy.HasBuff(EET_Burning) + " hitAnims=" + coop.hitAnimsSeen
         + " inHitAnim=" + coop.PuppetInHitAnim(0));
     return copy.GetHealthPercents() <= bot.scenarioValue - 0.08;
+}
+
+// kill_wound, leader: shares a monster and kills it the way a blow that takes a limb off does - the wound and
+// the direction it flies in, the kill, then the engine's own delayed dismemberment. The copy in the member's
+// world dies by script and used to just fall over; it must now come apart the same way.
+function W3T_KillWoundLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var dc : CDismembermentComponent;
+    var wounds : array<name>;
+    var npc : CNewNPC;
+
+    if(bot.scenarioCount < 2)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member);
+        if(coop.HostEnemyCount() < 1)
+        {
+            return false;
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+        return false;
+    }
+    if(bot.scenarioCount == 2)
+    {
+        if(bot.ElapsedS() - bot.scenarioTime < 8 || coop.HostEnemyCount() < 1)
+        {
+            return false;   // the member needs a moment to copy it
+        }
+        npc = coop.HostEnemyAt(0);
+        dc = (CDismembermentComponent)npc.GetComponentByClassName('CDismembermentComponent');
+        if(!dc)
+        {
+            W3T_Log("FAIL the monster has no dismemberment component");
+            W3T_Quit(2);
+            return false;
+        }
+        dc.GetWoundsNames(wounds);
+        if(wounds.Size() < 1)
+        {
+            W3T_Log("FAIL no wound is defined on the monster");
+            W3T_Quit(2);
+            return false;
+        }
+        bot.scenarioText = NameToString(wounds[0]);
+        // what the game's own damage processing does for a killing blow that dismembers
+        npc.SetDismembermentInfo(wounds[0], npc.GetWorldPosition() - thePlayer.GetWorldPosition(), false);
+        npc.SetBehaviorVariable('dismemberAnim', 1.0);
+        npc.Kill('W3T', true);
+        npc.AddTimer('DelayedDismemberTimer', 0.05);
+        W3T_Log("WOUND leader killed its monster with " + bot.scenarioText + ", 1 of " + wounds.Size() + " wounds");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 3;
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("WOUND leader wound=" + bot.scenarioText + " seen=" + coop.woundsSeen + " sent=" + coop.woundsSent);
+    }
+    return bot.ElapsedS() - bot.scenarioTime >= 12 && coop.woundsSeen >= 1;
+}
+
+// kill_wound, member: its copy of that monster must die showing a wound of its own, not fall over whole.
+function W3T_KillWoundMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies,
+    leader : r_RemotePlayer) : bool
+{
+    var dc : CDismembermentComponent;
+    var npc : CNewNPC;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    npc = coop.PuppetAt(0);
+    if(npc)
+    {
+        bot.scenarioFlag = true;   // it had a copy
+        dc = (CDismembermentComponent)npc.GetComponentByClassName('CDismembermentComponent');
+        if(dc && dc.GetVisibleWoundName() != '')
+        {
+            bot.scenarioText = NameToString(dc.GetVisibleWoundName());
+        }
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("WOUND member puppets=" + coop.PuppetCount() + " killed=" + coop.puppetsKilled + " applied="
+            + coop.woundsApplied + " unknown=" + coop.woundsUnknown + " showing=" + bot.scenarioText
+            + " hadCopy=" + bot.scenarioFlag);
+    }
+    // the copy died, and it came apart doing so
+    return bot.scenarioFlag && coop.puppetsKilled >= 1 && coop.woundsApplied >= 1 && bot.scenarioText != "";
 }
 
 // kill_quiet, leader: shares a drowner, enters a scene, then kills it and stops sending in the same breath,

@@ -9,6 +9,12 @@ published, and that file changes at no other time.
 
 ## Not released yet
 
+A monster that comes apart in one world comes apart in the others. A copy of the leader's monster is killed by
+script, which plays a plain death, so a drowner cut in half next to your friend used to simply fall over on your
+screen. The wound the engine picked there - one of the eight a drowner carries - now rides over with it, and the
+copy loses the same limb as it dies, with the same particles and the gear it drops. A finisher's own animation
+stays with the player who landed it.
+
 Three contributions to the relay, all from localzet, merged on 2026-11-14 (#6, #7, #8). A host whose Java
 server fails to start no longer opens a lobby: it used to print the warning and then put a joinable lobby in
 front of a server that was not there, and sit there waiting. The relay's UDP sockets are checked as they are

@@ -1137,6 +1137,37 @@ the same items by name as the ones the leader sent, and looting them must put th
 the dice and can come out empty, so the leader sends for another monster when that happens rather than passing a
 test on nothing.
 
+## Coming apart the same way (2026-11-14)
+
+A copy of the leader's monster dies because the member's game is told it died: `KillPuppet` calls `Kill`, and
+that plays a plain death. None of the game's damage processing runs there, so the whole dismemberment path is
+skipped - a drowner the leader cut in half fell over whole in the member's world, and the limb, the particles
+and the dropped weapon all stayed on the leader's screen.
+
+What the engine does on a dismembering kill is in `damageManagerProcessor.ws`: it picks one of the victim's own
+wounds (`CDismembermentComponent.GetWoundsNames`, eight of them on a drowner), calls `SetDismembermentInfo` with
+the direction the parts fly in, sets the `dismemberAnim` behaviour variable so the body plays the death that
+comes apart, and leaves `DelayedDismemberTimer` to show it 0.05 s later. Afterwards the component knows which
+wound is showing (`GetVisibleWoundName`), and that is the one thing a script elsewhere can read.
+
+So the leader reads it. `WatchWound` looks at a shared monster's component while the monster is dead or within
+two seconds of a hit - a wound can only appear in a hit or a death animation, so there is nothing to read while
+it is up and unhurt - and the name goes out as `dm epoch tick count {netId wound}` for thirty ticks, enough for
+a member that missed a packet. The member applies it with the same three calls the game makes, in the same
+order, as the copy dies (`FireWound`, from `KillPuppet`); a wound heard for a copy still on its feet waits a
+second and a half and is then applied anyway, since its monster is already dead where it came from. The copy is
+the same template, so the wound is defined on it; `IsWoundDefined` says so, and one that is not is counted
+(`woundsUnknown`) rather than guessed at.
+
+Measured (`kill_wound`, 2026-11-14): the leader killed its drowner with `dnr_cut_01`, and the member's copy
+died showing `dnr_cut_01` - the same one of the eight - about a third of a second behind, with nothing unknown.
+The scenario kills through the game's own path (`SetDismembermentInfo`, `Kill`, `DelayedDismemberTimer`), which
+is how a real sword blow gets there, so what is left untested is only the engine's own choice of wound.
+
+The finisher is still not mirrored. A finisher is two animations, the killer's and the victim's, and sharing it
+means playing the leader's half on its ghost and the victim's on the copy; the result of the blow is what the
+wound carries, and that is what the other players now see.
+
 ## Open questions
 
 - **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in
