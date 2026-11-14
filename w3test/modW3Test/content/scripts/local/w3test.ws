@@ -424,6 +424,7 @@ statemachine class W3T_Bot
     // free-form scenario state
     public var scenarioVec : Vector;
     public var scenarioFlag : bool;
+    public var scenarioFlag2 : bool;     // a second one, for a scenario that also switches something on once
     public var scenarioTime : float;
     public var scenarioCount : int;
     public var scenarioEntity : CEntity;
@@ -516,6 +517,7 @@ statemachine class W3T_Bot
         W3T_ApplySessionSettings(control);
         scenarioVec = Vector(0, 0, 0);
         scenarioFlag = false;
+        scenarioFlag2 = false;
         scenarioTime = 0;
         scenarioCount = 0;
         scenarioEntity = NULL;

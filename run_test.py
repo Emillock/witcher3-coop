@@ -475,8 +475,16 @@ def launch(a: argparse.Namespace, game_args: list[str], run_dir: str, session: l
     or with a matrix "hung", "exited", or "unstarted" when the entry under way never started: no result is
     appended for it then, and matrix.unstarted_why says why)."""
     server_log = open(os.path.join(run_dir, "server.log"), "w")
+    server_env = dict(os.environ)
+    # an imitated link: the server holds what it broadcasts, lets it overtake and throws some away
+    if a.delay or a.jitter or a.loss:
+        server_env.update(W3_SIM_DELAY_MS=str(a.delay), W3_SIM_JITTER_MS=str(a.jitter),
+                          W3_SIM_LOSS_PCT=str(a.loss))
+        print(f"link: {a.delay} ms delay, {a.jitter} ms jitter, {a.loss}% loss (one way, on broadcasts)",
+              flush=True)
     server = subprocess.Popen(["java", "-jar", SERVER_JAR, str(a.port)], cwd=os.path.dirname(SERVER_JAR),
-                              stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT)
+                              stdin=subprocess.PIPE, stdout=server_log, stderr=subprocess.STDOUT,
+                              env=server_env)
     time.sleep(2)
 
     relays = []
@@ -792,6 +800,9 @@ def main() -> int:
     ap.add_argument("--grace", type=int, default=900, help="seconds a bot stays after passing (the run ends when all pass)")
     ap.add_argument("--port", type=int, default=41000)
     ap.add_argument("--relay", action="store_true", help="bots after the first connect through w3relay (mock Steam)")
+    ap.add_argument("--delay", type=int, default=0, help="ms the server holds each broadcast (an imitated link)")
+    ap.add_argument("--jitter", type=int, default=0, help="ms of extra delay, at random, on top of --delay (packets overtake each other)")
+    ap.add_argument("--loss", type=int, default=0, help="percent of broadcasts thrown away")
     ap.add_argument("--monster", default="", help="puppet scenarios: the leader's monster template (depot path)")
     ap.add_argument("--shots", type=float, default=0, help="save both bots' windows as PNG every this many seconds once all are in the world")
     ap.add_argument("--shots-from", default="", help="start the screenshots when this text appears in the first bot's log")

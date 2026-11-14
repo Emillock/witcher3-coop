@@ -1170,6 +1170,55 @@ The finisher is still not mirrored. A finisher is two animations, the killer's a
 means playing the leader's half on its ghost and the victim's on the copy; the result of the blow is what the
 wound carries, and that is what the other players now see.
 
+## What a real link does to a shared monster (2026-11-14)
+
+Reported by the owner's friend: monsters move inconsistently, and their hits do not land where the swing looks.
+Both of those live in the trip between the two games, and a run on one PC has no trip at all - packets arrive in
+microseconds, in order, and never go missing. So the first piece of work was to imitate a link: the test server
+holds every broadcast for `W3_SIM_DELAY_MS` plus up to `W3_SIM_JITTER_MS` at random (so packets overtake each
+other) and throws `W3_SIM_LOSS_PCT` of them away, which `run_test.py --delay --jitter --loss` passes in and the
+server states in its log. Then the second piece: `sync_error.py` reads a `puppet_follow` run's two logs and
+compares the copy's position with the monster's *at the same instant*, which the member by itself cannot know.
+
+What that measured, over 150 ms with 60 ms of jitter and 5% loss: the copy was **0.47 m** behind on average,
+1.16 m in the worst tenth, and it stood still in a third of the samples while the monster was moving, then
+jumped to catch up. Of that error, only about a tenth of a metre was the slide; the rest was the trip. The copy
+chased `p.target`, the position it was last told, with no notion that the monster had moved on since.
+
+So a copy is now led:
+
+- it keeps the monster's velocity (`targetVel`, smoothed, and zeroed on a step over 3 m, which is a leap or a
+  teleport and no direction to carry on in);
+- the lead is `snapPeriod / 2` (the average staleness of one position) plus half the measured round trip, capped
+  at `pingLead` = 0.15 s and at 2.5 m, so an overshoot stays small and the next word puts it right;
+- it is scaled by `velAgree`, how steadily the monster keeps its direction, because leading a turning monster
+  only makes it wobble. On the straight it is 1; through a turn it falls and the copy aims at the position
+  itself;
+- nothing is led while an animation is placing the copy, or while it is slower than 0.5 m/s. The jump that
+  teleports a far-gone copy is still judged on the position itself, never on the aim.
+
+The round trip is measured by the mod, on one clock: the member stamps a ping with its own clock every half
+second (`pg`), the leader hands every member's last stamp back in one line (`pr`), and the member subtracts. No
+shared time is needed, and `linkRtt` is the smoothed figure. It reads 0.03 s between two games on this PC and
+0.47 s over the imitated 150 ms link (two broadcast hops plus the echo's own wait), which is `link_ping`'s
+assertion.
+
+After the lead: **0.39 m** on average, 1.01 m in the worst tenth, and the copy keeps moving between packets. The
+rest of the error is the part of the trip the cap does not lead, which is deliberate.
+
+The impacts turned out to be a different story. A hit on a member lands when its own copy's swing reaches the
+same point of the same animation, and the worry was that the hit could arrive before that swing (they travel in
+different channels and can overtake). Measured over the same link: that never happened - `noSwing` stayed 0,
+because the attack goes out the instant it starts and the hit comes hundreds of milliseconds later in the
+animation. The guard is in anyway (a hit whose swing has not arrived waits `hurtWait` = 0.2 s, and `RetimeHurt`
+lands it on that swing the moment it does arrive), and it is counted, so if it ever does happen the number says
+so. What was really wrong with the impacts is the same thing as the movement: the copy stood where the monster
+had been, so the swing connected half a metre from where the leader's did.
+
+Every combat scenario passes over the imitated link, 150 ms with 5% loss and 300 ms with 10%: shared_enemy,
+enemy_attacks, member_combat, reactions, kill_wound, puppet_follow. The synchronisation was never breaking over
+a real link - it was standing in the wrong place.
+
 ## Open questions
 
 - **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in

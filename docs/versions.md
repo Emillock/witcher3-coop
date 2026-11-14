@@ -9,6 +9,15 @@ published, and that file changes at no other time.
 
 ## Not released yet
 
+Monsters your friend is fighting stand nearer to where they really are. A copy used to be put exactly where the
+leader's monster was when the news left, so over the internet it stood a trip behind - and, when a packet was
+late or lost, it waited there and then jumped to catch up. It now carries the monster's velocity and aims where
+the monster will be, led by half the round trip, which the mod measures for itself. Measured over an imitated
+150 ms link with 5% loss: 0.47 m behind on average before, 0.39 m after, the worst tenth 1.16 m before and
+1.01 m after, and the copy no longer stands still between packets. A monster that is turning is not led, so
+nothing wobbles. A hit that somehow arrives before the swing it belongs to now waits a moment for it instead of
+landing out of nowhere.
+
 A monster that comes apart in one world comes apart in the others. A copy of the leader's monster is killed by
 script, which plays a plain death, so a drowner cut in half next to your friend used to simply fall over on your
 screen. The wound the engine picked there - one of the eight a drowner carries - now rides over with it, and the

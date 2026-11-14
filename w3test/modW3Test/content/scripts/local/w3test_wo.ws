@@ -407,6 +407,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_KillWoundMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "link_ping")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_LinkPingLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_LinkPingMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "quest_behind")
     {
         if(ghosts < 1)
@@ -1516,6 +1529,12 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
         return false;
     }
 
+    if(W3T_GetEnv("W3T_NO_LEAD") != "" && !bot.scenarioFlag2)
+    {
+        bot.scenarioFlag2 = true;
+        coop.SetSyncLeadForTest(false, 0.0);
+        W3T_Log("ENEMY no lead and no hurt wait: hits land the moment they arrive");
+    }
     if(coop.PuppetCount() > 0)
     {
         W3T_LookAt(coop.PuppetAt(0).GetWorldPosition());
@@ -1524,7 +1543,8 @@ function W3T_EnemyAttacksMember(bot : W3T_Bot, client : r_MultiplayerClient, coo
         + " dodged=" + coop.hurtsDodged + " damageTaken=" + FloatToStringPrec(coop.hurtDamageTaken, 1) + " puppets=" + coop.PuppetCount()
         + " attacksPlayed=" + coop.attacksPlayed + " attackFailures=" + coop.attackPlayFailures
         + " movesPlayed=" + coop.movesPlayed + " moveFailures=" + coop.movePlayFailures
-        + " lastHurtDelay=" + FloatToStringPrec(coop.lastHurtDelay, 2) + " directEffects=" + coop.directEffectsApplied + "/"
+        + " lastHurtDelay=" + FloatToStringPrec(coop.lastHurtDelay, 2) + " noSwing=" + coop.hurtsNoSwing
+        + " retimed=" + coop.hurtsRetimed + " directEffects=" + coop.directEffectsApplied + "/"
         + coop.directEffectsHeld + " victimFx=" + coop.victimFxPlayed + " fx=" + coop.fxMirrored + " puppetEffectsDropped="
         + coop.puppetEffectsDropped + " graphAttacks=" + coop.graphAttacksPlayed + "/" + coop.graphAttacksRefused + "/" + coop.graphEndsPlayed
         + " lastError=" + coop.lastError);
@@ -3583,6 +3603,68 @@ function W3T_IgniDamageMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         + " burning=" + copy.HasBuff(EET_Burning) + " hitAnims=" + coop.hitAnimsSeen
         + " inHitAnim=" + coop.PuppetInHitAnim(0));
     return copy.GetHealthPercents() <= bot.scenarioValue - 0.08;
+}
+
+// link_ping, leader: nothing to do but be there and answer. The member's half measures the trip.
+function W3T_LinkPingLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var hasGhost : bool;
+
+    if(member.ghost)
+    {
+        hasGhost = true;   // a handle cannot be compared inside an expression here
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("PING leader role=" + coop.GetRole() + " ghost=" + hasGhost);
+    }
+    return bot.ElapsedS() > 25;
+}
+
+// link_ping, member: the copies of the leader's monsters are led by how long the news takes to arrive, so the
+// member has to measure that for itself (it stamps a ping with its own clock, the leader hands the stamp back).
+// W3T_EXPECT_RTT=ms: the harness delayed the link, so the figure has to be near what was asked for.
+function W3T_LinkPingMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies,
+    leader : r_RemotePlayer) : bool
+{
+    var expect, rtt : float;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        client.joinParty(leader.username);
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    rtt = coop.linkRtt;
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("PING member rtt=" + FloatToStringPrec(rtt, 3) + " pings=" + coop.pingsHeard
+            + " since=" + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1));
+    }
+    if(coop.pingsHeard < 2 || rtt <= 0)
+    {
+        // two pings go out a second apart, so five seconds is already generous
+        if(bot.ElapsedS() - bot.scenarioTime > 15.0)
+        {
+            W3T_Log("FAIL no round trip measured in 15 s (pings=" + coop.pingsHeard + ")");
+            W3T_Quit(1);
+        }
+        return false;
+    }
+    expect = StringToFloat(W3T_GetEnv("W3T_EXPECT_RTT"), 0) / 1000.0;
+    if(expect > 0 && (rtt < expect * 0.5 || rtt > expect * 2.5))
+    {
+        W3T_Log("FAIL the trip measured " + FloatToStringPrec(rtt, 3) + " s, nowhere near the "
+            + FloatToStringPrec(expect, 3) + " s the harness imposed");
+        W3T_Quit(1);
+        return false;
+    }
+    W3T_Log("PING member measured the trip at " + FloatToStringPrec(rtt, 3) + " s over " + coop.pingsHeard
+        + " ping(s)");
+    return true;
 }
 
 // kill_wound, leader: shares a monster and kills it the way a blow that takes a limb off does - the wound and
@@ -6663,6 +6745,12 @@ function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
         client.joinParty(leader.username);
         return false;
     }
+    if(W3T_GetEnv("W3T_NO_LEAD") != "" && !bot.scenarioFlag2)
+    {
+        bot.scenarioFlag2 = true;
+        coop.SetSyncLeadForTest(false, 0.0);
+        W3T_Log("FOLLOW no lead and no hurt wait: the copy chases the position it was told");
+    }
     if(coop.PuppetCount() < 1)
     {
         return false;
@@ -6688,7 +6776,8 @@ function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     }
     W3T_Log("FOLLOW member puppet at " + W3T_VecStr(puppet.GetWorldPosition()) + " gap=" + FloatToStringPrec(gap, 2)
         + " maxGap=" + FloatToStringPrec(bot.scenarioValue, 2) + " toMe=" + FloatToStringPrec(VecDistance(puppet.GetWorldPosition(), thePlayer.GetWorldPosition()), 1)
-        + " stride=" + FloatToStringPrec(coop.puppetMaxSwing, 3) + " bone=" + coop.strideBone);
+        + " stride=" + FloatToStringPrec(coop.puppetMaxSwing, 3) + " bone=" + coop.strideBone
+        + " rtt=" + FloatToStringPrec(coop.linkRtt, 3) + " pings=" + coop.pingsHeard);
     if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 1.0)
     {
         W3T_Log("FAIL the puppet stayed " + FloatToStringPrec(gap, 2) + " m behind the leader's monster for 1 s");
