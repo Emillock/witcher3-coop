@@ -14,6 +14,7 @@
 #include <windows.h>
 
 #include "port_arg.h"
+#include "udp_socket.h"
 #include "xml_config.h"
 
 #include <cstdint>
@@ -249,27 +250,6 @@ namespace
 	};
 
 	// ---- UDP helpers ----
-
-	SOCKET UdpSocket(uint16_t bindPort)
-	{
-		SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-		sockaddr_in addr{};
-		addr.sin_family = AF_INET;
-		addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		addr.sin_port = htons(bindPort);
-		if (bind(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0)
-		{
-			closesocket(s);
-			return INVALID_SOCKET;
-		}
-		u_long nonBlocking = 1;
-		ioctlsocket(s, FIONBIO, &nonBlocking);
-		// a previous peer port being closed must not kill the socket (WSAECONNRESET on UDP)
-		BOOL off = FALSE;
-		DWORD ignored = 0;
-		WSAIoctl(s, _WSAIOW(IOC_VENDOR, 12), &off, sizeof(off), nullptr, 0, &ignored, nullptr, nullptr);
-		return s;
-	}
 
 	sockaddr_in Loopback(uint16_t port)
 	{
@@ -551,15 +531,16 @@ namespace
 				if (from == self || !IsLobbyMember(from))
 					return;
 				Peer &peer = g_peers[from];
+				peer.lastSeen = GetTickCount64();
 				if (peer.socket == INVALID_SOCKET)
 				{
-					peer.socket = UdpSocket(0);
-					connect(peer.socket, reinterpret_cast<const sockaddr *>(&serverAddr), sizeof(serverAddr));
+					peer.socket = w3coop::UdpSocket(0, &serverAddr);
+					if (peer.socket == INVALID_SOCKET)
+						return;
 					printf("Player %s connected.\n", S.GetFriendName(S.friends, from));
 				}
-				peer.lastSeen = GetTickCount64();
-				send(peer.socket, reinterpret_cast<const char *>(m.data()), m.size(), 0);
-				++g_trafficIn;
+				if (send(peer.socket, reinterpret_cast<const char *>(m.data()), m.size(), 0) != SOCKET_ERROR)
+					++g_trafficIn;
 			});
 			DrainSteam(kControlChannel, [&](const Message &m) {
 				const uint64_t from = m.sender();
@@ -635,12 +616,9 @@ namespace
 
 	int RunJoin(uint64_t lobby, uint16_t localPort)
 	{
-		SOCKET local = UdpSocket(localPort);
+		SOCKET local = w3coop::UdpSocket(localPort);
 		if (local == INVALID_SOCKET)
-		{
-			printf("UDP port %u on 127.0.0.1 is busy; pick another with --local-port.\n", localPort);
 			return 1;
-		}
 		g_pendingJoin = lobby;
 		sockaddr_in game{};
 		bool haveGame = false;
