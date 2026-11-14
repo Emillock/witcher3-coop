@@ -35,7 +35,7 @@ def stop_relay(process):
     process.wait(timeout=5)
 
 
-def exchange(server, clients, rounds=20, timeout=20):
+def exchange(server, clients, rounds=20, timeout=20, first_round=0, departed=()):
     """Every client gets only its own echo; the server sees one UDP endpoint per player.
 
     clients maps a player name (bytes) to (game socket, destination address).
@@ -44,7 +44,7 @@ def exchange(server, clients, rounds=20, timeout=20):
     names = {s: name for name, (s, _) in clients.items()}
     endpoints = {}
     deadline = time.monotonic() + timeout
-    for seq in range(rounds):
+    for seq in range(first_round, first_round + rounds):
         pending = set(clients)
         next_send = 0
         while pending:
@@ -61,6 +61,9 @@ def exchange(server, clients, rounds=20, timeout=20):
                 data, addr = s.recvfrom(65536)
                 if s == server:
                     name = data.split(b":", 1)[0]
+                    if name in departed:
+                        # Delayed datagrams from a guest killed after the previous phase.
+                        continue
                     if name not in clients:
                         raise RuntimeError(f"unexpected server payload {data!r}")
                     if name in endpoints and endpoints[name] != addr:
@@ -78,6 +81,25 @@ def exchange(server, clients, rounds=20, timeout=20):
     if set(endpoints) != set(clients):
         raise RuntimeError(f"missing server endpoints: {endpoints}")
     return endpoints
+
+
+def wait_for_departure(server, clients, endpoints, host, directory):
+    """Keep both remaining players active while the host expires the crashed guest."""
+    deadline = time.monotonic() + 30
+    seq = 20
+    log = Path(directory) / "relay.log"
+    while time.monotonic() < deadline:
+        observed = exchange(server, clients, rounds=1, timeout=3,
+                            first_round=seq, departed=(b"guest1",))
+        if observed != endpoints:
+            raise RuntimeError("a surviving player changed its UDP endpoint")
+        seq += 1
+        if host.poll() is not None:
+            raise RuntimeError("host exited after guest disconnected")
+        if "Player Guest1 left (no traffic for 20 s)" in log.read_text(encoding="utf-8", errors="replace"):
+            return seq
+        time.sleep(0.5)
+    raise RuntimeError("host did not expire the disconnected guest")
 
 
 def main():
@@ -100,16 +122,34 @@ def main():
         try:
             host, d = launch("Host", 1001, ["host", "--server-port", str(server.getsockname()[1]), "--no-invite"])
             wait_for_log(host, d, "Lobby ready:")
+            host_dir = d
             clients = {b"host": (local_game, server.getsockname())}
+            guests = []
             for i, reservation in enumerate(reserved, 1):
                 port = reservation.getsockname()[1]
                 reservation.close()
                 guest, d = launch(f"Guest{i}", 1001 + i, ["join", "--local-port", str(port)])
+                guests.append(guest)
                 # Join in sequence; the mock stores membership in a shared file.
                 wait_for_log(guest, d, "Joined ")
                 clients[f"guest{i}".encode()] = (stack.enter_context(udp_socket()), ("127.0.0.1", port))
             endpoints = exchange(server, clients)
             print(f"20 echoes per player, distinct server endpoints: {endpoints}")
+            # Kill one relay without sending "bye", as on a crash or lost connection.
+            stop_relay(guests[0])
+            guest_game = clients.pop(b"guest1")
+            survivors = {name: endpoints[name] for name in clients}
+            seq = wait_for_departure(server, clients, survivors, host, host_dir)
+            print("Surviving players exchanged packets until the crashed guest timed out.")
+
+            # A fresh relay with the same Steam identity must be accepted again.
+            guest, d = launch("Guest1-returned", 1002, ["join", "--local-port", str(guest_game[1][1])])
+            wait_for_log(guest, d, "Joined ")
+            clients[b"guest1"] = guest_game
+            rejoined = exchange(server, clients, first_round=seq)
+            if any(rejoined[name] != endpoint for name, endpoint in survivors.items()):
+                raise RuntimeError("a surviving player changed its UDP endpoint after rejoin")
+            print(f"All three players exchanged packets again: {rejoined}")
             print("RESULT: PASS")
             return 0
         except (OSError, RuntimeError) as exc:
