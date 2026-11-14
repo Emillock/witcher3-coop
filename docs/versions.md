@@ -7,6 +7,16 @@ This file is the working history and carries whatever is merged but not released
 yet". [CHANGELOG.md](../CHANGELOG.md) is the published history: a version is written there as it is
 published, and that file changes at no other time.
 
+## Not released yet
+
+Three contributions to the relay, all from localzet, merged on 2026-11-14 (#6, #7, #8). A host whose Java
+server fails to start no longer opens a lobby: it used to print the warning and then put a joinable lobby in
+front of a server that was not there, and sit there waiting. The relay's UDP sockets are checked as they are
+set up, so a failed bind says which Winsock error it was, and the join path still advises picking another port
+with `--local-port`. And the Java server is handed to its job object before it is allowed to run, so killing
+the relay cannot leave a server behind holding the game's port. Each came with its own test, and the relay's
+build runs all of them.
+
 ## New in v0.6.1
 
 A member can watch the cutscene its leader is watching, instead of standing around while it plays. It is off
