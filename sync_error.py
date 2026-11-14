@@ -44,16 +44,33 @@ def at(points, t):
     return tuple(a[1 + i] + (b[1 + i] - a[1 + i]) * k for i in range(3))
 
 
+def heading(points, t, step=0.25):
+    """The monster's direction of travel around t, as a unit vector (None when it is barely moving)."""
+    a, b = at(points, t - step), at(points, t + step)
+    if not a or not b:
+        return None
+    d = [b[i] - a[i] for i in range(3)]
+    n = math.hypot(d[0], d[1])
+    if n < 0.2:            # 0.4 m/s: standing about, no direction to speak of
+        return None
+    return [d[0] / n, d[1] / n]
+
+
 def main(run_dir):
     lead = track(run_dir + "/BotA.log", LEADER)
     mem = track(run_dir + "/BotB.log", MEMBER)
-    errs, gaps, moving = [], [], 0
+    errs, gaps, behind, ahead, moving = [], [], [], [], 0
     for i, (t, x, y, z, gap) in enumerate(mem):
         p = at(lead, t)
         if not p:
             continue
         errs.append(math.dist((x, y, z), p))
         gaps.append(gap)
+        h = heading(lead, t)
+        if h:
+            # along the monster's own line: negative is trailing it, positive is out in front of it
+            along = (x - p[0]) * h[0] + (y - p[1]) * h[1]
+            (ahead if along > 0 else behind).append(abs(along))
         if i and math.dist((x, y, z), (mem[i - 1][1], mem[i - 1][2], mem[i - 1][3])) > 0.05:
             moving += 1
     if not errs:
@@ -64,6 +81,11 @@ def main(run_dir):
           f"{errs[len(errs) // 2]:.2f} m, 90th {errs[int(len(errs) * 0.9)]:.2f} m, max {max(errs):.2f} m")
     print(f"what the member can see (copy to the position it was told): mean {sum(gaps) / len(gaps):.2f} m, "
           f"max {max(gaps):.2f} m")
+    for name, v in (("trailing it", behind), ("out in front", ahead)):
+        if v:
+            v = sorted(v)
+            print(f"{name:12}: {len(v):4} samples, mean {sum(v) / len(v):.2f} m, 90th "
+                  f"{v[int(len(v) * 0.9)]:.2f} m, max {max(v):.2f} m")
     speeds(lead, mem)
 
 

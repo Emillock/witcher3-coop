@@ -18,6 +18,11 @@ the monster will be, led by half the round trip, which the mod measures for itse
 nothing wobbles. A hit that somehow arrives before the swing it belongs to now waits a moment for it instead of
 landing out of nowhere.
 
+Each party member's name on the party HUD now carries the round trip to them, which both sides measure for
+themselves. It is the same figure the copies of shared monsters are led by, so it says what your co-op will feel
+like rather than what a network tool thinks: two games on one PC read about 35 ms, and an imitated 150 ms link
+reads about 0.4 s.
+
 A monster that comes apart in one world comes apart in the others. A copy of the leader's monster is killed by
 script, which plays a plain death, so a drowner cut in half next to your friend used to simply fall over on your
 screen. The wound the engine picked there - one of the eight a drowner carries - now rides over with it, and the

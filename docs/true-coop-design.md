@@ -1206,6 +1206,37 @@ assertion.
 After the lead: **0.39 m** on average, 1.01 m in the worst tenth, and the copy keeps moving between packets. The
 rest of the error is the part of the trip the cap does not lead, which is deliberate.
 
+**How far to lead** was then measured rather than chosen, four settings against two links, three or four
+runs each (`W3T_LEAD_CAP`/`W3T_LEAD_M`, and `W3T_NO_LEAD=1` for none at all). The error is split along the
+monster's own direction of travel, because being behind it is the lag a lead cures and being in front of it is
+what a lead costs when the monster stops or turns:
+
+| link | lead | error | 90th | behind | ahead | copy travel |
+|---|---|---|---|---|---|---|
+| 150 ms | none | 0.53 m | 1.39 m | 0.67 m | 0.15 m | 1.16x |
+| 150 ms | 0.08 s | 0.44 m | 1.15 m | 0.60 m | 0.16 m | 1.31x |
+| 150 ms | **0.15 s** | **0.36 m** | **0.93 m** | **0.47 m** | 0.15 m | 1.37x |
+| 150 ms | 1 m of distance (~0.29 s) | 0.47 m | 1.04 m | 0.55 m | 0.22 m | 1.36x |
+| 300 ms | none | 0.62 m | 1.93 m | 0.99 m | 0.14 m | 1.18x |
+| 300 ms | 0.08 s | 0.73 m | 2.23 m | 1.05 m | 0.18 m | 1.19x |
+| 300 ms | **0.15 s** | 0.70 m | **1.60 m** | **0.81 m** | 0.20 m | 1.36x |
+| 300 ms | 1 m of distance | 0.71 m | 1.95 m | 0.86 m | 0.28 m | 1.51x |
+
+0.15 s is a local optimum: less lead is worse, and more lead is worse again - it overshoots more and makes the
+copy travel further without closing the gap, because a velocity sampled 30 times a second through jitter and
+loss stops predicting a steering monster much past 0.15 s. So the cap stays where it is, and the knob
+(`leadMetres`, 2.5 m, and `pingLead`, 0.15 s) is left settable so the comparison can be run again. At 300 ms the
+gain is in the tail, not the average (the worst tenth 1.93 m against 1.60 m, and the lag component 0.99 m
+against 0.81 m, while the mean was no better): closing that properly would need the member's own game running
+the monster and the leader correcting it, which is a different model, not a tuning figure.
+
+The figure the lead is built on is worth showing, so the ping is on the party HUD: each member's name carries
+the round trip to them in milliseconds. It is measured both ways now - everyone in a party pings everyone whose
+party they share and answers the same way (`SharesMyParty`), each side keeping the others' figures
+(`RttMsTo`) - and `link_ping` holds both ends to measuring it. It includes both games' tick waits, so it reads
+about 30 ms higher than a bare network ping: 35 ms between two games on this PC, 0.39-0.44 s over the imitated
+150 ms link.
+
 The impacts turned out to be a different story. A hit on a member lands when its own copy's swing reaches the
 same point of the same animation, and the worry was that the hit could arrive before that swing (they travel in
 different channels and can overtake). Measured over the same link: that never happened - `noSwing` stayed 0,

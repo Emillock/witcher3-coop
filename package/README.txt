@@ -48,7 +48,9 @@ In a party (walk up to a friend's character, press the interact key and answer "
   your character alone until you are back.
 - Everyone sees each other's horse: ridden, and standing where its rider left it.
 - In a party, your party members' names and health show under your own health bar ("Hide Party
-  HUD" in the mod's options turns that off).
+  HUD" in the mod's options turns that off). The name carries the round trip to that player in
+  milliseconds - the same figure the shared monsters are smoothed by, so it says what the fight
+  will feel like. It counts both games' own waiting, so it reads a little above a network ping.
 - When the leader fast-travels (to another region, or far away at once), you are asked whether
   to follow; "Yes" takes you to the leader.
 - Leaving the party: interact with the leader again and answer "Yes".

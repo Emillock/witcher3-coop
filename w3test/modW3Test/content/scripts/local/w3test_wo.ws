@@ -3617,9 +3617,17 @@ function W3T_LinkPingLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Remo
     if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
     {
         bot.scenarioActAt = bot.ElapsedS();
-        W3T_Log("PING leader role=" + coop.GetRole() + " ghost=" + hasGhost);
+        W3T_Log("PING leader role=" + coop.GetRole() + " ghost=" + hasGhost + " toMember="
+            + coop.RttMsTo(member.username) + " ms");
     }
-    return bot.ElapsedS() > 25;
+    // the leader measures the trip to its member as well, which is what its party HUD shows
+    if(bot.ElapsedS() > 20 && coop.RttMsTo(member.username) <= 0)
+    {
+        W3T_Log("FAIL the leader never measured the trip to " + member.username);
+        W3T_Quit(1);
+        return false;
+    }
+    return bot.ElapsedS() > 22 && coop.RttMsTo(member.username) > 0;
 }
 
 // link_ping, member: the copies of the leader's monsters are led by how long the news takes to arrive, so the
@@ -6750,6 +6758,14 @@ function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
         bot.scenarioFlag2 = true;
         coop.SetSyncLeadForTest(false, 0.0);
         W3T_Log("FOLLOW no lead and no hurt wait: the copy chases the position it was told");
+    }
+    // W3T_LEAD_CAP / W3T_LEAD_M: the two caps on the lead, for measuring one against the other
+    else if(W3T_GetEnv("W3T_LEAD_M") != "" && !bot.scenarioFlag2)
+    {
+        bot.scenarioFlag2 = true;
+        coop.SetLeadCapsForTest(StringToFloat(W3T_GetEnv("W3T_LEAD_CAP"), 0.4),
+            StringToFloat(W3T_GetEnv("W3T_LEAD_M"), 1.0));
+        W3T_Log("FOLLOW lead capped at " + W3T_GetEnv("W3T_LEAD_CAP") + " s and " + W3T_GetEnv("W3T_LEAD_M") + " m");
     }
     if(coop.PuppetCount() < 1)
     {
