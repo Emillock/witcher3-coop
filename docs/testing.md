@@ -7,6 +7,7 @@ with an earlier one.
 | Command | What it does |
 |---|---|
 | `python relay\selftest.py` | Two relays and a mock Steam, no game. Checks traffic in both directions, a client that arrives late, and that a non-member can't reach the server. |
+| `python relay\multi_peer_test.py` | One host and two join relays over mock Steam, no game. Checks simultaneous traffic, distinct server-side UDP endpoints, reply isolation, guest timeout and rejoining without disrupting the other players. |
 | `./compile.sh <tag>` (Git Bash) | Deploys the port and the test bot into the game folder and runs only the game's script compiler. |
 | `python run_test.py see_each_other` | Starts a local server and two games driven by the bot. They must spawn each other. |
 | `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
