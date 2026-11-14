@@ -1104,7 +1104,9 @@ a file transfer, and the pieces of that are now measured:
   own acknowledgements and retransmits on top of that - the channel's repeat is not a delivery guarantee;
 - there is room for the channel now: the server allowed **eight** co-op channels and the mod uses exactly eight
   (en, hit, hurt, jr, fx, hz, pt and np, the last added 2026-11-06), so the next one would have been dropped in
-  silence. The limit is 16 as of this change, which needs the host's server to be the newer one;
+  silence. The limit is 16 as of this change, which needs the host's server to be the newer one; the mod uses
+  twelve of them now (`lt`, `sc`, `jn` and `dm` came after), and a channel the server refuses is named in
+  its log instead of going nowhere in silence (2026-11-14);
 - the member's client would have to write the received file into its own saves folder and the player would load
   it from the normal menu. Writing into a player's save folder is where this stops being a code question.
 
