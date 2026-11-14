@@ -7,12 +7,10 @@ if not exist "%~dp0build\mock" mkdir "%~dp0build\mock"
 cl /nologo /EHsc /O2 /MT /std:c++17 /W3 /DUNICODE /D_UNICODE "%~dp0w3relay.cpp" /Fo"%~dp0build\\" /Fe"%~dp0build\w3relay.exe" /link user32.lib || exit /b 1
 cl /nologo /LD /EHsc /O2 /MT /std:c++17 /W3 "%~dp0steam_mock.cpp" /Fo"%~dp0build\mock\\" /Fe"%~dp0build\mock\steam_api64.dll" || exit /b 1
 rem The relay helpers' own tests (header-only): built and run here, because nothing else in the repo
-rem compiles a .cpp under tests\. No /O2, so their asserts stay in.
-for %%t in (test_relay_xml test_port_arg test_relay_udp) do (
+rem compiles a .cpp under tests\. No /O2, so their asserts stay in. The udp and job tests talk to Winsock on
+rem loopback and start a child process of their own; neither needs Steam, Java or the game.
+for %%t in (test_relay_xml test_port_arg test_relay_udp test_relay_job) do (
   cl /nologo /EHsc /MT /std:c++17 /W3 /DUNICODE /D_UNICODE "%~dp0..\tests\%%t.cpp" /Fo"%~dp0build\\" /Fe"%~dp0build\%%t.exe" || exit /b 1
   "%~dp0build\%%t.exe" || exit /b 1
 )
-rem Job ownership test starts and stops a child process, without Steam or Java.
-cl /nologo /EHsc /MT /std:c++17 /W3 /DUNICODE /D_UNICODE "%~dp0..\tests\test_relay_job.cpp" /Fo"%~dp0build\\" /Fe"%~dp0build\test_relay_job.exe" || exit /b 1
-"%~dp0build\test_relay_job.exe" || exit /b 1
 echo BUILD_OK

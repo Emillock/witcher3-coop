@@ -613,7 +613,10 @@ namespace
 	{
 		SOCKET local = w3coop::UdpSocket(localPort);
 		if (local == INVALID_SOCKET)
+		{
+			printf("The game's port is taken; pick another with --local-port.\n");
 			return 1;
+		}
 		g_pendingJoin = lobby;
 		sockaddr_in game{};
 		bool haveGame = false;
