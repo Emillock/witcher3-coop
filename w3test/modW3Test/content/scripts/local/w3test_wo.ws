@@ -114,6 +114,10 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
     {
         return W3T_SignCheck(bot);
     }
+    if(scenario == "horse_drive")
+    {
+        return W3T_HorseDrive(bot);
+    }
     if(scenario == "gwent_vanilla")
     {
         return W3T_GwentVanilla(bot);
@@ -159,6 +163,21 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
             return W3T_MovesLeader(bot, client.getCoopEnemies(), players[0]);
         }
         return W3T_FollowMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
+    if(scenario == "film")
+    {
+        // no ghosts check here: the two of them travel to the nest one after the other, and for those seconds
+        // each is alone in its own world - the film's own code waits for the other where it has to
+        if(players.Size() < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_FilmLeader(bot, client, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_FilmMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
     if(scenario == "showcase")
@@ -1073,6 +1092,208 @@ function W3T_HorseRider(bot : W3T_Bot) : bool
         bot.scenarioCount += 1;
         bot.scenarioTime = bot.ElapsedS();
         W3T_Log("HORSE ride " + bot.scenarioCount + " to " + W3T_VecStr(target) + " mounted=" + thePlayer.IsUsingHorse());
+    }
+    return false;
+}
+
+// a horse of the kind the player rides, standing where it is put (the film's loose horse)
+function W3T_SpawnHorse(at : Vector) : CEntity
+{
+    var template : CEntityTemplate;
+    var spot : Vector;
+    var rot : EulerAngles;
+
+    template = (CEntityTemplate)LoadResource("characters\npc_entities\animals\horse\player_horse.w2ent", true);
+    if(!template)
+    {
+        W3T_Log("DRIVE no horse template");
+        return NULL;
+    }
+    if(!theGame.GetWorld().NavigationFindSafeSpot(at, 0.5, 4.0, spot))
+    {
+        spot = at;
+    }
+    rot.Yaw = thePlayer.GetHeading();
+    return theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
+}
+
+function W3T_HorseComponentOf(actor : CActor) : W3HorseComponent
+{
+    if(!actor)
+    {
+        return NULL;
+    }
+    return (W3HorseComponent)actor.GetComponentByClassName('W3HorseComponent');
+}
+
+// keeps the loose horse running ahead, which is what the ridden one is meant to follow
+function W3T_DriveLooseHorse(bot : W3T_Bot, ridden : CNewNPC)
+{
+    var loose : CActor;
+    var goal : Vector;
+
+    loose = (CActor)bot.scenarioEntity;
+    if(!loose)
+    {
+        return;
+    }
+    if(bot.ElapsedS() - bot.scenarioSeenAt < 3.0)
+    {
+        return;
+    }
+    bot.scenarioSeenAt = bot.ElapsedS();
+    goal = bot.scenarioVec;
+    loose.ActionMoveToAsync(goal, MT_Run);
+    W3T_Log("DRIVE loose horse sent to " + W3T_VecStr(goal) + ", it is at " + W3T_VecStr(loose.GetWorldPosition())
+        + " " + FloatToStringPrec(VecDistance2D(loose.GetWorldPosition(), ridden.GetWorldPosition()), 1)
+        + " m from the ridden one");
+}
+
+function W3T_LooseHorseReport(bot : W3T_Bot) : string
+{
+    var loose : CActor;
+
+    loose = (CActor)bot.scenarioEntity;
+    if(!loose)
+    {
+        return "";
+    }
+    return " looseHorse=" + W3T_VecStr(loose.GetWorldPosition()) + " looseSpeed="
+        + FloatToStringPrec(VecLength2D(loose.GetMovingAgentComponent().GetVelocity()), 2);
+}
+
+// horse_drive: whether a bot can ride its horse somewhere rather than teleport it, which is what filming needs.
+// Mounts, then tries three ways in turn for 10 s each towards a spot 40 m off, and logs how far the horse got: the
+// rider's own move action, the horse's own, and the horse's with the manual control a mounted horse has taken away
+// (what quests do when a horse carries its rider by itself). Passes if one of them moved it more than 12 m.
+function W3T_HorseDrive(bot : W3T_Bot) : bool
+{
+    var horse : CNewNPC;
+    var comp : W3HorseComponent;
+    var phase, moved : float;
+    var pos : Vector;
+
+    if(!thePlayer.IsUsingHorse())
+    {
+        if(bot.ElapsedS() - bot.scenarioTime >= 5.0)
+        {
+            bot.scenarioTime = bot.ElapsedS();
+            InstantMountPlayer('None', EVT_Horse, false, false);
+            W3T_Log("DRIVE mount");
+        }
+        return false;
+    }
+    horse = thePlayer.GetHorseCurrentlyMounted();
+    if(!horse)
+    {
+        return false;
+    }
+    comp = thePlayer.GetUsedHorseComponent();
+    pos = horse.GetWorldPosition();
+    phase = bot.ElapsedS() - bot.scenarioTime;
+    if(bot.scenarioCount == 0 || phase > 10.0)
+    {
+        if(bot.scenarioCount > 0)
+        {
+            moved = VecDistance2D(pos, bot.scenarioPos);
+            W3T_Log("DRIVE way " + bot.scenarioCount + " moved the horse " + FloatToStringPrec(moved, 1) + " m");
+            if(moved > bot.scenarioValue)
+            {
+                bot.scenarioValue = moved;
+            }
+            thePlayer.ActionCancelAll();
+            horse.ActionCancelAll();
+        }
+        bot.scenarioCount += 1;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioPos = pos;
+        bot.scenarioVec = W3T_WalkableSpot(pos, 40.0);
+        if(bot.scenarioVec.W == 0)
+        {
+            bot.scenarioVec = W3T_WalkableSpot(pos, 20.0);
+        }
+        if(bot.scenarioVec.W == 0)
+        {
+            W3T_FailScenario("nowhere to ride to from " + W3T_VecStr(pos));
+            return false;
+        }
+        if(bot.scenarioCount == 1)
+        {
+            W3T_Log("DRIVE way 1: the rider's own move action, to " + W3T_VecStr(bot.scenarioVec));
+            thePlayer.ActionMoveToAsync(bot.scenarioVec, MT_Run);
+        }
+        else if(bot.scenarioCount == 2)
+        {
+            W3T_Log("DRIVE way 2: the horse's own move action, to " + W3T_VecStr(bot.scenarioVec));
+            horse.ActionMoveToAsync(bot.scenarioVec, MT_Run);
+        }
+        else if(bot.scenarioCount == 3)
+        {
+            W3T_Log("DRIVE way 3: the horse's, with manual control taken away, to " + W3T_VecStr(bot.scenarioVec));
+            if(comp)
+            {
+                comp.SetManualControl(false);
+                comp.QuestSetRiderMoveType(MT_Run);
+                comp.QuestSetRiderSpeed(1.0);
+            }
+            horse.ActionMoveToAsync(bot.scenarioVec, MT_Run);
+        }
+        else if(bot.scenarioCount == 4)
+        {
+            // what a player holding forward sets: the speed its input would ask for, every tick
+            W3T_Log("DRIVE way 4: the gallop speed the player's own input sets, every tick");
+            if(comp)
+            {
+                comp.SetManualControl(true);
+                comp.QuestSetRiderMoveType(MT_Run);
+            }
+        }
+        else if(bot.scenarioCount == 5)
+        {
+            // vanilla's own: a horse told to follow another one carries its rider by itself (quest rides). The
+            // spawned horse is also the control for whether a horse nobody rides can be moved at all.
+            W3T_Log("DRIVE way 5: following a loose horse that is sent on ahead");
+            bot.scenarioEntity = W3T_SpawnHorse(pos + VecFromHeading(horse.GetHeading()) * 8.0);
+            if(comp)
+            {
+                comp.SetManualControl(false);
+                comp.SetCanFollowNpc(true, W3T_HorseComponentOf((CActor)bot.scenarioEntity));
+            }
+        }
+        else
+        {
+            if(comp)
+            {
+                comp.SetManualControl(true);
+                comp.SetCanFollowNpc(false, NULL);
+            }
+            W3T_Log("DRIVE best " + FloatToStringPrec(bot.scenarioValue, 1) + " m");
+            if(bot.scenarioValue < 12.0)
+            {
+                W3T_FailScenario("no way of driving the horse moved it: best "
+                    + FloatToStringPrec(bot.scenarioValue, 1) + " m");
+            }
+            return bot.scenarioValue >= 12.0;
+        }
+        return false;
+    }
+    if(bot.scenarioCount == 4 && comp)
+    {
+        comp.QuestSetRiderSpeed(4.0);                 // gallop, as ProcessControlInput would
+        horse.SetBehaviorVariable('speed', 4.0);
+    }
+    if(bot.scenarioCount == 5)
+    {
+        W3T_DriveLooseHorse(bot, horse);
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 2.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("DRIVE way " + bot.scenarioCount + " t=" + FloatToStringPrec(phase, 1) + " horse at " + W3T_VecStr(pos)
+            + " " + FloatToStringPrec(VecDistance2D(pos, bot.scenarioPos), 1) + " m on, "
+            + FloatToStringPrec(VecDistance2D(pos, bot.scenarioVec), 1) + " m to go, speed "
+            + FloatToStringPrec(VecLength2D(horse.GetMovingAgentComponent().GetVelocity()), 2)
+            + " mounted=" + thePlayer.IsUsingHorse() + W3T_LooseHorseReport(bot));
     }
     return false;
 }

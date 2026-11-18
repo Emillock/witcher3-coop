@@ -8,6 +8,7 @@
 # The games start minimized and are never activated (--window).
 import argparse
 import ctypes
+import json
 import os
 import re
 import shutil
@@ -326,26 +327,43 @@ def shoot(run_dir, procs, a, stop):
                 hwnds[i] = None
 
 
+def covered(hwnd, x, y, w, h):
+    """Whether something lies over this window: a point of it belongs to another one."""
+    for px, py in ((x + w // 2, y + h // 2), (x + w // 5, y + h // 5), (x + 4 * w // 5, y + 4 * h // 5)):
+        if (user32.GetAncestor(user32.WindowFromPoint(wt.POINT(px, py)), 2) or 0) != hwnd:  # GA_ROOT
+            return True
+    return False
+
+
 def record(run_dir, procs, a, stop, fps=30):
-    # films both bots' windows side by side, from --record-from in the first bot's log on, for --record seconds. Frames
-    # are copied from the screen as the screenshots are (BitBlt without CAPTUREBLT; ffmpeg's gdigrab adds it, which
-    # slowed both games to 5% speed) and piped to ffmpeg, which only encodes. A late copy repeats the last frame, so the
-    # video keeps real time. The windows stay on top meanwhile.
-    first = os.path.join(run_dir, bot_name(0) + ".log")
-    while not (os.path.exists(first) and a.record_from in open(first, encoding="utf-8", errors="replace").read()):
+    # films both bots' windows side by side, from --record-from in EVERY bot's log (a bot logs its first lines while
+    # its game is still on the loading screen, and the one that starts last is still loading when the first is playing)
+    # plus --record-settle seconds, for --record seconds. Frames are copied from the screen as the screenshots are
+    # (BitBlt without CAPTUREBLT; ffmpeg's gdigrab adds it, which slowed both games to 5% speed) and piped to ffmpeg,
+    # which only encodes. A window something covers is drawn with PrintWindow instead, so no other window's picture
+    # reaches the film. A late copy repeats the last frame, so the video keeps real time, and video.json says on which
+    # clock it started, which is how montage.py places a log line in it.
+    logs = [os.path.join(run_dir, bot_name(i) + ".log") for i in range(len(procs))]
+    while not all(os.path.exists(f) and a.record_from in open(f, encoding="utf-8", errors="replace").read() for f in logs):
         if stop.wait(0.5):
             return
+    if stop.wait(a.record_settle):
+        return
+    screen = user32.GetDC(None)
     hwnds = [game_window(p.pid) for p in procs]
-    rects = []
+    rects, scratch = [], []
     for hwnd in hwnds:
         r = wt.RECT()
         user32.GetClientRect(hwnd, ctypes.byref(r))
         at = wt.POINT(0, 0)
         user32.ClientToScreen(hwnd, ctypes.byref(at))
-        rects.append((at.x, at.y, (r.right - r.left) // 2 * 2, (r.bottom - r.top) // 2 * 2))  # even, for yuv420p
+        w, h = (r.right - r.left) // 2 * 2, (r.bottom - r.top) // 2 * 2  # even, for yuv420p
+        rects.append((at.x, at.y, w, h))
+        dc = gdi32.CreateCompatibleDC(screen)       # what PrintWindow draws into while this window is covered
+        bm = gdi32.CreateCompatibleBitmap(screen, w, h)
+        scratch.append((dc, bm, gdi32.SelectObject(dc, bm)))
         user32.SetWindowPos(hwnd, wt.HWND(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # TOPMOST; NOSIZE|NOMOVE|NOACTIVATE
     width, height = sum(r[2] for r in rects), max(r[3] for r in rects)
-    screen = user32.GetDC(None)
     mem = gdi32.CreateCompatibleDC(screen)
     bmp = gdi32.CreateCompatibleBitmap(screen, width, height)
     old = gdi32.SelectObject(mem, bmp)
@@ -357,12 +375,25 @@ def record(run_dir, procs, a, stop, fps=30):
                            "-r", str(fps), "-i", "-", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", out],
                           stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT)
     print(f"recording {out}", flush=True)
-    t0, frames, copies = time.time(), 0, 0
+    t0, frames, copies, drawn, topped = time.time(), 0, 0, 0, 0.0
+    json.dump({"started": time.strftime("%H:%M:%S", time.localtime(t0)) + f".{int(t0 % 1 * 1000):03d}",
+               "from": a.record_from, "settle": a.record_settle, "seconds": a.record, "fps": fps},
+              open(os.path.join(run_dir, "video.json"), "w"), indent=1)
     try:
         while time.time() - t0 < a.record:
+            if time.time() - topped > 2.0:      # a game that finishes loading puts its window back in the usual order
+                topped = time.time()
+                for hwnd in hwnds:
+                    user32.SetWindowPos(hwnd, wt.HWND(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
             x = 0
-            for sx, sy, w, h in rects:
-                gdi32.BitBlt(mem, x, 0, w, h, screen, sx, sy, 0x00CC0020)  # SRCCOPY
+            for i, (sx, sy, w, h) in enumerate(rects):
+                if covered(hwnds[i], sx, sy, w, h):
+                    dc, bm, _ = scratch[i]
+                    if user32.PrintWindow(hwnds[i], dc, 1 | 2):  # PW_CLIENTONLY | PW_RENDERFULLCONTENT
+                        gdi32.BitBlt(mem, x, 0, w, h, dc, 0, 0, 0x00CC0020)
+                        drawn += 1
+                else:
+                    gdi32.BitBlt(mem, x, 0, w, h, screen, sx, sy, 0x00CC0020)  # SRCCOPY
                 x += w
             gdi32.GetDIBits(mem, bmp, 0, height, pixels, ctypes.byref(header), 0)
             copies += 1
@@ -376,13 +407,17 @@ def record(run_dir, procs, a, stop, fps=30):
         gdi32.SelectObject(mem, old)
         gdi32.DeleteObject(bmp)
         gdi32.DeleteDC(mem)
+        for dc, bm, was in scratch:
+            gdi32.SelectObject(dc, was)
+            gdi32.DeleteObject(bm)
+            gdi32.DeleteDC(dc)
         user32.ReleaseDC(None, screen)
         ff.stdin.close()
         ff.wait(120)
         for hwnd in hwnds:
             user32.SetWindowPos(hwnd, wt.HWND(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)  # NOTOPMOST
     print(f"recorded {out}: {frames} frames, {copies} copied ({copies / max(1e-3, time.time() - t0):.1f}/s), "
-          f"ffmpeg rc={ff.returncode}", flush=True)
+          f"{drawn} drawn through a window over the game, ffmpeg rc={ff.returncode}", flush=True)
 
 
 def read_log(run_dir, i):
@@ -809,7 +844,9 @@ def main() -> int:
     ap.add_argument("--shots-for", type=float, default=0, help="stop the screenshots after this many seconds")
     ap.add_argument("--size", default="", help="window and render resolution, e.g. 960x540 (default 640x360)")
     ap.add_argument("--record", type=float, default=0, help="film both bots' windows side by side for this many seconds")
-    ap.add_argument("--record-from", default="", help="start filming when this text appears in the first bot's log")
+    ap.add_argument("--record-from", default="", help="start filming when this text appears in EVERY bot's log")
+    ap.add_argument("--record-settle", type=float, default=4.0,
+                    help="seconds to wait after that before the first frame (the last window still has to paint)")
     ap.add_argument("--steam-box", help="real Steam: the host relay uses this PC's Steam, joiner relays run in this "
                                         "Sandboxie box, whose Steam is logged in to a second account")
     a = ap.parse_args()

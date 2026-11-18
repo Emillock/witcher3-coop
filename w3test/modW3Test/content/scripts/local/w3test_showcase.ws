@@ -283,7 +283,14 @@ function W3T_ShowcaseFight(bot : W3T_Bot, target : CActor)
     var step : int;
 
     pos = target.GetWorldPosition();
-    W3T_LookAt(pos);
+    if(W3T_CurrentScenario() == "film")
+    {
+        W3T_FilmCamera(pos);        // far enough back that both players and the monster are in the picture
+    }
+    else
+    {
+        W3T_LookAt(pos);
+    }
     thePlayer.GoToCombatIfNeeded(target);
     if(VecDistance(thePlayer.GetWorldPosition(), pos) > 3.5)
     {
@@ -360,6 +367,7 @@ function W3T_ShowcaseSpawn(bot : W3T_Bot, member : r_RemotePlayer, path : string
     npc = (CNewNPC)theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
     if(!npc)
     {
+        W3T_Log("SHOWCASE nothing was spawned at " + W3T_VecStr(spot) + " from " + path);
         return;
     }
     npc.SetAttitude(thePlayer, AIA_Hostile);

@@ -225,6 +225,13 @@ function OnConfigUI()
             theGame.r_getMultiplayerClient().setTradeAmount(10);
             CloseMenu();
         }
+        // while filming, a menu that opens by itself (the pause menu, the map) stops the bot's loop with the
+        // game and the take dies there: close it and play on
+        if(W3T_CurrentScenario() == "film" && (GetMenuName() == 'CommonMenu' || GetMenuName() == 'MapMenu'))
+        {
+            W3T_Log("MENU " + NameToString(GetMenuName()) + " opened by itself -> closed, the take goes on");
+            CloseMenu();
+        }
         // it pauses the game, the bot's loop too: respawn as its button does (loads the last save)
         if(GetMenuName() == 'DeathScreenMenu')
         {
@@ -449,6 +456,17 @@ statemachine class W3T_Bot
     public var scenarioWindowOn : bool;
     public var scenarioWindowOnset : bool;
     public var scenarioBones : array<int>;  // ticks each watched bone sounded on (W3T_SoundBones)
+    public var filmSpot : Vector;        // film: where the copy it last fought fell, and what it has taken there
+    public var filmLooted : int;
+    public var filmMenu : bool;
+    public var filmRideFrom : float;   // since when it has been on the leader's horse
+    public var filmSawMounted : float; // when it last saw the leader on one
+    public var filmBoardFrom : float;  // since when it has been trying to get onto it
+    public var filmLootFrom : float;   // since when it has been going for what a shared kill left
+    public var filmRode : bool;        // it has had its ride on the leader's horse
+    public var filmCalled : bool;      // the leader has called it over to the horse
+    public var filmTravelled : bool;   // it has made the leader's jump to the nest
+    public var filmTravelFrom : float;
     public var scenarioHitAnims : int;   // hits of ours the victim answered with a hit animation
     public var scenarioAnimUntil : float;
 
