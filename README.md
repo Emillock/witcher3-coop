@@ -7,8 +7,8 @@ die as the leader's do.
 
 ## Download
 
-**[v0.6.1](https://github.com/Emillock/witcher3-coop/releases/tag/v0.6.1)** is the current release. Take
-`W3Coop-0.6.1.zip`, copy its four folders into your Witcher 3 folder, and make sure both players run the same
+**[v0.7.0](https://github.com/Emillock/witcher3-coop/releases/tag/v0.7.0)** is the current release. Take
+`W3Coop-0.7.0.zip`, copy its four folders into your Witcher 3 folder, and make sure both players run the same
 version. `W3Coop\README.txt` inside the package covers hosting, joining and uninstalling.
 [CHANGELOG.md](CHANGELOG.md) lists every published version and what it brought.
 

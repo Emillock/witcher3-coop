@@ -1,13 +1,13 @@
 # What each version added
 
-The current release is **v0.6.1**; see
+The current release is **v0.7.0**; see
 [Releases](https://github.com/Emillock/witcher3-coop/releases) for the packages themselves.
 
 This file is the working history and carries whatever is merged but not released yet, under "Not released
 yet". [CHANGELOG.md](../CHANGELOG.md) is the published history: a version is written there as it is
 published, and that file changes at no other time.
 
-## Not released yet
+## New in v0.7.0
 
 Monsters your friend is fighting stand nearer to where they really are. A copy used to be put exactly where the
 leader's monster was when the news left, so over the internet it stood a trip behind - and, when a packet was

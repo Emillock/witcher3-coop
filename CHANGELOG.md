@@ -10,6 +10,27 @@ notes from that section when it is not given a notes file.
 Each heading is `## [<version>] - <date> - <what the release is about>`. Every release so far is a
 pre-release: two players on two PCs have played on it, but it has not had wide testing.
 
+## [0.7.0] - 2026-11-18 - monsters where they really are, and what a limb-taking blow leaves
+
+- Monsters your friend is fighting stand nearer to where they really are. A copy used to be placed exactly
+  where the leader's monster was when the news left, so over the internet it stood a trip behind, and when a
+  packet was late or lost it waited there and then jumped. It now carries the monster's velocity and aims
+  where the monster will be, led by half the round trip the mod measures for itself. Measured over an imitated
+  150 ms link with 5% loss: 0.53 m behind on average before, 0.36 m after; the worst tenth 1.39 m against
+  0.93 m; and no more standing still between packets. A monster that is turning is not led, so nothing wobbles.
+- Your ping is on the party HUD, next to each party member's name. It is the same figure the shared monsters
+  are smoothed by, so it says what the fight will feel like; it counts both games' own waiting, so it reads a
+  little above a network ping.
+- A monster that comes apart in one world comes apart in the others. A copy is killed by script, which plays a
+  plain death, so a drowner cut in half next to your friend used to fall over whole on your screen. The wound
+  the engine chose - one of the eight a drowner carries - now rides over with it, and the copy loses the same
+  limb as it dies, with the same particles and the gear it drops. A finisher's own animation stays with the
+  player who landed it.
+- A hit that arrives before the swing it belongs to waits a moment for it, instead of landing out of nowhere.
+- Hosting: the relay no longer opens a joinable lobby when the Witcher Online server failed to start, says
+  which Winsock error a port failure was while still advising `--local-port`, and can no longer leave a Java
+  server behind holding the game's port when it is killed. Three contributions from localzet (#6, #7, #8).
+
 ## [0.6.1] - 2026-11-12 - watch your friend's cutscenes
 
 - A member can watch the cutscene its leader is watching, in its own world, instead of standing around while
@@ -87,6 +108,7 @@ pre-release: two players on two PCs have played on it, but it has not had wide t
 - Players see each other in their own worlds and can travel together. Each player keeps their own save;
   monsters, quests and loot are not shared yet.
 
+[0.7.0]: https://github.com/Emillock/witcher3-coop/releases/tag/v0.7.0
 [0.6.1]: https://github.com/Emillock/witcher3-coop/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Emillock/witcher3-coop/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Emillock/witcher3-coop/releases/tag/v0.5.0
