@@ -17,6 +17,7 @@ SEGMENT_MAX = 20.0      # no segment outstays its welcome
 # how long each chapter is given, where the usual twenty seconds is wrong for it
 LENGTH = {"fight": 30.0, "ride": 24.0, "menu": 14.0, "scene_follow": 12.0}
 SEGMENT_SKIP = 1.5      # the first seconds of a chapter are the bots getting into place
+SKIP = {"ride": 13.0}   # ...and a chapter that spends longer than that getting there says so here
 TAIL = {"wound": 6.0, "loot": 5.0}   # chapters whose point lands at the very end: keep rolling into the next
 TITLE = 3.0             # how long the opening card stays
 
@@ -213,15 +214,16 @@ def main():
             if skip is not None:
                 start, end = skip, max(end, skip + SEGMENT_MAX)
             longest = LENGTH.get(name, SEGMENT_MAX)
-            length = min(longest, end + TAIL.get(name, 0.0) - start - SEGMENT_SKIP)
+            skip_in = SKIP.get(name, SEGMENT_SKIP)
+            length = min(longest, end + TAIL.get(name, 0.0) - start - skip_in)
             if length < 4:
                 print(f"  (skipped {name}: only {length:.1f}s of it)")
                 continue
             n += 1
             part = os.path.join(work, f"{n:03d}-{name}.mp4")
-            cut(src, start + SEGMENT_SKIP, length, name, part, size)
+            cut(src, start + skip_in, length, name, part, size)
             parts.append(part)
-            print(f"  {name}: {length:.0f}s from {start + SEGMENT_SKIP:.0f}s in")
+            print(f"  {name}: {length:.0f}s from {start + skip_in:.0f}s in")
 
     listing = os.path.join(work, "parts.txt")
     with open(listing, "w", encoding="utf-8") as f:

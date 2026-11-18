@@ -191,7 +191,16 @@ function W3T_FilmLeader(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
     // 2: one horse, two riders - the leader is already on it, the member climbs on behind
     if(bot.scenarioCount == 2)
     {
-        W3T_FilmCamera(ghostPos);
+        // once the member is up behind it, its ghost is where this player is, and a camera told to look at
+        // itself ends up pointing at the sky: look the way the horse faces instead
+        if(member.isRiding)
+        {
+            W3T_FilmCamera(thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 12.0);
+        }
+        else
+        {
+            W3T_FilmCamera(ghostPos);
+        }
         if(bot.scenarioStep == 0)
         {
             bot.scenarioStep = 1;
