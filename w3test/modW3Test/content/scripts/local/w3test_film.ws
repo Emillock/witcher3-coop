@@ -167,22 +167,54 @@ function W3T_FilmLeader(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
         }
         return false;
     }
-    // 1: the recording starts once the member is standing here too
+    // 1: to the nest, still on the horse and before anyone is filming - the ground at the save has no
+    //    navigation mesh, so nobody can walk to anything there
     if(bot.scenarioCount == 1)
     {
-        if(!member.ghost)
-        {
-            return false;
-        }
-        W3T_FilmCamera(ghostPos);
-        if(bot.scenarioStep == 0 && (VecDistance(thePlayer.GetWorldPosition(), ghostPos) < 25 || phase > 70))
+        if(bot.scenarioStep == 0)
         {
             bot.scenarioStep = 1;
-            bot.scenarioValue = bot.ElapsedS();
-            W3T_Log("FILM ready");
+            mpghosts_chat("To the nest.");
+            return false;
+        }
+        if(bot.scenarioStep == 1 && phase > 2)
+        {
+            bot.scenarioStep = 2;
+            thePlayer.Teleport(bot.scenarioVec + Vector(0, 0, 2));
+            W3T_Log("FILM both go to the nest before the filming starts, on horseback="
+                + thePlayer.IsUsingHorse());
+            return false;
+        }
+        if(bot.scenarioStep == 2 && phase > 12)
+        {
+            bot.scenarioStep = 3;
+            // off the nest mound itself: it is a rock face, and a session played against it is a session
+            // spent staring at roots
+            if(theGame.GetWorld().NavigationFindSafeSpot(bot.scenarioVec + Vector(7, 5, 0), 0.5, 8.0, spot))
+            {
+                thePlayer.Teleport(spot);
+                bot.scenarioVec = spot;
+            }
+            W3T_Log("FILM the two of them will meet at " + W3T_VecStr(bot.scenarioVec));
+            return false;
+        }
+        if(bot.scenarioStep == 3)
+        {
+            if(phase < 20 || !member.ghost)
+            {
+                return false;       // the navigation mesh takes some seconds after a jump this long
+            }
+            W3T_FilmCamera(ghostPos);
+            if(VecDistance(thePlayer.GetWorldPosition(), ghostPos) < 25 || phase > 90)
+            {
+                bot.scenarioStep = 4;
+                bot.scenarioValue = bot.ElapsedS();
+                W3T_Log("FILM ready");
+            }
+            return false;
         }
         // the recorder waits for that line in both games and then a moment more: the chapter starts after it
-        if(bot.scenarioStep == 1 && bot.ElapsedS() - bot.scenarioValue > 7)
+        if(bot.scenarioStep == 4 && bot.ElapsedS() - bot.scenarioValue > 7)
         {
             W3T_FilmNext(bot, "ride");
         }
@@ -220,14 +252,18 @@ function W3T_FilmLeader(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
             }
             return false;
         }
+        // a horse will not be driven from script on this build: the harness holds the forward key on this
+        // window for as long as a "FILM drive" line asks, and the camera says which way that is
         if(member.isRiding && bot.scenarioSeenAt == 0)
         {
             bot.scenarioSeenAt = bot.ElapsedS();
             W3T_Log("FILM the member is on the horse");
             mpghosts_chat("Hold on.");
+            W3T_Log("FILM drive 14");
         }
-        if((bot.scenarioSeenAt > 0 && bot.ElapsedS() - bot.scenarioSeenAt > 12) || phase > 40)
+        if((bot.scenarioSeenAt > 0 && bot.ElapsedS() - bot.scenarioSeenAt > 17) || phase > 50)
         {
+            mpghosts_chat("Off we get.");
             thePlayer.DismountVehicle(thePlayer.GetHorseCurrentlyMounted(), DT_normal);
             W3T_Log("FILM both get off");
             W3T_FilmNext(bot, "meet");
@@ -256,42 +292,14 @@ function W3T_FilmLeader(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
         if(phase > 14)
         {
             client.clearLocalEmoteState();
-            W3T_FilmNext(bot, "travel");
+            W3T_FilmNext(bot, "");
         }
         return false;
     }
-    // 4: to the nest - a teleport for both of them, which is why this chapter is not in the reel
+    // 4: (the travel happened before the filming; this chapter is only here to keep the numbering)
     if(bot.scenarioCount == 4)
     {
-        if(bot.scenarioStep == 0)
-        {
-            bot.scenarioStep = 1;
-            mpghosts_chat("To the nest.");
-            return false;
-        }
-        if(bot.scenarioStep == 1 && phase > 2)
-        {
-            bot.scenarioStep = 2;
-            thePlayer.Teleport(bot.scenarioVec + Vector(0, 0, 2));
-            W3T_Log("FILM both travel to the nest");
-            return false;
-        }
-        if(bot.scenarioStep == 2 && phase > 10)
-        {
-            bot.scenarioStep = 3;
-            // close to the nest itself: the ground is open there, while a few metres out it is fern to the chest
-            if(!theGame.GetWorld().NavigationFindSafeSpot(bot.scenarioVec + Vector(4, 0, 0), 0.5, 6.0, spot))
-            {
-                spot = bot.scenarioVec + Vector(4, 0, 1);
-            }
-            thePlayer.Teleport(spot);
-            bot.scenarioVec = spot;
-            return false;
-        }
-        if(bot.scenarioStep == 3 && phase > 16)
-        {
-            W3T_FilmNext(bot, "run");
-        }
+        W3T_FilmNext(bot, "run");
         return false;
     }
     // 5: running on together, to where the nest's monsters come from
@@ -555,14 +563,32 @@ function W3T_FilmMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
         }
         return false;
     }
-    // 0: both start from the same save, so they are already standing together: the recording begins here
+    // 0: both start from the same save; the filming begins once both have made the jump to the nest, where
+    //    there is ground they can walk on
     if(bot.scenarioCount == 0)
     {
         W3T_FilmCamera(ghostPos);
-        if(VecDistance(pos, ghostPos) > 6.0 && bot.ElapsedS() - bot.scenarioActAt > 1.0)
+        if(!bot.filmTravelled)
         {
-            bot.scenarioActAt = bot.ElapsedS();
-            thePlayer.ActionMoveToAsync(ghostPos, MT_Run);
+            if(StrFindFirst(leader.lastChat, "To the nest") >= 0)
+            {
+                bot.filmTravelled = true;
+                bot.scenarioVec = W3T_NearestNest(label);
+                if(bot.scenarioVec.W != 0)
+                {
+                    thePlayer.Teleport(bot.scenarioVec + Vector(6, 3, 2));
+                    bot.filmTravelFrom = bot.ElapsedS();
+                    W3T_Log("FILM member goes to the nest " + label);
+                }
+            }
+            return false;
+        }
+        // a jump that long can land before the ground under it has loaded, and the catch for that is further
+        // down this function than these early returns go
+        W3T_HoldAt(bot.scenarioVec);
+        if(bot.ElapsedS() - bot.filmTravelFrom < 10)
+        {
+            return false;       // the navigation mesh is not there yet; nothing it does now would work
         }
         if(VecDistance(pos, ghostPos) < 25)
         {
@@ -572,31 +598,22 @@ function W3T_FilmMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
         }
         return false;
     }
-    // the leader's word that the fighting is elsewhere: the same teleport it makes, and a moment for the ground
-    if(!bot.filmTravelled && StrFindFirst(leader.lastChat, "To the nest") >= 0)
-    {
-        bot.filmTravelled = true;
-        bot.scenarioVec = W3T_NearestNest(label);
-        if(bot.scenarioVec.W != 0)
-        {
-            thePlayer.Teleport(bot.scenarioVec + Vector(6, 3, 2));
-            bot.filmTravelFrom = bot.ElapsedS();
-            W3T_Log("FILM member travels to the nest " + label);
-        }
-        return false;
-    }
-    if(bot.filmTravelled && bot.ElapsedS() - bot.filmTravelFrom < 8)
-    {
-        return false;       // the navigation mesh is not there yet; nothing it does now would work
-    }
 
     W3T_HoldAt(bot.scenarioVec);
     // the leader's word: a wave back, and the player menu when it asks for it
     if(!bot.scenarioFlag2 && StrFindFirst(leader.lastChat, "Well met") >= 0)
     {
         bot.scenarioFlag2 = true;
+        bot.filmEmoteAt = bot.ElapsedS();
         mpghosts_emote(0);
         mpghosts_chat("Right behind you.");
+    }
+    // ...and it has to be taken back, or this player waves through the fighting and everything after it
+    if(bot.filmEmoteAt > 0 && bot.ElapsedS() - bot.filmEmoteAt > 5)
+    {
+        bot.filmEmoteAt = 0;
+        client.clearLocalEmoteState();
+        W3T_Log("FILM member puts its hand down");
     }
     if(!bot.filmMenu && StrFindFirst(leader.lastChat, "Open the menu") >= 0)
     {
@@ -621,14 +638,9 @@ function W3T_FilmMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
         return true;
     }
 
-    if(!bot.filmCalled && StrFindFirst(leader.lastChat, "Climb on") >= 0)
-    {
-        bot.filmCalled = true;      // the leader is waiting on its horse: the run to it starts now
-        bot.filmBoardFrom = bot.ElapsedS();
-    }
     if(!leader.isMounted)
     {
-        bot.filmBoardFrom = 0;
+        bot.filmBoardFrom = 0;      // off its horse, so nothing to climb onto and no clock to run
     }
     // on the horse the leader rides: run to it, climb on from beside it (once - after the ride there is work)
     if(leader.isMounted && !client.isRiding() && !bot.filmRode)
@@ -638,30 +650,34 @@ function W3T_FilmMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
         {
             bot.filmBoardFrom = bot.ElapsedS();
         }
-        if(!bot.filmCalled)
+        if(bot.ElapsedS() - bot.scenarioUntil >= 4.0)
         {
-            return false;           // not called over yet: the horse is still being got onto
+            bot.scenarioUntil = bot.ElapsedS();
+            W3T_Log("FILM member goes for the horse: " + FloatToStringPrec(VecDistance(pos, ghostPos), 1)
+                + " m off, leaderMounted=" + leader.isMounted + " riding=" + client.isRiding()
+                + " trying for " + FloatToStringPrec(bot.ElapsedS() - bot.filmBoardFrom, 1) + " s");
         }
-        if(VecDistance(pos, ghostPos) > 3.5 && bot.ElapsedS() - bot.filmBoardFrom < 15)
+        if(VecDistance(pos, ghostPos) > 6.0)
         {
-            if(bot.ElapsedS() - bot.scenarioActAt > 1.0)
+            if(bot.ElapsedS() - bot.filmBoardFrom > 45)
+            {
+                return false;   // it could not get there; being carried the last metres is not worth filming
+            }
+            // asked for once every six seconds, not every tick: a move action re-issued while the one before
+            // it is still starting never gets the player walking at all
+            if(bot.ElapsedS() - bot.scenarioActAt > 6.0)
             {
                 bot.scenarioActAt = bot.ElapsedS();
-                thePlayer.ActionMoveToAsync(ghostPos, MT_Run);
+                thePlayer.ActionCancelAll();
+                W3T_Log("FILM member walks to its leader's horse, " + FloatToStringPrec(VecDistance(pos, ghostPos), 1)
+                    + " m: " + thePlayer.ActionMoveToAsync(ghostPos, MT_Run)
+                    + " state=" + thePlayer.GetCurrentStateName());
             }
-            W3T_ShowcaseUnstick(bot, ghostPos);
             return false;
         }
         if(bot.ElapsedS() - bot.scenarioActAt >= 2.5)
         {
             bot.scenarioActAt = bot.ElapsedS();
-            if(VecDistance(pos, ghostPos) > 3.5 && bot.ElapsedS() - bot.filmBoardFrom >= 15)
-            {
-                // fifteen seconds of running and still not there: the rest is closed outright, and said so
-                thePlayer.Teleport(ghostPos);
-                W3T_Log("FILM member steps to the horse (a hop of "
-                    + FloatToStringPrec(VecDistance(pos, ghostPos), 1) + " m)");
-            }
             client.ridePlayer(leader.ghost);
             W3T_Log("FILM member climbs onto " + leader.username + " from "
                 + FloatToStringPrec(VecDistance(pos, ghostPos), 1) + " m");
@@ -677,9 +693,9 @@ function W3T_FilmMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
             bot.filmRideFrom = bot.ElapsedS();
             bot.filmSawMounted = bot.ElapsedS();
         }
-        // a member being carried stops seeing its leader as mounted at all, so the ride is counted in
-        // seconds aboard: twelve, which is what the leader's own ride chapter waits for
-        if(bot.ElapsedS() - bot.filmRideFrom > 12.0)
+        // a member being carried stops seeing its leader as mounted at all, so it gets off when the leader
+        // says so, and in any case after half a minute
+        if(StrFindFirst(leader.lastChat, "Off we get") >= 0 || bot.ElapsedS() - bot.filmRideFrom > 30.0)
         {
             client.stopRiding();
             bot.filmRode = true;
@@ -753,6 +769,12 @@ function W3T_FilmMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
         return false;
     }
     // otherwise: at the leader's side
+    if(bot.ElapsedS() - bot.scenarioUntil >= 8.0)
+    {
+        bot.scenarioUntil = bot.ElapsedS();
+        W3T_Log("FILM member at its leader's side, " + FloatToStringPrec(VecDistance(pos, ghostPos), 1)
+            + " m off, leaderMounted=" + leader.isMounted + " riding=" + client.isRiding());
+    }
     W3T_FilmCamera(ghostPos);
     // beside the leader, not inside it: two Geralts standing in one spot read as one
     if((VecDistance(pos, ghostPos) > 4.5 || VecDistance(pos, ghostPos) < 2.0)

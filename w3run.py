@@ -73,7 +73,7 @@ user32.IsWindow.argtypes = [wt.HWND]
 user32.GetForegroundWindow.restype = wt.HWND
 
 # test games start without taking the focus: minimized, or shown without being activated (w3test.asi keeps it so)
-SHOW_COMMANDS = {"minimized": 7, "noactivate": 4}  # SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE
+SHOW_COMMANDS = {"minimized": 7, "noactivate": 4, "normal": 1}  # SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, SW_SHOWNORMAL
 
 
 def startup_info(mode: str) -> subprocess.STARTUPINFO:

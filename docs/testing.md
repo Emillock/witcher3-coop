@@ -70,7 +70,7 @@ with an earlier one.
 
 ### Horses, as far as a bot can take them
 
-Three things the filming found on 5.0.0.1090142, all of them the engine's doing rather than the mod's:
+Four things the filming found on 5.0.0.1090142, all of them the engine's doing rather than the mod's:
 
 - **A ridden horse cannot be driven from script.** `horse_drive` tries five ways and every one moves it 0 m. A
   horse nobody rides ignores a move action too, so there is no AI path to a horse that goes somewhere. Players on
@@ -78,10 +78,20 @@ Three things the filming found on 5.0.0.1090142, all of them the engine's doing 
 - **Getting on a horse a second time is refused.** Mount, dismount, and from then on `InstantMountPlayer` does
   nothing however it is asked for - from beside the horse, from on top of it, with the player's actions cancelled
   first (cancelling them is worse: it kills the mount the call before it started). So a filmed session gets on its
-  horse once, before the recording starts, and stays on it.
+  horse once, before the recording starts, and stays on it. The ground where the save starts has no navigation
+  mesh at all - a move action there is accepted and the player never takes a step - so the session gets on its
+  horse there and travels to the nest, still mounted and before any filming, to ride on ground that can be
+  walked on.
 - **An attack pulls a rider off.** Near a monster nest a leader waiting on horseback is on foot within seconds,
-  and the logs show `CBTTaskAttack` just before. The film therefore rides where the save starts, which is quiet,
-  and clears what the nest has sent while the two of them gather.
+  and the logs show `CBTTaskAttack` just before, so the film clears what the nest has sent while the two of them
+  gather and ride.
+- **A horse moves only for a real keystroke, and an unattended run cannot give it one.** `run_test.py` holds the
+  forward key when a filmed session logs `FILM drive <seconds>`, but a keystroke goes to whichever window has the
+  keyboard focus, and a test game refuses it: `SetForegroundWindow` reports success and leaves the desktop with no
+  foreground window at all (class `W2ViewportClass`; `--window normal` makes no difference, nor does
+  `SwitchToThisWindow`). Posted key messages are ignored, the engine reading raw input, which needs focus. It
+  worked exactly once - 46 m of real riding - while the owner was using the machine, their own input having
+  released the foreground lock. So a filmed ride stands still unless somebody is at the PC.
 
 Under the test bot (`w3test.asi`, which runs only when the harness sets `W3T_DOCUMENTS`), each game uses a
 throwaway Documents folder. That folder holds copies of your settings and of your newest save (or `--save SUBSTR`),

@@ -465,6 +465,7 @@ statemachine class W3T_Bot
     public var filmLootFrom : float;   // since when it has been going for what a shared kill left
     public var filmRode : bool;        // it has had its ride on the leader's horse
     public var filmCalled : bool;      // the leader has called it over to the horse
+    public var filmEmoteAt : float;    // when it waved, so the wave can be taken back
     public var filmTravelled : bool;   // it has made the leader's jump to the nest
     public var filmTravelFrom : float;
     public var scenarioHitAnims : int;   // hits of ours the victim answered with a hit animation
