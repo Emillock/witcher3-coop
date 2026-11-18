@@ -1250,6 +1250,32 @@ Every combat scenario passes over the imitated link, 150 ms with 5% loss and 300
 enemy_attacks, member_combat, reactions, kill_wound, puppet_follow. The synchronisation was never breaking over
 a real link - it was standing in the wrong place.
 
+## Axii's puppet, on everyone's side (2026-11-18)
+
+The charm Axii's puppet skill applies is a buff, `EET_AxiiGuardMe`, and the game's own effect does the work on
+it: it clears the monster's hostility toward the caster, puts it in the `npc_charmed` attitude group and signals
+`AxiiGuardMeAdded` so its behaviour tree drops what it was doing. All of that runs wherever the buff is added,
+which is what made this cheap to share.
+
+What a member saw before: nothing of it. The buff was not in the set of effects a monster's state carries
+(`CoopShowsEffect`), so the copy stayed an ordinary enemy; and because a party member's character is given this
+Geralt's own attitude group (`ArmGhosts`), a charmed monster is friendly to the whole party at once - which also
+means it is hostile to nobody, and hostility is exactly what the search for monsters worth sharing looks for. So
+the monster fell out of the leader's list, the copy timed out, and in the member's world its own monster had its
+AI back and came for the member again.
+
+Worse, and only visible once it was measured: **the charmed monster kept hurting the party**. The game lets an
+attack catch a charmed actor's friends on purpose (`actor.ws` passes `HasBuff(EET_AxiiGuardMe)` as a reason to
+allow a friendly hit), so the leader's own ally was landing blows on a member's character and the leader sent
+every one of them on as damage the member had no cause for. The control run - the same scenario with the fix
+taken out again - took five such hits in half a minute, with `charmed=false` and `mirrored=0` on the copy.
+
+Now: the buff is in the shared set, a charmed monster keeps its place in the leader's list while the charm lasts
+and a party member is within 60 m (`charmedShared` counts those ticks), and a hit from a charmed monster is
+dropped before it is queued (`charmedHurtsDropped`). The run that proved it: 20 attempted hits dropped in 21 s,
+the copy charmed, the monster still shared, and nothing landing on the member after the charm - which the
+scenario asserts rather than merely logging.
+
 ## Open questions
 
 - **Known bug (seen 2026-10-30 23:23, reported by the owner): monsters can't reach a member whose character in

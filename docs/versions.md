@@ -7,6 +7,14 @@ This file is the working history and carries whatever is merged but not released
 yet". [CHANGELOG.md](../CHANGELOG.md) is the published history: a version is written there as it is
 published, and that file changes at no other time.
 
+## Not released yet
+
+A monster your friend charms with Axii is your ally too. The charm travels with it, so your copy of it is
+charmed as well; it stays shared while the charm lasts, where it used to drop out of your world and come for you
+again with its own mind back; and it cannot hurt anyone in the party any more. That last one was the worst of
+it: the game lets an attack catch a charmed fighter's friends, so your friend's new ally was landing hits on you
+- twenty attempts in twenty-one seconds, in the run that measured it.
+
 ## New in v0.7.0
 
 Monsters your friend is fighting stand nearer to where they really are. A copy used to be put exactly where the

@@ -23,7 +23,7 @@ NEEDS_BOARD = ("gwent_selftest", "gwent_duel")
 # enemy_moves last in a session: its leader fights the bandit itself, which carries over (combat state)
 SCENARIOS = ["see_each_other", "movement", "version_check", "party_hud", "horse_ride", "social", "trade", "player_effects", "shared_enemy", "enemy_attacks", "mounted_fight", "reactions", "twin_match", "encounter_mismatch", "handoff", "quest_sync",
              "dialog_sync", "facts_sync", "puppet_walk", "real_encounter", "enemy_projectiles", "member_combat", "enemy_effects", "sign_visuals", "attack_view",
-             "enemy_spells", "enemy_moves", "enemy_crowd", "enemy_sounds", "member_death", "leader_death", "follow_travel", "party_invite", "puppet_timeout", "player_menu", "clock_sync", "cutscene_wait", "npc_match", "quest_behind", "kill_loot", "kill_quiet", "kill_wound", "link_ping", "igni_damage", "pause_still", "leader_bolt", "leader_aim", "ride_along", "ride_broken", "scene_follow", "quest_catchup", "gwent_vanilla", "gwent_selftest"]  # puppet_walk also checks what puppet_follow does
+             "enemy_spells", "enemy_moves", "enemy_crowd", "enemy_sounds", "member_death", "leader_death", "follow_travel", "party_invite", "puppet_timeout", "player_menu", "clock_sync", "cutscene_wait", "npc_match", "quest_behind", "kill_loot", "kill_quiet", "kill_wound", "link_ping", "axii_puppet", "igni_damage", "pause_still", "leader_bolt", "leader_aim", "ride_along", "ride_broken", "scene_follow", "quest_catchup", "gwent_vanilla", "gwent_selftest"]  # puppet_walk also checks what puppet_follow does
 # over Steam only the transport differs: these cover connecting, movement, the co-op channel both ways and the snapshot
 STEAM_SCENARIOS = ["movement", "shared_enemy", "member_combat", "sign_visuals"]
 # need fresh games: they change the save's quests and facts, join late on purpose, travel 1 km to a nest, or (attack_view)
@@ -180,6 +180,9 @@ def main():
     ap.add_argument("--duration", type=int, default=300)
     ap.add_argument("--no-session", action="store_true", help="fresh games for every scenario (slower)")
     ap.add_argument("--save", default="", help="part of the save name to test on (default: the newest save, which changes as soon as anyone plays the game, so runs stop being comparable)")
+    ap.add_argument("--delay", type=int, default=0, help="ms the test server holds each broadcast: the whole suite as if over a real link")
+    ap.add_argument("--jitter", type=int, default=0, help="ms of extra delay, at random (packets overtake each other)")
+    ap.add_argument("--loss", type=int, default=0, help="percent of broadcasts thrown away")
     a = ap.parse_args()
     if not a.scenarios:
         a.scenarios = STEAM_SCENARIOS if a.steam_box and not a.all else SCENARIOS
@@ -206,6 +209,9 @@ def main():
         cmd = [sys.executable, os.path.join(HERE, "run_test.py"), run, "--duration", str(a.duration), "--timeout", "3600" if "," in run else "900", *(("--save", a.save) if a.save else ())]
         if a.steam_box:
             cmd += ["--steam-box", a.steam_box]
+        for flag in ("delay", "jitter", "loss"):
+            if getattr(a, flag):
+                cmd += [f"--{flag}", str(getattr(a, flag))]
         t0 = time.time()
         with open(out, "w") as f:
             subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT)
@@ -226,7 +232,10 @@ def main():
             break
 
     passed = sum(r[1] == "PASS" for r in rows)
-    print(f"{label}: {passed}/{len(rows)} passed")
+    link = ""
+    if a.delay or a.jitter or a.loss:
+        link = f" over a {a.delay}+{a.jitter} ms link with {a.loss}% loss"
+    print(f"{label}: {passed}/{len(rows)} passed{link}")
     return 0 if passed == len(rows) else 1
 
 

@@ -420,6 +420,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_LinkPingMember(bot, client, client.getCoopEnemies(), players[0]);
     }
 
+    if(scenario == "axii_puppet")
+    {
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_AxiiPuppetLeader(bot, client.getCoopEnemies(), players[0]);
+        }
+        return W3T_AxiiPuppetMember(bot, client, client.getCoopEnemies(), players[0]);
+    }
+
     if(scenario == "quest_behind")
     {
         if(ghosts < 1)
@@ -3603,6 +3616,122 @@ function W3T_IgniDamageMember(bot : W3T_Bot, client : r_MultiplayerClient, coop 
         + " burning=" + copy.HasBuff(EET_Burning) + " hitAnims=" + coop.hitAnimsSeen
         + " inHitAnim=" + coop.PuppetInHitAnim(0));
     return copy.GetHealthPercents() <= bot.scenarioValue - 0.08;
+}
+
+// axii_puppet, leader: shares a bandit, then charms it as Axii's puppet skill does (EET_AxiiGuardMe). The
+// charm makes it friendly to this Geralt and, with him, to the party's characters - which also takes it out of
+// the hostility search that finds monsters to share, so the test watches that it stays shared and that the
+// member's copy is charmed too instead of coming for the member.
+function W3T_AxiiPuppetLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemotePlayer) : bool
+{
+    var params : SCustomEffectParams;
+    var npc : CNewNPC;
+
+    if(bot.scenarioCount < 2)
+    {
+        W3T_EnemyAttacksLeader(bot, coop, member,
+            "gameplay\community\community_npcs\nml\regular\baron_bandit_strong_sword.w2ent");
+        if(coop.HostEnemyCount() < 1)
+        {
+            return false;
+        }
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 2;
+        return false;
+    }
+    if(bot.scenarioCount == 2)
+    {
+        if(bot.ElapsedS() - bot.scenarioTime < 8 || coop.HostEnemyCount() < 1)
+        {
+            return false;   // the member needs a moment to copy it
+        }
+        npc = coop.HostEnemyAt(0);
+        params.effectType = EET_AxiiGuardMe;
+        params.creator = thePlayer;
+        params.sourceName = "W3TAxii";
+        params.duration = 60;
+        npc.AddEffectCustom(params);
+        if(!npc.HasBuff(EET_AxiiGuardMe))
+        {
+            W3T_Log("FAIL the bandit would not take the charm");
+            W3T_Quit(2);
+            return false;
+        }
+        W3T_Log("AXII leader charmed its bandit");
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioCount = 3;
+        return false;
+    }
+    npc = coop.HostEnemyAt(0);
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("AXII leader shared=" + coop.HostEnemyCount() + " charmedTicks=" + coop.charmedShared
+            + " hurtsCaptured=" + coop.hurtsCaptured + " charmedHurtsDropped=" + coop.charmedHurtsDropped + " since="
+            + FloatToStringPrec(bot.ElapsedS() - bot.scenarioTime, 1));
+    }
+    // ten seconds charmed and still shared: a copy that is dropped is a copy that comes alive again elsewhere
+    if(bot.ElapsedS() - bot.scenarioTime > 4.0 && coop.HostEnemyCount() < 1)
+    {
+        W3T_Log("FAIL the charmed bandit fell out of the shared list");
+        W3T_Quit(1);
+        return false;
+    }
+    return bot.ElapsedS() - bot.scenarioTime > 18.0 && coop.HostEnemyCount() >= 1 && coop.charmedShared > 0;
+}
+
+// axii_puppet, member: its copy of that bandit must carry the charm and must not be the one hurting it.
+function W3T_AxiiPuppetMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies,
+    leader : r_RemotePlayer) : bool
+{
+    var npc : CNewNPC;
+
+    if(!client.getInParty())
+    {
+        W3T_Log("PARTY join " + leader.username);
+        thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
+        client.joinParty(leader.username);
+        return false;
+    }
+    npc = coop.PuppetAt(0);
+    if(!npc)
+    {
+        if(bot.scenarioFlag)
+        {
+            W3T_Log("AXII the copy is gone from this world");
+        }
+        return false;
+    }
+    bot.scenarioFlag = true;
+    if(npc.HasBuff(EET_AxiiGuardMe) && !bot.scenarioFlag2)
+    {
+        bot.scenarioFlag2 = true;
+        bot.scenarioTime = bot.ElapsedS();
+        bot.scenarioStep = coop.hurtsApplied;   // nothing may land after this
+        W3T_Log("AXII member: its copy is charmed too");
+    }
+    if(bot.scenarioFlag2 && coop.hurtsApplied > bot.scenarioStep)
+    {
+        W3T_Log("FAIL the charmed monster hurt this player " + (coop.hurtsApplied - bot.scenarioStep)
+            + " time(s) after it was charmed");
+        W3T_Quit(1);
+        return false;
+    }
+    if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
+    {
+        bot.scenarioActAt = bot.ElapsedS();
+        W3T_Log("AXII member puppets=" + coop.PuppetCount() + " charmed=" + npc.HasBuff(EET_AxiiGuardMe)
+            + " mirrored=" + coop.effectsMirrored + " timedOut=" + coop.puppetsTimedOut
+            + " hurts=" + coop.hurtsApplied);
+    }
+    if(coop.puppetsTimedOut > 0)
+    {
+        W3T_Log("FAIL the copy timed out: in this world its own monster is loose again");
+        W3T_Quit(1);
+        return false;
+    }
+    // charmed here as well, and still standing with this world's player unharmed by it
+    return bot.scenarioFlag2 && bot.ElapsedS() - bot.scenarioTime > 12.0 && coop.PuppetCount() >= 1;
 }
 
 // link_ping, leader: nothing to do but be there and answer. The member's half measures the trip.
