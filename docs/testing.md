@@ -39,7 +39,7 @@ with an earlier one.
 | `python run_test.py enemy_moves [--monster PATH]` | The leader swings at its monster (a sword bandit by default, made to dodge every swing and taunt every 6 s), which dodges, parries or taunts; the puppet must show the same dodges and parries (the leader's animation on its slot; with `W3T_SLOT_MOVES=0` made by its own AI) for 3 of 4 of at least 8. Taunts and moves of its own are logged. |
 | `python run_test.py enemy_summons [--monster PATH]` | The leader fights a summoner (a noonwraith by default), swinging at it and standing off in turn; passes once a monster it summoned has a copy on the member. A leshen (`--monster characters\npc_entities\monsters\lessog_lvl1.w2ent`) summoned wolves after about 3 minutes; a noonwraith never did, so it is not in the suite. |
 | `python run_test.py reactions` | The leader's hits replay on the member's puppet; a bleeding hit reaches the member with its effect. `W3T_REACT_HITS=N`: N hits (light and heavy in turn); `attack_sync.py` then compares the copy's flinches with the leader's monster's. |
-| `python run_test.py kill_wound` | The leader kills its shared monster the way a limb-taking blow does (the wound, the kill, then the game's own delayed dismemberment) and the member's copy has to die showing the same wound, read back off its own dismemberment component, instead of falling over whole. |
+| `python run_test.py kill_wound` | The leader kills its shared monster the way a limb-taking blow does (the wound, the kill, then the game's own delayed dismemberment) and the member's copy has to die showing the same wound, read back off its own dismemberment component, instead of falling over whole. The body must also be on the ground 2.5 s later: the copy is dropped from the member's list about 2 s after it dies, so the mod watches the body on its own (`bodiesSettled`, `bodiesLeftStanding`). |
 | `python run_test.py link_ping` | Both sides have to measure the round trip to each other within 15 s (each stamps a ping with its own clock and the other hands the stamp back), because that is what the copies' lead is built on and what the party HUD shows. `W3T_EXPECT_RTT=<ms>` also demands the figure be near what the harness imposed. |
 | `python run_test.py axii_puppet` | The leader charms its shared bandit the way Axii's puppet skill does (`EET_AxiiGuardMe`). The monster has to stay shared although it is now hostile to nobody, the member's copy has to carry the charm, and nothing the charmed monster swings at may reach the member. Without the fix the member takes its friend's ally's hits and its copy is never charmed. |
 | `python run_test.py twin_match` | A drowner exists in both worlds: the member's own becomes the puppet, with no duplicate. |
@@ -49,7 +49,7 @@ with an earlier one.
 | `python run_test.py scene_follow` | The leader plays a cutscene (the game's own movie player scene, the one that needs no quest and no other actors) and the member has to end up watching that same scene - the leader's scene line, the input table the client serves and the member's own PlayScene. Then the leader says its scene is over and the member must work its way out of the one it followed rather than sit in it. |
 | `python run_test.py dialog_sync` | The member follows the leader's tracked quest and skips, and gets the leader's dialogue pick when it reaches the choices 6 s later. |
 | `python run_test.py facts_sync` | Quest facts the leader's game sets (before and after the member joins) reach the member with the same values. |
-| `python run_test.py puppet_follow` | The leader's drowner runs 14 m; its copy is never more than 3.5 m behind it for a second, and is within 1.5 m of it once it has run 8 m. |
+| `python run_test.py puppet_follow` | The leader's drowner runs 14 m; its copy is never more than 3.5 m behind it for a second, and is within 1.5 m of it once it has run 8 m. It must cover that ground, too: a copy put where its monster is (`puppetsSnapped`) fails, since being carried there closes the gap just as well and is what looked like monsters teleporting. |
 | `python run_test.py puppet_walk [--monster PATH]` | As `puppet_follow`, and the copy must run on its legs: its foot swings at least half as far as the leader's real monster's (a slide alone swings it about 0.1 m). `--monster` takes another template's depot path. `puppet_glide` is the same run with copies only sliding, as a baseline. |
 | `run_test.py <scenario> --delay <ms> [--jitter <ms>] [--loss <pct>]` | Over an imitated link: the test server holds every broadcast that long (plus up to jitter, so packets overtake each other) and throws that percentage away. A run on one PC otherwise has none of this, which is why faults a friend sees over the internet cannot appear in it. The server's log says what it was asked for. |
 | `W3T_LEAD_CAP=<s> W3T_LEAD_M=<m> run_test.py puppet_follow` | The two caps on a copy's lead, for measuring one against the other (`SetLeadCapsForTest`); the shipped pair is 0.15 s and 2.5 m. |
@@ -111,3 +111,33 @@ so tests never write your saves or settings. The bot also:
 
 Both games load at once (`--serial` loads one after the other, as before). Two copies of the game still need a fair
 amount of GPU memory: about 10.6 GB of 12 GB here, loading at once or not.
+
+### What a copy of a monster is judged on
+
+Two faults the owner saw in the reel that no scenario could have caught, because the suite judged a copy only on
+where it was, never on how it got there or on what it left behind. Every run now prints both in its `COOP` line
+(`snapped`, `carried`, `animated`, `standing`, `laidDown`).
+
+- **A copy that died kept its feet.** The ragdoll is turned on by an animation event inside a monster's own death
+  animation, and that animation is played by the plain `CBTTaskPlayAnimationEventDecorator` - which this mod
+  refuses on a puppet, so the mirroring can drive the body instead. The refusal outlived the puppet: the copy
+  died, dropped its loot (`isDead` went true) and then stood there rising to full height while the leader's own
+  monster lay on the ground. A dead copy is allowed its animations again, and `kill_wound` now fails on a body
+  still upright 2.5 s after it died. The copy is dropped from the member's list about 2 s after its death - the
+  leader stops naming it and the next snapshot erases it - so the body is watched on its own list, which also
+  puts down anything the animation misses (`LayBodyDown`).
+- **Copies appeared from one place to the next.** A copy was slid to wherever its monster was in one movement
+  adjustment of at most 0.3 s, so a gap of several metres was crossed in a frame; and a monster that leaps or is
+  teleported on the leader was read here as enormous speed, which then licensed its copy to travel that fast. A
+  copy is now asked to go no further in one tick than a run would carry it (`CatchUpSpeed`, 6-14 m/s), a jump on
+  the leader no longer counts towards the speed it is given, and the hard snap that remains for a gap no run
+  could close is counted (`puppetsSnapped`) and logged (`SYNC PJ`). `puppet_follow` fails on any of them, since
+  being carried closes the gap just as well as walking and used to score better.
+
+The measurements that go with this, over a nest fight on 5.0.0.1090142: the longest a copy was carried in one
+frame fell from 4.4 m to 1.2 m, hard snaps from one or more per fight to none (and none at all over a whole
+filmed session), and bodies left standing from every one of them to none. `carried` and `animated` are m/s over
+whole frames; ticks shorter than a frame are left out, since the engine has not moved the body since the last
+look and counting them turns one frame's step into several times the figure. The two are kept apart because an
+attack of its monster's playing here moves the body by its own root motion, which is the monster's movement and
+not this world carrying the copy about.

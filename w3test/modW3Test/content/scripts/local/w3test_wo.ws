@@ -4072,6 +4072,7 @@ function W3T_KillWoundLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Rem
         npc.SetBehaviorVariable('dismemberAnim', 1.0);
         npc.Kill('W3T', true);
         npc.AddTimer('DelayedDismemberTimer', 0.05);
+        bot.scenarioEntity = npc;
         W3T_Log("WOUND leader killed its monster with " + bot.scenarioText + ", 1 of " + wounds.Size() + " wounds");
         bot.scenarioTime = bot.ElapsedS();
         bot.scenarioCount = 3;
@@ -4081,11 +4082,18 @@ function W3T_KillWoundLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Rem
     {
         bot.scenarioActAt = bot.ElapsedS();
         W3T_Log("WOUND leader wound=" + bot.scenarioText + " seen=" + coop.woundsSeen + " sent=" + coop.woundsSent);
+        // the control: this monster's own body, killed the same way with an AI nobody interfered with
+        if((CNewNPC)bot.scenarioEntity)
+        {
+            W3T_Log("WOUND leader body " + coop.BodyStateOf((CNewNPC)bot.scenarioEntity));
+        }
     }
     return bot.ElapsedS() - bot.scenarioTime >= 12 && coop.woundsSeen >= 1;
 }
 
-// kill_wound, member: its copy of that monster must die showing a wound of its own, not fall over whole.
+// kill_wound, member: its copy of that monster must die showing a wound of its own, not fall over whole - and
+// the body must come off its feet. A copy that died standing is what the owner saw in a filmed session: the
+// wound reached it after the kill, and a death animation it was too late to join left it upright.
 function W3T_KillWoundMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies,
     leader : r_RemotePlayer) : bool
 {
@@ -4109,15 +4117,25 @@ function W3T_KillWoundMember(bot : W3T_Bot, client : r_MultiplayerClient, coop :
             bot.scenarioText = NameToString(dc.GetVisibleWoundName());
         }
     }
+    // the copy is dropped from the list about 2 s after it dies, so the mod watches the body on its own: it must
+    // find it on the ground
+    if(coop.bodiesLeftStanding > 0)
+    {
+        W3T_Log("FAIL a copy died and its body was still on its feet 2.5 s later");
+        W3T_Quit(1);
+        return false;
+    }
     if(bot.ElapsedS() - bot.scenarioActAt >= 1.0)
     {
         bot.scenarioActAt = bot.ElapsedS();
         W3T_Log("WOUND member puppets=" + coop.PuppetCount() + " killed=" + coop.puppetsKilled + " applied="
             + coop.woundsApplied + " unknown=" + coop.woundsUnknown + " showing=" + bot.scenarioText
-            + " hadCopy=" + bot.scenarioFlag);
+            + " hadCopy=" + bot.scenarioFlag + " laidDown=" + coop.puppetsLaidDown + " settled="
+            + coop.bodiesSettled + " standing=" + coop.bodiesLeftStanding);
     }
-    // the copy died, and it came apart doing so
-    return bot.scenarioFlag && coop.puppetsKilled >= 1 && coop.woundsApplied >= 1 && bot.scenarioText != "";
+    // the copy died, it came apart doing so, and the body it left is on the ground
+    return bot.scenarioFlag && coop.puppetsKilled >= 1 && coop.woundsApplied >= 1 && coop.bodiesSettled >= 1
+        && bot.scenarioText != "";
 }
 
 // kill_quiet, leader: shares a drowner, enters a scene, then kills it and stops sending in the same breath,
@@ -7090,7 +7108,8 @@ function W3T_MovesLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_RemoteP
 
 // puppet_follow, member: while the leader's monster runs toward this player's ghost, its puppet never stays more
 // than 3.5 m from the leader's position for 1 s (scenarioValue: largest gap seen), and is within 1.5 m once the
-// monster has run 8 m.
+// monster has run 8 m. It has to cover that ground, too: a copy put where its monster is closes the gap and used
+// to pass, which is what had monsters appearing from one place to the next in a filmed session.
 function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_CoopEnemies, leader : r_RemotePlayer) : bool
 {
     var puppet : CNewNPC;
@@ -7143,7 +7162,15 @@ function W3T_FollowMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_
     W3T_Log("FOLLOW member puppet at " + W3T_VecStr(puppet.GetWorldPosition()) + " gap=" + FloatToStringPrec(gap, 2)
         + " maxGap=" + FloatToStringPrec(bot.scenarioValue, 2) + " toMe=" + FloatToStringPrec(VecDistance(puppet.GetWorldPosition(), thePlayer.GetWorldPosition()), 1)
         + " stride=" + FloatToStringPrec(coop.puppetMaxSwing, 3) + " bone=" + coop.strideBone
+        + " snapped=" + coop.puppetsSnapped + " carried=" + FloatToStringPrec(coop.puppetStep, 1)
         + " rtt=" + FloatToStringPrec(coop.linkRtt, 3) + " pings=" + coop.pingsHeard);
+    if(coop.puppetsSnapped > 0)
+    {
+        W3T_Log("FAIL the copy was put where its monster is instead of covering the ground ("
+            + coop.puppetsSnapped + " times)");
+        W3T_Quit(1);
+        return false;
+    }
     if(bot.scenarioCount == 1 && bot.ElapsedS() - bot.scenarioTime >= 1.0)
     {
         W3T_Log("FAIL the puppet stayed " + FloatToStringPrec(gap, 2) + " m behind the leader's monster for 1 s");
@@ -7196,5 +7223,8 @@ function W3T_ReportExtra(bot : W3T_Bot)
         + " leaderEnemies=" + coop.HostEnemyCount() + " puppets=" + coop.PuppetCount() + " suppressed=" + coop.SuppressedCount()
         + " hitsSent=" + coop.hitsSent + " hitsApplied=" + coop.hitsApplied + " spawned=" + coop.puppetsSpawned
         + " twins=" + coop.twinsBound + " spawnFailures=" + coop.spawnFailures + " hurtsCaptured=" + coop.hurtsCaptured
-        + " hurtsApplied=" + coop.hurtsApplied + " lastError=" + coop.lastError);
+        + " hurtsApplied=" + coop.hurtsApplied + " snapped=" + coop.puppetsSnapped
+        + " carried=" + FloatToStringPrec(coop.puppetStep, 1)
+        + " animated=" + FloatToStringPrec(coop.puppetAnimStep, 1) + " standing=" + coop.bodiesLeftStanding
+        + " laidDown=" + coop.puppetsLaidDown + " lastError=" + coop.lastError);
 }

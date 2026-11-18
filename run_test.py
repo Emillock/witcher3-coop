@@ -38,6 +38,7 @@ SINGLE_BOT_SCENARIOS = ("gwent_vanilla", "gwent_selftest")
 
 
 GWENT_DUEL = "gwent_duel"
+FILM = "film"
 GWENT_DECKS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "w3test", "gwent_decks.txt")
 DUEL_LOGDIFF = os.path.join(WO, "gwent", "tools", "duel_logdiff.py")
 
@@ -45,6 +46,8 @@ DUEL_LOGDIFF = os.path.join(WO, "gwent", "tools", "duel_logdiff.py")
 def default_duration(scenario: str) -> int:
     if scenario == GWENT_DUEL:
         return 600
+    if scenario == FILM:
+        return 420   # a filmed session plays every chapter: longer than the recording it is made for
     return 300 if scenario in LONG_SCENARIOS else 60
 
 
@@ -1005,7 +1008,7 @@ def main() -> int:
     if a.duration is None:
         a.duration = default_duration(a.scenario)
     if a.timeout is None:
-        a.timeout = a.duration + 420 if a.scenario == GWENT_DUEL else 420
+        a.timeout = a.duration + 420 if a.scenario in (GWENT_DUEL, FILM) else 420
     if a.scenario == GWENT_DUEL and os.environ.get("W3T_GWENT_DECKS"):
         # the bots get inline decks: names from w3test/gwent_decks.txt become "leader+card+..."
         os.environ["W3T_GWENT_DECKS"] = expand_gwent_decks(os.environ["W3T_GWENT_DECKS"])
