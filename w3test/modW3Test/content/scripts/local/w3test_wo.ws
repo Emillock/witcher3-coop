@@ -4054,24 +4054,29 @@ function W3T_PauseStillMover(bot : W3T_Bot, coop : r_CoopEnemies) : bool
     if(bot.scenarioCount < 1)
     {
         bot.scenarioVec = thePlayer.GetWorldPosition();
+        bot.scenarioPos = W3T_WalkableSpot(bot.scenarioVec, 6.0);   // somewhere it can really run to
         bot.scenarioTime = bot.ElapsedS();
         bot.scenarioCount = 1;
     }
     if(bot.scenarioCount == 1)
     {
-        // step to and fro, so the watcher has the ghost chasing a target when the silence starts
-        if(bot.ElapsedS() - bot.scenarioActAt >= 1.5)
+        // Run to and fro, so the watcher has the ghost chasing a target when the silence starts. Really run:
+        // a teleport is now mirrored as a teleport (remotePlayer.ws, toldJumped), and a ghost put straight
+        // onto the position it was told is not chasing anything, so there was nothing for the silence to
+        // stop and the watcher waited out the whole duration for a walk it never saw.
+        if(bot.ElapsedS() - bot.scenarioActAt >= 2.5)
         {
             bot.scenarioActAt = bot.ElapsedS();
             spot = bot.scenarioVec;
-            if(bot.scenarioStep % 2 == 0)
+            if(bot.scenarioStep % 2 == 0 && bot.scenarioPos.W != 0)
             {
-                spot.X += 5.0;
+                spot = bot.scenarioPos;
             }
             bot.scenarioStep += 1;
-            thePlayer.Teleport(spot);
+            thePlayer.ActionMoveToAsync(spot, MT_Run);
+            W3T_Log("PAUSE mover runs to " + W3T_VecStr(spot));
         }
-        if(bot.ElapsedS() - bot.scenarioTime < 8)
+        if(bot.ElapsedS() - bot.scenarioTime < 10)
         {
             return false;
         }
