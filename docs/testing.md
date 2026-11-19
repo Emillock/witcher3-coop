@@ -60,7 +60,7 @@ with an earlier one.
 | `run_test.py --matrix FILE` | A session whose entries carry their own settings. `FILE` is JSON, a list of entries `{"scenario": "gwent_duel", "label": "pirate-s1", "env": {"W3T_GWENT_DECKS": "pirate_ske,pirate_ske", "W3T_GWENT_SEED": "1"}, "duration": 600}` (only `scenario` is required; `env` takes the per-duel settings `W3T_GWENT_DECKS`, `_SEED`, `_MULLIGAN`, `_LEADER_FIRST`, `_CORRUPT_AT`, `_BREAK_TEMPLATES`, `_EXPECT`, `_REASON`, `_BET`, `_TIMED`, `_FORCE_DRAW`, `_REPLAY`, `_SURRENDER_AT`, `_EXIT_AT`, `_IDLE_AT`, `_IDLE_SEAT`, `_NO_BOARD` and `_LOGDIFF`; a setting an entry leaves out comes from the environment, else it is empty; `duration` is the seconds the entry gets, default its scenario's). The control file line that starts an entry carries its settings, and the bots set them right before it starts. Between duels each bot's Gwent state starts over, it goes back to its start point and reads its money again. Each entry gets its own `RESULT <label>` line and, for `gwent_duel`, its own duel_logdiff and result check on its part of the logs (kept in `entries\<NN>-<label>\` of the run folder). If an entry hangs (no verdict within its time) or a game ends during it (unless it is bot 1 quitting on purpose with `W3T_GWENT_EXIT_AT`, which ends the launch after that entry), it fails and the harness starts fresh games (`launch2\` and so on) for the next entry; a failed entry is not retried, but an entry that never started (a game ended or hung before it began) gets one more try in fresh games. Before a duel in a `--matrix` session, a bot in combat removes the hostile monsters near it (Witcher Online shows no challenge to a player in combat). All entries play on the deployed board: a rebuilt board needs a fresh deploy and a new run. |
 | `run_test.py showcase --size 960x540 --record 240 --record-from "SHOWCASE start"` (with `W3T_TICK=0.25`) | A representative co-op session to film: the bots meet, form a party, run together and fight two waves side by side with swords and all five signs. `--record` films both windows side by side with ffmpeg (`video.mp4` in the run folder); `--size` sets the window and render resolution. |
 | `run_test.py film --size 960x540 --record 340 --record-from "FILM ready"` (with `W3T_TICK=0.25`) | One unbroken co-op session, played rather than staged, for the feature reel. It opens where the save starts, with both players already standing together: the leader is on its horse (it got on before the filming - see the horse notes below), the member runs to it and climbs on behind, they ride, get off, greet each other with chat and an emote, and only then travel to the nearest monster nest, where they fight drowners side by side with swords and signs, shoot the crossbow, take a limb off one with a killing blow, loot what a shared kill leaves, charm another with Axii, and open the player menu. Each chapter logs `FILM chapter <name>`, which is where `montage.py` cuts. The only teleport after `FILM ready` is the travel to the nest, which has a chapter of its own (`travel`) so the reel can leave it out; anything else closed outright says so in the log. Filming starts only once the marker is in EVERY bot's log plus `--record-settle` seconds, since a bot logs its first lines while its game is still on the loading screen, and a window something covers is drawn with PrintWindow instead of copied from the screen, so no other window's picture can reach the film. A run of a single scenario writes no `SCENARIO x start` line, so film those from `"LOADING screen finished"` with a longer `--record-settle`. |
-| `run_test.py horse_drive --bots 1 --duration 220` (with `W3T_TICK=0.25`) | A probe, not a feature test: can a ridden horse be driven from script? It mounts and then tries five ways towards a spot 40 m off, 10 s each - the rider's own move action, the horse's own, the horse's with manual control taken away, the gallop speed the player's input would set, and vanilla's follow-another-horse with a loose horse sent ahead as the control. On 5.0.0.1090142 every one of them moves it 0 m, and the loose horse nobody rides does not move either; players on foot do run with `ActionMoveToAsync`. It fails by design, so an engine change that makes one of them work will show up. |
+| `run_test.py horse_drive --bots 1 --duration 260` (with `W3T_TICK=0.25`) | Can a ridden horse be driven from script? It mounts and tries six ways towards a spot 40 m off, 10 s each, and logs how far each one moved it - the rider's own move action, the horse's own, the horse's with manual control taken away, the gallop speed the player's input would set, vanilla's follow-another-horse with a loose horse sent ahead as the control, and the stick the rider's input would have given it, put in where the horse reads it. On 5.0.0.1090142 the first five move it 0 m and the sixth 28 m, so it passes on that one; `W3T_HORSE_AT_NEST=1` runs it where the film rides instead of where the save starts. |
 | `python fluency.py <video.mp4> [--half left|right|both|all]` | How a recording moves, from ffmpeg's frame-to-frame difference: how many frames really change (new pictures a second), where a window stood still (`--freeze`), and where the picture jumped (`--jump`, which is what a teleport looks like). `--half` judges one game's window or each in turn. |
 | `python run_suite.py [--steam-box <box> [--all]] [--no-session]` | The scenarios above with a summary table. Those that can share a game run as one session; quest_sync, quest_catchup, scene_follow, dialog_sync, facts_sync and real_encounter get fresh games (scene_follow ends inside a cutscene that ignores a skip, so nothing can follow it in the same game). Over Steam only 4 scenarios run by default (only the transport differs): movement, shared_enemy, member_combat, sign_visuals. `python run_suite.py gwent_duel` runs the Gwent duel deck/seed matrix instead (`GWENT_DUEL_MATRIX`: one gwent_duel per deck pair, seed and switches; not part of the default), as `run_test.py --matrix` sessions of several duels per game launch (`--no-session`: fresh games for every duel). |
 | `python server_coop_test.py` | The server's co-op channel with two fake clients, no game. |
@@ -70,28 +70,33 @@ with an earlier one.
 
 ### Horses, as far as a bot can take them
 
-Four things the filming found on 5.0.0.1090142, all of them the engine's doing rather than the mod's:
+What the filming found on 5.0.0.1090142. The first three still stand; the fourth (that a horse moves only for a
+real keystroke, so an unattended ride was impossible) was **wrong**, and what replaced it is below.
 
-- **A ridden horse cannot be driven from script.** `horse_drive` tries five ways and every one moves it 0 m. A
-  horse nobody rides ignores a move action too, so there is no AI path to a horse that goes somewhere. Players on
-  foot do run (`ActionMoveToAsync`), which is what the film's own movement rests on.
-- **Getting on a horse a second time is refused.** Mount, dismount, and from then on `InstantMountPlayer` does
-  nothing however it is asked for - from beside the horse, from on top of it, with the player's actions cancelled
-  first (cancelling them is worse: it kills the mount the call before it started). So a filmed session gets on its
-  horse once, before the recording starts, and stays on it. The ground where the save starts has no navigation
-  mesh at all - a move action there is accepted and the player never takes a step - so the session gets on its
-  horse there and travels to the nest, still mounted and before any filming, to ride on ground that can be
-  walked on.
-- **An attack pulls a rider off.** Near a monster nest a leader waiting on horseback is on foot within seconds,
-  and the logs show `CBTTaskAttack` just before, so the film clears what the nest has sent while the two of them
-  gather and ride.
-- **A horse moves only for a real keystroke, and an unattended run cannot give it one.** `run_test.py` holds the
-  forward key when a filmed session logs `FILM drive <seconds>`, but a keystroke goes to whichever window has the
-  keyboard focus, and a test game refuses it: `SetForegroundWindow` reports success and leaves the desktop with no
-  foreground window at all (class `W2ViewportClass`; `--window normal` makes no difference, nor does
-  `SwitchToThisWindow`). Posted key messages are ignored, the engine reading raw input, which needs focus. It
-  worked exactly once - 46 m of real riding - while the owner was using the machine, their own input having
-  released the foreground lock. So a filmed ride stands still unless somebody is at the PC.
+- **No move action will drive a ridden horse.** `horse_drive` tries five of them and every one moves it 0 m: the
+  rider's own, the horse's own, the horse's with manual control taken away, the gallop speed the player's input
+  would set, and vanilla's follow-another-horse. A horse nobody rides ignores a move action too. Players on foot
+  do run (`ActionMoveToAsync`).
+- **Getting on a horse a second time is refused.** After a mount and an instant dismount, `InstantMountPlayer`
+  does nothing from any distance; `ActionCancelAll` before it is worse, since it kills the mount the previous
+  call started. Mount once and stay on.
+- **An attack pulls a rider off.** Near a monster nest a bot waiting on horseback is on foot within seconds.
+- **But a horse can be ridden with no keyboard at all.** The sixth way moves it: not by simulating a keystroke
+  better, but by putting the value the keystroke would have produced where the horse actually reads it. A key
+  goes to whichever window holds the keyboard focus and a test game will not take it (`SetForegroundWindow`
+  reports success and leaves the desktop with no foreground window; `SwitchToThisWindow`, `--window normal` and
+  posted key messages all change nothing, because the engine reads raw input). None of that matters, because the
+  key's whole effect on a ridden horse is one pair of numbers - the stick the rider's input gives it, which
+  `W3HorseComponentStateExploration` reads once a frame and hands to its own `ProcessControlInput`. The test bot
+  wraps that function and supplies the pair (`W3T_DriveHorse`, `W3T_DriveHorseTowards` in `w3test.ws`), steering
+  by heading against the camera's, or the horse's own where it is controlled in local space. Measured: 28 m in
+  10 s at the save, steered to within 14 m of a spot 40 m off, and 48 m in a filmed session - with both games
+  unfocused and nobody at the machine.
+- **A horse only goes where its navigation can carry it.** Asked to walk into ground the navigation mesh does not
+  cover, its own state still reports a trot (`dest=1 curr=2`) while the body stays put: the first filmed ride at
+  the nest covered 3 m for exactly that reason. The ride is aimed at a spot from `W3T_WalkableSpot` now, and
+  covers its 48 m. `W3T_HORSE_AT_NEST=1` runs the probe where the film rides, for telling a place that will not
+  carry a horse from a way of driving that does not work.
 
 Under the test bot (`w3test.asi`, which runs only when the harness sets `W3T_DOCUMENTS`), each game uses a
 throwaway Documents folder. That folder holds copies of your settings and of your newest save (or `--save SUBSTR`),

@@ -252,14 +252,30 @@ function W3T_FilmLeader(bot : W3T_Bot, client : r_MultiplayerClient, coop : r_Co
             }
             return false;
         }
-        // a horse will not be driven from script on this build: the harness holds the forward key on this
-        // window for as long as a "FILM drive" line asks, and the camera says which way that is
+        // The horse is ridden the way a player rides it: the forward stick goes in where the key would have put
+        // it, inside the game, so no window needs the keyboard focus (W3T_DriveHorse in w3test.ws).
         if(member.isRiding && bot.scenarioSeenAt == 0)
         {
             bot.scenarioSeenAt = bot.ElapsedS();
             W3T_Log("FILM the member is on the horse");
             mpghosts_chat("Hold on.");
-            W3T_Log("FILM drive 14");
+            // towards ground a horse can cross: it is carried by its own navigation, and asked to walk into
+            // anything else its state still reads "trotting" while the body stays where it is
+            bot.scenarioVec = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 30.0);
+            if(bot.scenarioVec.W == 0)
+            {
+                bot.scenarioVec = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 15.0);
+            }
+            if(bot.scenarioVec.W != 0)
+            {
+                theGame.W3T_DriveHorseTowards(15.0, bot.scenarioVec);
+                W3T_Log("FILM the two of them ride off towards " + W3T_VecStr(bot.scenarioVec));
+            }
+            else
+            {
+                theGame.W3T_DriveHorse(15.0);
+                W3T_Log("FILM the two of them ride off, nowhere in particular");
+            }
         }
         if((bot.scenarioSeenAt > 0 && bot.ElapsedS() - bot.scenarioSeenAt > 17) || phase > 50)
         {

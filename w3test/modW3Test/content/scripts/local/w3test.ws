@@ -719,3 +719,106 @@ state W3T_Running in W3T_Bot
 state W3T_RunningAgain in W3T_Bot extends W3T_Running
 {
 }
+
+// Driving a horse without a keyboard.
+// A keystroke, however faithfully it is simulated, goes to the window with the keyboard focus, and a test game
+// never has it. But the key's whole effect on a ridden horse is one pair of numbers: the stick the rider's
+// input gives it, which the horse's own state reads once a frame and hands to ProcessControlInput. So the
+// numbers go in there instead - the same place the key would have put them, with no window needing the focus.
+// The horse's state turns that stick into a world direction against the camera's heading, or against its own
+// when it is steered in local space, so the sign here is read back the same way.
+@addField(CR4Game)
+var w3t_horseDriveUntil : float;
+
+// where to steer; W = 0 means straight on
+@addField(CR4Game)
+var w3t_horseDriveTo : Vector;
+
+@addMethod(CR4Game)
+function W3T_DriveHorse(seconds : float)
+{
+    var nowhere : Vector;
+
+    w3t_horseDriveUntil = theGame.GetEngineTimeAsSeconds() + seconds;
+    w3t_horseDriveTo = nowhere;
+}
+
+@addMethod(CR4Game)
+function W3T_DriveHorseTowards(seconds : float, spot : Vector)
+{
+    w3t_horseDriveUntil = theGame.GetEngineTimeAsSeconds() + seconds;
+    spot.W = 1;
+    w3t_horseDriveTo = spot;
+}
+
+@addField(CR4Game)
+var w3t_horseNoteAt : float;
+
+// once a second while a drive is on
+@addMethod(CR4Game)
+function W3T_HorseDriveDue() : bool
+{
+    if(theGame.GetEngineTimeAsSeconds() - w3t_horseNoteAt < 1.0)
+    {
+        return false;
+    }
+    w3t_horseNoteAt = theGame.GetEngineTimeAsSeconds();
+    return true;
+}
+
+@addMethod(CR4Game)
+function W3T_HorseDriving() : bool
+{
+    return theGame.GetEngineTimeAsSeconds() < w3t_horseDriveUntil;
+}
+
+// the stick that asks for this heading, read against whichever heading the horse measures its input from
+@addMethod(CR4Game)
+function W3T_HorseStick(reference : float) : Vector
+{
+    var stick, towards : Vector;
+
+    stick.Y = 1.0;
+    if(w3t_horseDriveTo.W == 0 || !thePlayer)
+    {
+        return stick;
+    }
+    towards = w3t_horseDriveTo - thePlayer.GetWorldPosition();
+    if(VecLength2D(towards) < 1.0)
+    {
+        return stick;
+    }
+    return VecFromHeading(AngleDistance(VecHeading(towards), reference));
+}
+
+@wrapMethod(W3HorseComponentStateExploration)
+function ProcessControlInput(lr : float, fb : float, timeDelta : float, useLocalSpace : bool)
+{
+    var stick : Vector;
+    var reference : float;
+
+    if(theGame.W3T_HorseDriving())
+    {
+        if(useLocalSpace)
+        {
+            reference = parent.GetEntity().GetHeading();
+        }
+        else
+        {
+            reference = theCamera.GetCameraHeading();
+        }
+        stick = theGame.W3T_HorseStick(reference);
+        lr = stick.X;
+        fb = stick.Y;
+        // the horse's own gates, from inside its state: which of them is holding it, when one is
+        if(theGame.W3T_HorseDriveDue())
+        {
+            W3T_Log("HORSE stick=" + FloatToStringPrec(lr, 2) + "," + FloatToStringPrec(fb, 2)
+                + " movable=" + thePlayer.GetIsMovable() + " restriction=" + FloatToStringPrec(speedRestriction, 1)
+                + "/" + FloatToStringPrec(speedRestriction2, 1) + " dest=" + FloatToStringPrec(destSpeed, 1)
+                + " curr=" + FloatToStringPrec(currSpeed, 1) + " locked=" + IsSpeedLocked()
+                + " dismount=" + dismountRequest + " localSpace=" + useLocalSpace);
+        }
+    }
+    wrappedMethod(lr, fb, timeDelta, useLocalSpace);
+}

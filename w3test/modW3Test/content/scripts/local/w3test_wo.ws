@@ -1163,16 +1163,54 @@ function W3T_LooseHorseReport(bot : W3T_Bot) : string
 }
 
 // horse_drive: whether a bot can ride its horse somewhere rather than teleport it, which is what filming needs.
-// Mounts, then tries three ways in turn for 10 s each towards a spot 40 m off, and logs how far the horse got: the
-// rider's own move action, the horse's own, and the horse's with the manual control a mounted horse has taken away
-// (what quests do when a horse carries its rider by itself). Passes if one of them moved it more than 12 m.
+// Mounts, then tries six ways in turn for 10 s each towards a spot 40 m off, and logs how far the horse got: the
+// rider's own move action, the horse's own, the horse's with the manual control a mounted horse has taken away
+// (what quests do when a horse carries its rider by itself), the speed the player's input would set, vanilla's
+// follow-another-horse, and the forward axis put in where the input would have put it. Passes if one of them
+// moved it more than 12 m.
 function W3T_HorseDrive(bot : W3T_Bot) : bool
 {
     var horse : CNewNPC;
     var comp : W3HorseComponent;
-    var phase, moved : float;
+    var phase, moved, carried : float;
+    var label : string;
     var pos : Vector;
 
+    // W3T_HORSE_AT_NEST: try it where the film rides rather than where the save starts, since a place that will
+    // not carry a horse looks exactly like a way of driving that does not work. Before the mount: a teleport
+    // with a horse underneath drags it along.
+    if(W3T_GetEnv("W3T_HORSE_AT_NEST") != "" && !bot.scenarioFlag2)
+    {
+        if(bot.scenarioStep == 0)
+        {
+            bot.scenarioStep = 1;
+            bot.scenarioVec = W3T_NearestNest(label);
+            if(bot.scenarioVec.W == 0)
+            {
+                W3T_FailScenario("no nest to ride at");
+                return false;
+            }
+            thePlayer.Teleport(bot.scenarioVec + Vector(0, 0, 2));
+            bot.scenarioTime = bot.ElapsedS();
+            W3T_Log("DRIVE at the nest " + label + " " + W3T_VecStr(bot.scenarioVec));
+            return false;
+        }
+        if(bot.ElapsedS() - bot.scenarioTime < 10.0)
+        {
+            return false;    // the navigation mesh takes some seconds after a jump this long
+        }
+        // onto ground, not into the air beside the mound: a jump that misses it falls for ever
+        bot.scenarioVec = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 8.0);
+        if(bot.scenarioVec.W == 0)
+        {
+            W3T_FailScenario("no ground by the nest to start from");
+            return false;
+        }
+        thePlayer.Teleport(bot.scenarioVec);
+        bot.scenarioFlag2 = true;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
     if(!thePlayer.IsUsingHorse())
     {
         if(bot.ElapsedS() - bot.scenarioTime >= 5.0)
@@ -1182,6 +1220,10 @@ function W3T_HorseDrive(bot : W3T_Bot) : bool
             W3T_Log("DRIVE mount");
         }
         return false;
+    }
+    if(bot.scenarioFlag)
+    {
+        return bot.scenarioValue >= 12.0;   // every way has had its turn; the verdict stands from here
     }
     horse = thePlayer.GetHorseCurrentlyMounted();
     if(!horse)
@@ -1196,7 +1238,9 @@ function W3T_HorseDrive(bot : W3T_Bot) : bool
         if(bot.scenarioCount > 0)
         {
             moved = VecDistance2D(pos, bot.scenarioPos);
-            W3T_Log("DRIVE way " + bot.scenarioCount + " moved the horse " + FloatToStringPrec(moved, 1) + " m");
+            carried = VecLength2D(horse.GetMovingAgentComponent().GetVelocity());
+            W3T_Log("DRIVE way " + bot.scenarioCount + " moved the horse " + FloatToStringPrec(moved, 1)
+                + " m, its own speed now " + FloatToStringPrec(carried, 2) + " m/s");
             if(moved > bot.scenarioValue)
             {
                 bot.scenarioValue = moved;
@@ -1207,15 +1251,18 @@ function W3T_HorseDrive(bot : W3T_Bot) : bool
         bot.scenarioCount += 1;
         bot.scenarioTime = bot.ElapsedS();
         bot.scenarioPos = pos;
-        bot.scenarioVec = W3T_WalkableSpot(pos, 40.0);
-        if(bot.scenarioVec.W == 0)
+        if(bot.scenarioCount <= 6)   // the pass after the last way only reports; it needs nowhere to ride to
         {
-            bot.scenarioVec = W3T_WalkableSpot(pos, 20.0);
-        }
-        if(bot.scenarioVec.W == 0)
-        {
-            W3T_FailScenario("nowhere to ride to from " + W3T_VecStr(pos));
-            return false;
+            bot.scenarioVec = W3T_WalkableSpot(pos, 40.0);
+            if(bot.scenarioVec.W == 0)
+            {
+                bot.scenarioVec = W3T_WalkableSpot(pos, 20.0);
+            }
+            if(bot.scenarioVec.W == 0)
+            {
+                W3T_FailScenario("nowhere to ride to from " + W3T_VecStr(pos));
+                return false;
+            }
         }
         if(bot.scenarioCount == 1)
         {
@@ -1260,6 +1307,19 @@ function W3T_HorseDrive(bot : W3T_Bot) : bool
                 comp.SetCanFollowNpc(true, W3T_HorseComponentOf((CActor)bot.scenarioEntity));
             }
         }
+        else if(bot.scenarioCount == 6)
+        {
+            // The sixth: the forward axis itself. A key cannot reach a window without the keyboard focus, but
+            // its whole effect on a ridden horse is the number the horse's own state reads once a frame, so the
+            // value goes in where the input would have (the ProcessControlInput wrap in w3test.ws).
+            W3T_Log("DRIVE way 6: the forward axis the key would have set, from inside the game");
+            if(comp)
+            {
+                comp.SetManualControl(true);
+                comp.SetCanFollowNpc(false, NULL);
+            }
+            theGame.W3T_DriveHorseTowards(10.5, bot.scenarioVec);
+        }
         else
         {
             if(comp)
@@ -1273,6 +1333,7 @@ function W3T_HorseDrive(bot : W3T_Bot) : bool
                 W3T_FailScenario("no way of driving the horse moved it: best "
                     + FloatToStringPrec(bot.scenarioValue, 1) + " m");
             }
+            bot.scenarioFlag = true;
             return bot.scenarioValue >= 12.0;
         }
         return false;

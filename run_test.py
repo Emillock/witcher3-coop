@@ -338,112 +338,6 @@ def covered(hwnd, x, y, w, h):
     return False
 
 
-# A keystroke the game will take: it reads the keyboard through whichever window has the focus, so the window is
-# brought forward first. Scancodes, not virtual keys: the game reads raw input.
-SC_W, SC_SHIFT, SC_ALT = 0x11, 0x2A, 0x38
-VK_W = 0x57
-KEYEVENTF_SCANCODE, KEYEVENTF_KEYUP = 0x0008, 0x0002
-
-
-class INPUT_union(ctypes.Union):
-    class KEYBDINPUT(ctypes.Structure):
-        _fields_ = [("wVk", wt.WORD), ("wScan", wt.WORD), ("dwFlags", wt.DWORD), ("time", wt.DWORD),
-                    ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))]
-    _fields_ = [("ki", KEYBDINPUT), ("pad", ctypes.c_byte * 32)]
-
-
-class INPUT(ctypes.Structure):
-    _fields_ = [("type", wt.DWORD), ("u", INPUT_union)]
-
-
-user32.SendInput.argtypes = [wt.UINT, ctypes.c_void_p, ctypes.c_int]
-user32.SetForegroundWindow.argtypes = [wt.HWND]
-user32.BringWindowToTop.argtypes = [wt.HWND]
-user32.ShowWindow.argtypes = [wt.HWND, ctypes.c_int]
-user32.AttachThreadInput.argtypes = [wt.DWORD, wt.DWORD, wt.BOOL]
-user32.SwitchToThisWindow.argtypes = [wt.HWND, wt.BOOL]
-user32.PostMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
-kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-
-def send_key(scan, down):
-    event = INPUT(type=1)
-    event.u.ki.wScan = scan
-    event.u.ki.dwFlags = KEYEVENTF_SCANCODE | (0 if down else KEYEVENTF_KEYUP)
-    user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(INPUT))
-
-
-def post_key(hwnd, seconds, stop):
-    """Hold forward by posting key messages to the window: no focus needed, and a held key is a stream of
-    WM_KEYDOWN with the repeat bit set, which is what a real keyboard sends."""
-    held = (SC_W << 16) | 1
-    user32.PostMessageW(hwnd, 0x0100, VK_W, held)                  # WM_KEYDOWN
-    until = time.time() + seconds
-    while time.time() < until:
-        user32.PostMessageW(hwnd, 0x0100, VK_W, held | (1 << 30))  # ...and again, as a repeat
-        if stop.wait(0.03):
-            break
-    user32.PostMessageW(hwnd, 0x0101, VK_W, held | (1 << 30) | (1 << 31))  # WM_KEYUP
-
-
-def to_foreground(hwnd):
-    """Put this window in front, the way Windows allows it: a process that is not already in front has to
-    attach to the foreground thread first, and a keystroke releases the foreground lock. Returns whether the
-    window really ended up there."""
-    if user32.GetForegroundWindow() == hwnd:
-        return True
-    mine = kernel32.GetCurrentThreadId()
-    theirs = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
-    attached = bool(theirs) and bool(user32.AttachThreadInput(mine, theirs, True))
-    send_key(SC_ALT, True)          # the tap that lets this process raise a window
-    send_key(SC_ALT, False)
-    user32.ShowWindow(hwnd, 9)      # SW_RESTORE
-    user32.BringWindowToTop(hwnd)
-    user32.SetForegroundWindow(hwnd)
-    if user32.GetForegroundWindow() != hwnd:
-        user32.SwitchToThisWindow(hwnd, True)   # gets past the foreground lock where the above is refused
-    if attached:
-        user32.AttachThreadInput(mine, theirs, False)
-    return user32.GetForegroundWindow() == hwnd
-
-
-def drive(hwnd, seconds, stop):
-    """Hold forward (and shift, for a gallop) on that window for this long, then give the focus back."""
-    was = user32.GetForegroundWindow()
-    if not to_foreground(hwnd):
-        # no focus to be had: post the key into the game's own queue instead, which needs none
-        print("drive: the game would not come to the front; posting the key to it instead", flush=True)
-        post_key(hwnd, seconds, stop)
-        return
-    if stop.wait(0.4):
-        return
-    for scan in (SC_W, SC_SHIFT):
-        send_key(scan, True)
-    stop.wait(seconds)
-    for scan in (SC_W, SC_SHIFT):
-        send_key(scan, False)
-    if was:
-        to_foreground(was)
-
-
-def drive_watch(run_dir, procs, stop):
-    """Watches the bots' logs for "FILM drive <seconds>" and holds the key on that bot's window."""
-    seen, hwnds = set(), {}
-    while not stop.wait(0.5):
-        for i, p in enumerate(procs):
-            text = read_log(run_dir, i)
-            for m in re.finditer(r"(\d\d:\d\d:\d\d\.\d\d\d) FILM drive ([\d.]+)", text):
-                if m.group(1) in seen:
-                    continue
-                seen.add(m.group(1))
-                hwnd = hwnds.get(i) or game_window(p.pid)
-                hwnds[i] = hwnd
-                if not hwnd:
-                    continue
-                print(f"driving {bot_name(i)} forward for {m.group(2)} s", flush=True)
-                drive(hwnd, float(m.group(2)), stop)
-
-
 def record(run_dir, procs, a, stop, fps=30):
     # films both bots' windows side by side, from --record-from in EVERY bot's log (a bot logs its first lines while
     # its game is still on the loading screen, and the one that starts last is still loading when the first is playing)
@@ -708,8 +602,6 @@ def launch(a: argparse.Namespace, game_args: list[str], run_dir: str, session: l
             if a.record > 0 and len(procs) == a.bots and not recorder:
                 recorder = threading.Thread(target=record, args=(run_dir, procs, a, shots_stop))
                 recorder.start()
-                # a filmed session asks for the forward key to be held when it wants its horse to move
-                threading.Thread(target=drive_watch, args=(run_dir, procs, shots_stop), daemon=True).start()
             if time.time() >= next_stats:
                 next_stats = time.time() + 15
                 mem = ", ".join(f"{bot_name(i)} {private_mb(p.pid)} MB" for i, p in enumerate(procs) if p.poll() is None)
