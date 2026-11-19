@@ -144,9 +144,10 @@ where it was, never on how it got there or on what it left behind. Every run now
 ### What a copy of a *player* is judged on
 
 A remote player's character is moved the same way a copy of a monster is, and had the same two faults. The
-figures are on `r_RemotePlayer` and the `rider_sync` watcher prints them: `carryStep` (the fastest that
-character was seen to move here, m/s), `carryFar` (the longest single frame of it, m), `carryJumps` and
-`putBacks`. `SYNC RJ` logs each jump with the frame, the allowance, the gap and how long ago its own game last
+figures are on `r_RemotePlayer`, and every run carries them: each player's bracket in the `WO` line prints
+`carry=<fastest m/s>/<longest frame m> jumps=<n> putBack=<n>`, so a regression shows up in any log, while
+`rider_sync` is the scenario that fails on it. `carryStep` is the fastest that character was seen to move here,
+`carryFar` the longest single frame of it, `carryJumps` the frames its own travel cannot account for. `SYNC RJ` logs each jump with the frame, the allowance, the gap and how long ago its own game last
 put it somewhere else.
 
 - **The horse appeared further along.** Its copy was slid to the last position heard in one adjustment of

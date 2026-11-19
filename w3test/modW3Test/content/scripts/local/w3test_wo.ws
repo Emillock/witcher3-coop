@@ -1271,15 +1271,17 @@ function W3T_RiderSyncWatcher(bot : W3T_Bot, peer : r_RemotePlayer) : bool
     }
     W3T_Log("RIDE copy at " + W3T_VecStr(horsePos) + " travelled " + FloatToStringPrec(bot.scenarioValue, 1)
         + " m, behind its own position by " + FloatToStringPrec(VecDistance2D(horsePos, peer.pos), 2)
-        + " m, fastest carry " + FloatToStringPrec(peer.carryStep, 1) + " m/s against "
+        + " m, fastest carry " + FloatToStringPrec(peer.carryStep, 1) + " m/s a frame and "
+        + FloatToStringPrec(peer.carryRun, 1) + " over a quarter second against "
         + FloatToStringPrec(peer.CarryAllowed(), 1) + " allowed, jumps " + peer.carryJumps
         + ", longest frame " + FloatToStringPrec(peer.carryFar, 2) + " m, put back " + peer.putBacks
         + ", heard every " + FloatToStringPrec(peer.posPeriod, 3) + " s");
     if(peer.carryJumps > 0)
     {
         W3T_FailScenario("the copy of a rider was carried faster than its ride explains " + peer.carryJumps
-            + " times: up to " + FloatToStringPrec(peer.carryStep, 1) + " m/s, " + FloatToStringPrec(peer.carryFar, 2)
-            + " m in one frame, while its own horse was doing " + FloatToStringPrec(peer.horseSpeed, 1) + " m/s");
+            + " times: up to " + FloatToStringPrec(peer.carryRun, 1) + " m/s over a quarter second, "
+            + FloatToStringPrec(peer.carryFar, 2) + " m in one frame, while its own horse was doing "
+            + FloatToStringPrec(peer.horseSpeed, 1) + " m/s");
         return false;
     }
     return bot.scenarioValue >= 40.0;
@@ -1838,13 +1840,14 @@ function W3T_SpotInView(from : Vector) : Vector
 
 function W3T_WalkableSpot(from : Vector, range : float) : Vector
 {
-    var spot, safe : Vector;
+    var spot, safe, origin : Vector;
     var i : int;
 
+    origin = W3T_WalkableFrom(from);
     for(i = 0; i < 16; i += 1)
     {
-        spot = from + VecFromHeading(i * 22.5) * range;
-        if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 3.0, safe) && theGame.GetWorld().NavigationLineTest(from, safe, 0.5))
+        spot = origin + VecFromHeading(i * 22.5) * range;
+        if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 3.0, safe) && theGame.GetWorld().NavigationLineTest(origin, safe, 0.5))
         {
             safe.W = 1;
             return safe;
@@ -1852,6 +1855,45 @@ function W3T_WalkableSpot(from : Vector, range : float) : Vector
     }
     spot.W = 0;
     return spot;
+}
+
+// The line test below needs an origin the navigation knows about. A mounted player teleported about lands a
+// little off the mesh - a horse dragged along by a teleport leaves its rider slightly above or beside it - and
+// from an origin like that every one of the sixteen directions tests as blocked, which reads exactly like a
+// place with nowhere to ride to.
+function W3T_WalkableFrom(from : Vector) : Vector
+{
+    var safe : Vector;
+
+    if(theGame.GetWorld().NavigationFindSafeSpot(from, 0.5, 3.0, safe))
+    {
+        return safe;
+    }
+    return from;
+}
+
+// why a lookup found nothing: how many of the sixteen directions had ground, and how many of those could be
+// reached in a straight line from here
+function W3T_WalkableReport(from : Vector, range : float) : string
+{
+    var spot, safe, origin : Vector;
+    var i, ground, reachable : int;
+
+    origin = W3T_WalkableFrom(from);
+    for(i = 0; i < 16; i += 1)
+    {
+        spot = origin + VecFromHeading(i * 22.5) * range;
+        if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 3.0, safe))
+        {
+            ground += 1;
+            if(theGame.GetWorld().NavigationLineTest(origin, safe, 0.5))
+            {
+                reachable += 1;
+            }
+        }
+    }
+    return "at " + FloatToStringPrec(range, 0) + " m: " + ground + "/16 with ground, " + reachable
+        + " of those reachable from " + W3T_VecStr(origin) + (VecDistance(origin, from) > 0.01 ? " (moved onto the mesh)" : "");
 }
 
 // W3T_COUNTER=N: every N s in combat the monster is told to counter-attack, as after a few hits (a fugas' vomit, a
@@ -3835,13 +3877,36 @@ function W3T_RideAlongRider(bot : W3T_Bot, client : r_MultiplayerClient, peer : 
     {
         bot.scenarioCount += 1;
         bot.scenarioStep = 0;
+        // Nearer and nearer: late in a session the pair end up wherever the last scenario left them, and
+        // ground with no navigation within twelve metres had this spin for the whole duration and then
+        // report a ride that was never refused - 331 s of a suite run, every run.
         spot = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 12.0);
         if(spot.W == 0)
         {
-            W3T_Log("RIDE rider found nowhere to ride to");
+            spot = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 8.0);
+        }
+        if(spot.W == 0)
+        {
+            spot = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 5.0);
+        }
+        if(spot.W == 0)
+        {
             bot.scenarioCount -= 1;      // try again next tick rather than counting a hop nobody made
+            if(bot.scenarioFarSince == 0)
+            {
+                bot.scenarioFarSince = bot.ElapsedS();
+                W3T_Log("RIDE rider found nowhere to ride to from " + W3T_VecStr(thePlayer.GetWorldPosition()));
+            }
+            else if(bot.ElapsedS() - bot.scenarioFarSince > 20.0)
+            {
+                W3T_FailScenario("nowhere within 12 m of " + W3T_VecStr(thePlayer.GetWorldPosition())
+                    + " a horse can be ridden to, so the ride could not be tested - "
+                    + W3T_WalkableReport(thePlayer.GetWorldPosition(), 12.0) + "; "
+                    + W3T_WalkableReport(thePlayer.GetWorldPosition(), 5.0));
+            }
             return false;
         }
+        bot.scenarioFarSince = 0;
         thePlayer.Teleport(spot);
         W3T_Log("RIDE rider rode off to " + W3T_VecStr(spot) + " (hop " + bot.scenarioCount + ")");
         return false;
@@ -7464,6 +7529,11 @@ function W3T_ReportExtra(bot : W3T_Bot)
         {
             line += " ghost=none";
         }
+        // how its character has been moved here: the fastest, the longest single frame, and the frames its
+        // own travel cannot account for. rider_sync fails on the last of these; every run carries the figures.
+        line += " carry=" + FloatToStringPrec(players[i].carryRun, 1) + "/"
+            + FloatToStringPrec(players[i].carryFar, 2) + " jumps=" + players[i].carryJumps
+            + " putBack=" + players[i].putBacks + "/" + players[i].toldFollows;
         line += "]";
     }
     W3T_Log(line);
