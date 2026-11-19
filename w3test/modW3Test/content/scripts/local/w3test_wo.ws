@@ -1118,13 +1118,25 @@ function W3T_RiderSyncRider(bot : W3T_Bot) : bool
     var here, aim : Vector;
     var leg : float;
 
+    if(bot.scenarioSeenAt == 0)
+    {
+        bot.scenarioSeenAt = bot.ElapsedS();   // when this scenario began, which the bot's own clock is not
+    }
     if(!thePlayer.IsUsingHorse())
     {
         if(bot.ElapsedS() - bot.scenarioTime >= 5.0)
         {
             bot.scenarioTime = bot.ElapsedS();
             InstantMountPlayer('None', EVT_Horse, false, false);
-            W3T_Log("RIDE mount");
+            W3T_Log("RIDE mount at " + W3T_VecStr(thePlayer.GetWorldPosition()));
+        }
+        // A minute of asking is not a horse that will come. Where another scenario has left the player far
+        // outside the world the save opens in, nothing about riding can be measured, and saying so beats
+        // waiting out the duration in silence.
+        if(bot.ElapsedS() - bot.scenarioSeenAt > 60.0)
+        {
+            W3T_FailScenario("the rider never got onto a horse within a minute, at "
+                + W3T_VecStr(thePlayer.GetWorldPosition()));
         }
         return false;
     }
@@ -4165,9 +4177,30 @@ function W3T_IgniDamageLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
         GetWitcherPlayer().SetEquippedSign(ST_Igni);
         thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
         thePlayer.SetupCombatAction(EBAT_CastSign, BS_Pressed);
+        bot.scenarioStep += 1;
+    }
+    if(monster.HasBuff(EET_Burning))
+    {
+        bot.scenarioFlag = true;     // it caught at least once, so the sign is reaching it
     }
     W3T_Log("IGNI leader hp=" + FloatToStringPrec(monster.GetHealthPercents(), 3) + " start="
-        + FloatToStringPrec(bot.scenarioValue, 3) + " burning=" + monster.HasBuff(EET_Burning));
+        + FloatToStringPrec(bot.scenarioValue, 3) + " burning=" + monster.HasBuff(EET_Burning)
+        + " everBurnt=" + bot.scenarioFlag + " casts=" + bot.scenarioStep
+        + " dist=" + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()), 1)
+        + " stamina=" + FloatToStringPrec(thePlayer.GetStat(BCS_Stamina), 1)
+        + " combat=" + thePlayer.IsInCombat());
+    // Thirty seconds of casting with nothing ever catching fire is not this scenario's subject - the sign
+    // never reached the monster at all - and waiting out the whole duration to say so costs a suite run
+    // 330 s and reports nothing about the co-op side either way.
+    if(!bot.scenarioFlag && bot.ElapsedS() - bot.scenarioTime > 30.0
+        && monster.GetHealthPercents() >= bot.scenarioValue - 0.001)
+    {
+        W3T_FailScenario("the leader cast Igni " + bot.scenarioStep + " times and its own monster never caught "
+            + "fire or lost health, at " + FloatToStringPrec(VecDistance(thePlayer.GetWorldPosition(), monster.GetWorldPosition()), 1)
+            + " m with " + FloatToStringPrec(thePlayer.GetStat(BCS_Stamina), 1) + " stamina, in combat="
+            + thePlayer.IsInCombat() + ": the sign never landed, so nothing was shared either way");
+        return false;
+    }
     return monster.GetHealthPercents() <= bot.scenarioValue - 0.10;
 }
 
