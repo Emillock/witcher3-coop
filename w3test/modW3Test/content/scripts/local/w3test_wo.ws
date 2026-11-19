@@ -1152,22 +1152,37 @@ function W3T_RiderSyncRider(bot : W3T_Bot) : bool
         bot.scenarioFrom = here;
         bot.scenarioActAt = bot.ElapsedS();
     }
-    // Wedged: a horse that has gone nowhere for ten seconds is pushing into scenery that the ground it
-    // stands on knows nothing about, and no choice of heading will free it. It is lifted onto open ground -
-    // which its copy is meant to follow, and does, because a copy only jumps when it moves further than the
-    // position it was told (measureCarry).
+    // Wedged, or walled in: a horse that has gone nowhere for ten seconds is pushing into scenery the ground
+    // it stands on knows nothing about, or it is on a patch with nothing line-reachable off it at all (which is
+    // where another scenario can leave it). Either way no choice of heading frees it, so it is lifted onto open
+    // ground - ground only, since a lift needs no route - and tried again from there. Its copy follows without
+    // counting a jump, because a copy is only charged for moving further than the position it was told.
     if(bot.ElapsedS() - bot.scenarioActAt > 10.0)
     {
-        aim = W3T_WalkableSpot(bot.scenarioPos, 10.0);
-        if(aim.W != 0)
+        aim = W3T_SafeSpot(here, 25.0);
+        if(aim.W == 0)
         {
-            horse.Teleport(aim);
-            thePlayer.Teleport(aim);
-            W3T_Log("RIDE wedged at " + W3T_VecStr(here) + "; lifted onto " + W3T_VecStr(aim));
+            aim = W3T_SafeSpot(here, 50.0);
         }
+        if(aim.W == 0)
+        {
+            aim = W3T_SafeSpot(here, 10.0);
+        }
+        bot.scenarioStep += 1;
+        if(aim.W == 0 || bot.scenarioStep > 3)
+        {
+            W3T_FailScenario("the horse cannot be ridden anywhere from " + W3T_VecStr(here) + " after "
+                + bot.scenarioStep + " lifts onto open ground - " + W3T_WalkableReport(here, 35.0));
+            return false;
+        }
+        horse.Teleport(aim);
+        thePlayer.Teleport(aim);
+        bot.scenarioPos = aim;         // home moves with it, or every leg aims back into the trap
         bot.scenarioFrom = aim;
         bot.scenarioActAt = bot.ElapsedS();
         bot.scenarioTime = 0;
+        W3T_Log("RIDE nowhere to ride from " + W3T_VecStr(here) + "; lifted onto " + W3T_VecStr(aim)
+            + " (lift " + bot.scenarioStep + ")");
         return bot.scenarioCount >= 2;
     }
     // a new leg when the last one is ridden out, when its time is up, or when it got nowhere
@@ -1194,6 +1209,14 @@ function W3T_RiderSyncRider(bot : W3T_Bot) : bool
         {
             aim = bot.scenarioPos;   // home, which carried a horse when it set out
             aim.W = 1;
+        }
+        // An aim it is already standing on is no leg at all: that spun 156 times over one run, each ending
+        // the moment it began. Leave it for the lift above to deal with.
+        if(VecDistance2D(here, aim) < 5.0)
+        {
+            bot.scenarioCount -= 1;
+            bot.scenarioTime = 0;
+            return bot.scenarioCount >= 2;
         }
         bot.scenarioVec = aim;
         theGame.W3T_DriveHorseTowards(17.0, aim, true);
@@ -1848,6 +1871,29 @@ function W3T_WalkableSpot(from : Vector, range : float) : Vector
     {
         spot = origin + VecFromHeading(i * 22.5) * range;
         if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 3.0, safe) && theGame.GetWorld().NavigationLineTest(origin, safe, 0.5))
+        {
+            safe.W = 1;
+            return safe;
+        }
+    }
+    spot.W = 0;
+    return spot;
+}
+
+// Ground a character can stand on, without asking whether it can walk there in a straight line: for a
+// scenario that TELEPORTS to the spot, reachability is a condition it does not need, and demanding it made
+// ride_broken fail wherever the pair had ended up on an isolated patch - 12 of 16 directions with ground and
+// none of them line-reachable. Use W3T_WalkableSpot where something actually travels there.
+function W3T_SafeSpot(from : Vector, range : float) : Vector
+{
+    var spot, safe, origin : Vector;
+    var i : int;
+
+    origin = W3T_WalkableFrom(from);
+    for(i = 0; i < 16; i += 1)
+    {
+        spot = origin + VecFromHeading(i * 22.5) * range;
+        if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 3.0, safe))
         {
             safe.W = 1;
             return safe;
@@ -3877,17 +3923,18 @@ function W3T_RideAlongRider(bot : W3T_Bot, client : r_MultiplayerClient, peer : 
     {
         bot.scenarioCount += 1;
         bot.scenarioStep = 0;
-        // Nearer and nearer: late in a session the pair end up wherever the last scenario left them, and
-        // ground with no navigation within twelve metres had this spin for the whole duration and then
-        // report a ride that was never refused - 331 s of a suite run, every run.
-        spot = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 12.0);
+        // The hop below is a teleport, so ground is all it needs - not ground with a clear line to it. And
+        // nearer if need be: late in a session the pair are wherever the last scenario left them, and one
+        // lookup that found nothing had this spin for the whole duration and then report a ride that was
+        // never refused - 331 s of a suite run, every run.
+        spot = W3T_SafeSpot(thePlayer.GetWorldPosition(), 12.0);
         if(spot.W == 0)
         {
-            spot = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 8.0);
+            spot = W3T_SafeSpot(thePlayer.GetWorldPosition(), 8.0);
         }
         if(spot.W == 0)
         {
-            spot = W3T_WalkableSpot(thePlayer.GetWorldPosition(), 5.0);
+            spot = W3T_SafeSpot(thePlayer.GetWorldPosition(), 5.0);
         }
         if(spot.W == 0)
         {
@@ -3899,8 +3946,8 @@ function W3T_RideAlongRider(bot : W3T_Bot, client : r_MultiplayerClient, peer : 
             }
             else if(bot.ElapsedS() - bot.scenarioFarSince > 20.0)
             {
-                W3T_FailScenario("nowhere within 12 m of " + W3T_VecStr(thePlayer.GetWorldPosition())
-                    + " a horse can be ridden to, so the ride could not be tested - "
+                W3T_FailScenario("no ground within 12 m of " + W3T_VecStr(thePlayer.GetWorldPosition())
+                    + " to hop a horse to, so the ride could not be tested - "
                     + W3T_WalkableReport(thePlayer.GetWorldPosition(), 12.0) + "; "
                     + W3T_WalkableReport(thePlayer.GetWorldPosition(), 5.0));
             }

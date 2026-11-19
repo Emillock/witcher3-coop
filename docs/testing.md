@@ -12,6 +12,7 @@ with an earlier one.
 | `python run_test.py see_each_other` | Starts a local server and two games driven by the bot. They must spawn each other. |
 | `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
 | `python run_test.py horse_ride` | One bot calls its horse, mounts it and rides, then gets off and walks away; the other checks that its copy sits on Witcher Online's horse for remote riders, that the horse follows, and that it stays in sight where it was left. `W3T_HORSE_PARTY=1`: in a party. |
+| `python run_test.py ride_along` | A passenger climbs onto the rider's horse the way the player menu does, and must still be on it after the rider has ridden away twice. `ride_broken` is the same ride with the attachment broken on purpose, which must re-attach. Both look for somewhere to ride with `W3T_WalkableSpot`, which **puts its origin on the navigation mesh first**: a mounted player teleported about lands a little off it, and from there all sixteen directions fail their line test, which reads exactly like a place with nowhere to ride to. That cost `ride_broken` 331 s and a false failure in every suite session until 11-19. |
 | `python run_test.py rider_sync` | One bot really rides - mounts, spurs to a gallop and rides out and back, with no teleport in it (`W3T_DriveHorseTowards(..., fast)`); the other stands by the way and judges the ride it is shown. It fails the moment the copy is carried faster than its rider's own speed explains (twice it, floor 6 m/s), and needs 40 m of travel before it will pass, so a scenario where nothing moved passes nothing. `W3T_CARRY_REACH` / `W3T_CARRY_SLIDE` set the two numbers the carry is bounded by, for measuring one setting against another. |
 | `python run_test.py social` | One bot chats and makes two emotes (wave, bow); the other checks that the line shows over its copy and each emote plays on it. |
 | `python run_test.py shared_enemy` | Shared enemies ([design](docs/true-coop-design.md)). The second bot joins the first one's party. The first spawns a drowner; the second hits its copy three times. Both must agree on its health, and the copy must die when the first bot kills it. |
@@ -146,8 +147,17 @@ where it was, never on how it got there or on what it left behind. Every run now
 A remote player's character is moved the same way a copy of a monster is, and had the same two faults. The
 figures are on `r_RemotePlayer`, and every run carries them: each player's bracket in the `WO` line prints
 `carry=<fastest m/s>/<longest frame m> jumps=<n> putBack=<n>`, so a regression shows up in any log, while
-`rider_sync` is the scenario that fails on it. `carryStep` is the fastest that character was seen to move here,
-`carryFar` the longest single frame of it, `carryJumps` the frames its own travel cannot account for. `SYNC RJ` logs each jump with the frame, the allowance, the gap and how long ago its own game last
+`rider_sync` is the scenario that fails on it. `carryRun` is the fastest it was carried over a quarter of a
+second and the figure that is judged, `carryStep` the fastest single frame, `carryFar` the longest single frame
+in metres, `carryJumps` the counted jumps, and `putBacks`/`toldFollows` how often it was put where its player
+stands and how many of those followed its player's own travel.
+
+A **frame** is not what an eye catches, and the per-frame step swings by its own width for reasons that are not
+this world's doing: positions arrive every 40 ms while frames come every 31, so some frames get none and the
+next gets two, and the body's own gallop animation moves it in strides. So a jump is either an outright
+appearance - no horse covers a metre in one frame - or a quarter of a second of being carried faster than the
+ride explains. Judging single frames against a smoothed speed reported a copy that was tracking its own
+position to within 3 cm. `SYNC RJ` logs each jump with the frame, the allowance, the gap and how long ago its own game last
 put it somewhere else.
 
 - **The horse appeared further along.** Its copy was slid to the last position heard in one adjustment of
@@ -167,6 +177,13 @@ put it somewhere else.
   - has to appear here too, and no count of jumps may include that. A step is compared with how far the
   position this world was told moved, over a moment rather than within one frame, since the body follows a
   frame or two behind the word of it.
+- **And it followed a second late.** Measuring that turned up 366 carries of one shape over a suite run: the
+  position told moved 16.7 m, 1.07 s earlier, and the body arrived exactly on it now. That second is the
+  off-place timer - a slide cannot climb out of the water under a pier, so after a second the character is
+  simply put where its player stands - and a player who fast-travels is not stuck, so a friend watched their
+  character stand still and then snap. Its own game putting it somewhere else is now followed as soon as it is
+  clear (`toldJumped`), on foot and on a horse: the ghost is at the new place in the same report, and
+  `toldFollows` counts it.
 
 Over the same imitated link, the same ride: the copy's lag behind the position it was told fell from 1.57 m to
 0.56 m, the longest frame from 0.53 m to 0.45 m, and carries its rider's own speed cannot explain from one or
