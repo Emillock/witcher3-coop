@@ -441,6 +441,7 @@ statemachine class W3T_Bot
     public var scenarioSeenAt : float;   // when it last saw an enemy
     public var scenarioFarSince : float; // since when its target has been out of reach
     public var scenarioPos : Vector;     // where it stood when it last moved (stuck checks)
+    public var scenarioFrom : Vector;    // ...and a second such place, for a scenario that tracks two
     public var scenarioValue : float;
     public var dialogsAnswered : int;    // system dialogs this bot answered (party_invite checks one was asked)
     public var scenarioName : name;
@@ -734,21 +735,33 @@ var w3t_horseDriveUntil : float;
 @addField(CR4Game)
 var w3t_horseDriveTo : Vector;
 
+// ask for the gait the gallop key asks for, not the trot that holding forward alone gives
+@addField(CR4Game)
+var w3t_horseDriveFast : bool;
+
 @addMethod(CR4Game)
-function W3T_DriveHorse(seconds : float)
+function W3T_DriveHorse(seconds : float, optional fast : bool)
 {
     var nowhere : Vector;
 
     w3t_horseDriveUntil = theGame.GetEngineTimeAsSeconds() + seconds;
     w3t_horseDriveTo = nowhere;
+    w3t_horseDriveFast = fast;
 }
 
 @addMethod(CR4Game)
-function W3T_DriveHorseTowards(seconds : float, spot : Vector)
+function W3T_DriveHorseTowards(seconds : float, spot : Vector, optional fast : bool)
 {
     w3t_horseDriveUntil = theGame.GetEngineTimeAsSeconds() + seconds;
     spot.W = 1;
     w3t_horseDriveTo = spot;
+    w3t_horseDriveFast = fast;
+}
+
+@addMethod(CR4Game)
+function W3T_HorseDrivingFast() : bool
+{
+    return w3t_horseDriveFast && W3T_HorseDriving();
 }
 
 @addField(CR4Game)
@@ -791,12 +804,52 @@ function W3T_HorseStick(reference : float) : Vector
     return VecFromHeading(AngleDistance(VecHeading(towards), reference));
 }
 
+// What holding the gallop key does, from inside the state that would have read it. The lock it takes is what
+// keeps a horse galloping while the key is held - but that same lock is what stops the stick raising the speed
+// at all, so it is taken only once the stick has the horse trotting, which is the order a rider does it in
+// too. Everything else is the game's own: a horse that may not canter here still will not.
+@addField(W3HorseComponentStateExploration)
+var w3t_gallopHeld : bool;
+
+@addMethod(W3HorseComponentStateExploration)
+function W3T_HoldGallop(hold : bool)
+{
+    if(!hold)
+    {
+        if(w3t_gallopHeld)
+        {
+            w3t_gallopHeld = false;
+            ToggleSpeedLock('OnGallop', false);
+        }
+        return;
+    }
+    if(w3t_gallopHeld)
+    {
+        // It has come to a stand under the lock - walked into something, or turning right around. Nothing can
+        // raise its speed again while the lock is on, so let go, as a rider would, and spur it afresh below.
+        if(currSpeed < TROT_SPEED)
+        {
+            w3t_gallopHeld = false;
+            ToggleSpeedLock('OnGallop', false);
+        }
+        return;
+    }
+    if(IsSpeedLocked() || currSpeed < TROT_SPEED || dismountRequest || !IsHorseControllable() || !OnCanCanter())
+    {
+        return;
+    }
+    w3t_gallopHeld = true;
+    GallopPressed();
+    SpursKick();
+}
+
 @wrapMethod(W3HorseComponentStateExploration)
 function ProcessControlInput(lr : float, fb : float, timeDelta : float, useLocalSpace : bool)
 {
     var stick : Vector;
     var reference : float;
 
+    W3T_HoldGallop(theGame.W3T_HorseDrivingFast());
     if(theGame.W3T_HorseDriving())
     {
         if(useLocalSpace)
@@ -817,6 +870,7 @@ function ProcessControlInput(lr : float, fb : float, timeDelta : float, useLocal
                 + " movable=" + thePlayer.GetIsMovable() + " restriction=" + FloatToStringPrec(speedRestriction, 1)
                 + "/" + FloatToStringPrec(speedRestriction2, 1) + " dest=" + FloatToStringPrec(destSpeed, 1)
                 + " curr=" + FloatToStringPrec(currSpeed, 1) + " locked=" + IsSpeedLocked()
+                + " gallopHeld=" + w3t_gallopHeld
                 + " dismount=" + dismountRequest + " localSpace=" + useLocalSpace);
         }
     }

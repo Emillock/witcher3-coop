@@ -12,6 +12,7 @@ with an earlier one.
 | `python run_test.py see_each_other` | Starts a local server and two games driven by the bot. They must spawn each other. |
 | `python run_test.py movement [--relay]` | One bot walks while the other checks that its copy follows. `--relay` sends the second bot through w3relay over mock Steam. |
 | `python run_test.py horse_ride` | One bot calls its horse, mounts it and rides, then gets off and walks away; the other checks that its copy sits on Witcher Online's horse for remote riders, that the horse follows, and that it stays in sight where it was left. `W3T_HORSE_PARTY=1`: in a party. |
+| `python run_test.py rider_sync` | One bot really rides - mounts, spurs to a gallop and rides out and back, with no teleport in it (`W3T_DriveHorseTowards(..., fast)`); the other stands by the way and judges the ride it is shown. It fails the moment the copy is carried faster than its rider's own speed explains (twice it, floor 6 m/s), and needs 40 m of travel before it will pass, so a scenario where nothing moved passes nothing. `W3T_CARRY_REACH` / `W3T_CARRY_SLIDE` set the two numbers the carry is bounded by, for measuring one setting against another. |
 | `python run_test.py social` | One bot chats and makes two emotes (wave, bow); the other checks that the line shows over its copy and each emote plays on it. |
 | `python run_test.py shared_enemy` | Shared enemies ([design](docs/true-coop-design.md)). The second bot joins the first one's party. The first spawns a drowner; the second hits its copy three times. Both must agree on its health, and the copy must die when the first bot kills it. |
 | `python run_test.py enemy_attacks [--monster PATH]` | The leader's drowner attacks the member's ghost: its puppet attacks too and the hits land on the member, after the member's own armor. `W3T_DIRECT_EFFECTS=N` also waits for N effects its attacks apply without a hit (the member is then hit but never killed). |
@@ -140,8 +141,38 @@ where it was, never on how it got there or on what it left behind. Every run now
   could close is counted (`puppetsSnapped`) and logged (`SYNC PJ`). `puppet_follow` fails on any of them, since
   being carried closes the gap just as well as walking and used to score better.
 
-The measurements that go with this, over a nest fight on 5.0.0.1090142: the longest a copy was carried in one
-frame fell from 4.4 m to 1.2 m, hard snaps from one or more per fight to none (and none at all over a whole
+### What a copy of a *player* is judged on
+
+A remote player's character is moved the same way a copy of a monster is, and had the same two faults. The
+figures are on `r_RemotePlayer` and the `rider_sync` watcher prints them: `carryStep` (the fastest that
+character was seen to move here, m/s), `carryFar` (the longest single frame of it, m), `carryJumps` and
+`putBacks`. `SYNC RJ` logs each jump with the frame, the allowance, the gap and how long ago its own game last
+put it somewhere else.
+
+- **The horse appeared further along.** Its copy was slid to the last position heard in one adjustment of
+  0.4 s, re-issued every frame: a gap of a metre or two - all that jitter or one lost packet costs - was closed
+  in a single frame. Measured over a 150 ms + 60 ms link with 5% loss, a galloping rider's copy was carried
+  0.53 m in 23 ms, 22.8 m/s, while the horse itself was doing 6.4 and the position this world was told had not
+  moved at all. It is now asked to go no further in one frame than its own riding would carry it
+  (`withinReach`, three quarters of what the tests forgive).
+- **A bounded slide then crept.** Bounding the aim alone made it worse, not better: the adjustor lands only
+  part of a slide before the next frame cancels it and asks again, so a slide given 0.4 s to cover one frame's
+  worth of ground delivered about a fifth of it, and the copy fell 25 m behind a galloping rider. The slide is
+  given the frame it was bounded for (`carryDuration`), and the two together are what work.
+- **The allowance has to follow the ride, not the instant.** A horse reined in drops from a gallop to a trot
+  between one frame and the next while its copy still has the gallop's ground to make up, so what counts as its
+  own speed falls off no faster than a horse pulls up (6 m/s per second).
+- **A player whose own game put them somewhere else** - fast travel, a quest, a test lifting a wedged horse out
+  - has to appear here too, and no count of jumps may include that. A step is compared with how far the
+  position this world was told moved, over a moment rather than within one frame, since the body follows a
+  frame or two behind the word of it.
+
+Over the same imitated link, the same ride: the copy's lag behind the position it was told fell from 1.57 m to
+0.56 m, the longest frame from 0.53 m to 0.45 m, and carries its rider's own speed cannot explain from one or
+more per ride to none. A boat and a polymorph still slide the old way - nothing here measures either of them.
+
+The measurements that go with the monsters, over a nest fight on 5.0.0.1090142: the longest a copy was carried
+in one frame fell from 4.4 m to 1.2 m, hard snaps from one or more per fight to none (and none at all over a whole
 filmed session), and bodies left standing from every one of them to none. `carried` and `animated` are m/s over
 whole frames; ticks shorter than a frame are left out, since the engine has not moved the body since the last
 look and counting them turns one frame's step into several times the figure. The two are kept apart because an

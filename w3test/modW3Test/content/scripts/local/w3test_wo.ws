@@ -244,6 +244,19 @@ function W3T_ScenarioCheck(bot : W3T_Bot) : bool
         return W3T_HorseWatcher(bot, players[0]);
     }
 
+    if(scenario == "rider_sync")
+    {
+        if(W3T_GetEnv("W3T_ROLE") == "mover")
+        {
+            return W3T_RiderSyncRider(bot);
+        }
+        if(ghosts < 1)
+        {
+            return false;
+        }
+        return W3T_RiderSyncWatcher(bot, players[0]);
+    }
+
     if(scenario == "shared_enemy")
     {
         if(W3T_GetEnv("W3T_ROLE") == "mover")
@@ -1094,6 +1107,182 @@ function W3T_HorseRider(bot : W3T_Bot) : bool
         W3T_Log("HORSE ride " + bot.scenarioCount + " to " + W3T_VecStr(target) + " mounted=" + thePlayer.IsUsingHorse());
     }
     return false;
+}
+
+// rider_sync, the rider: gets on its horse and rides, out to a spot some way off and back to where it
+// started, over and over, for as long as the scenario runs. No teleport anywhere in it - this is the one
+// scenario in which the horse crosses the ground the way a player's does, which is what the watcher judges.
+function W3T_RiderSyncRider(bot : W3T_Bot) : bool
+{
+    var horse : CNewNPC;
+    var here, aim : Vector;
+    var leg : float;
+
+    if(!thePlayer.IsUsingHorse())
+    {
+        if(bot.ElapsedS() - bot.scenarioTime >= 5.0)
+        {
+            bot.scenarioTime = bot.ElapsedS();
+            InstantMountPlayer('None', EVT_Horse, false, false);
+            W3T_Log("RIDE mount");
+        }
+        return false;
+    }
+    horse = thePlayer.GetHorseCurrentlyMounted();
+    if(!horse)
+    {
+        return false;
+    }
+    here = horse.GetWorldPosition();
+    if(!bot.scenarioFlag)
+    {
+        bot.scenarioFlag = true;
+        bot.scenarioPos = here;      // home: every leg ends back here, so the watcher never loses sight
+        bot.scenarioFrom = here;
+        bot.scenarioActAt = bot.ElapsedS();
+        bot.scenarioTime = 0;
+        W3T_Log("RIDE home " + W3T_VecStr(here));
+        return false;
+    }
+
+    leg = bot.ElapsedS() - bot.scenarioTime;
+    // stuck: the horse has not moved for three seconds, so this way is no way
+    if(VecDistance2D(here, bot.scenarioFrom) > 1.0)
+    {
+        bot.scenarioFrom = here;
+        bot.scenarioActAt = bot.ElapsedS();
+    }
+    // Wedged: a horse that has gone nowhere for ten seconds is pushing into scenery that the ground it
+    // stands on knows nothing about, and no choice of heading will free it. It is lifted onto open ground -
+    // which its copy is meant to follow, and does, because a copy only jumps when it moves further than the
+    // position it was told (measureCarry).
+    if(bot.ElapsedS() - bot.scenarioActAt > 10.0)
+    {
+        aim = W3T_WalkableSpot(bot.scenarioPos, 10.0);
+        if(aim.W != 0)
+        {
+            horse.Teleport(aim);
+            thePlayer.Teleport(aim);
+            W3T_Log("RIDE wedged at " + W3T_VecStr(here) + "; lifted onto " + W3T_VecStr(aim));
+        }
+        bot.scenarioFrom = aim;
+        bot.scenarioActAt = bot.ElapsedS();
+        bot.scenarioTime = 0;
+        return bot.scenarioCount >= 2;
+    }
+    // a new leg when the last one is ridden out, when its time is up, or when it got nowhere
+    if(bot.scenarioTime == 0 || leg > 16.0 || (leg > 2.0 && VecDistance2D(here, bot.scenarioVec) < 5.0)
+        || (leg > 4.0 && bot.ElapsedS() - bot.scenarioActAt > 3.0))
+    {
+        bot.scenarioFrom = here;
+        bot.scenarioCount += 1;
+        bot.scenarioTime = bot.ElapsedS();
+        // out and back, so the watcher never loses sight of it; and always back once it has gone far
+        if(bot.scenarioCount % 2 == 1 && VecDistance2D(here, bot.scenarioPos) < 45.0)
+        {
+            aim = W3T_WalkableSpot(here, 35.0);
+            if(aim.W == 0)
+            {
+                aim = W3T_WalkableSpot(here, 22.0);
+            }
+            if(aim.W == 0)
+            {
+                aim = W3T_WalkableSpot(here, 12.0);
+            }
+        }
+        if(aim.W == 0)
+        {
+            aim = bot.scenarioPos;   // home, which carried a horse when it set out
+            aim.W = 1;
+        }
+        bot.scenarioVec = aim;
+        theGame.W3T_DriveHorseTowards(17.0, aim, true);
+        W3T_Log("RIDE leg " + bot.scenarioCount + " from " + W3T_VecStr(here) + " to " + W3T_VecStr(aim));
+    }
+    W3T_Log("RIDE at " + W3T_VecStr(here) + " canter=" + thePlayer.GetUsedHorseComponent().inCanter
+        + " gallop=" + thePlayer.GetUsedHorseComponent().inGallop
+        + " speed " + FloatToStringPrec(VecLength2D(horse.GetMovingAgentComponent().GetVelocity()), 1)
+        + " m/s, leg " + bot.scenarioCount + " " + FloatToStringPrec(VecDistance2D(here, bot.scenarioVec), 1) + " m to go");
+    // the rider only has to keep riding; the verdict is the watcher's
+    return bot.scenarioCount >= 2;
+}
+
+// rider_sync, the watcher: stands by the way and measures the ride it is shown. A copy of a rider is moved by
+// what its game says over the link, and how that is turned into movement here is the whole question: does the
+// horse cross the ground, or does it appear further along? measureCarry (remotePlayer.ws) counts the frames
+// that cover more than any travel could; this fails on the first of them.
+function W3T_RiderSyncWatcher(bot : W3T_Bot, peer : r_RemotePlayer) : bool
+{
+    var horsePos, spot : Vector;
+    var rot : EulerAngles;
+    var gap : float;
+
+    if(!peer.ghost || !peer.isMounted || !peer.horse)
+    {
+        return false;
+    }
+    horsePos = peer.horse.GetWorldPosition();
+
+    // one vantage, taken once: a watcher that keeps jumping about moves nothing of the rider's, but it does
+    // make the copy spawn again, and a copy that has just appeared has no stride to measure
+    if(!bot.scenarioFlag)
+    {
+        if(theGame.GetWorld().NavigationFindSafeSpot(peer.pos + VecFromHeading(peer.heading + 90) * 14.0, 0.5, 4.0, spot))
+        {
+            rot.Yaw = VecHeading(peer.pos - spot);
+            thePlayer.TeleportWithRotation(spot, rot);
+        }
+        bot.scenarioFlag = true;
+        bot.scenarioTime = bot.ElapsedS();
+        return false;
+    }
+    // the copy settles where it belongs first: the attaching and the streaming are not the ride
+    if(bot.ElapsedS() - bot.scenarioTime < 3.0)
+    {
+        return false;
+    }
+    if(!bot.scenarioFlag2)
+    {
+        bot.scenarioFlag2 = true;
+        bot.scenarioPos = horsePos;
+        // W3T_CARRY_REACH / W3T_CARRY_SLIDE: the two numbers the carry is bounded by, for measuring one
+        // setting against another without a rebuild
+        if(W3T_GetEnv("W3T_CARRY_REACH") != "")
+        {
+            peer.carryReach = StringToFloat(W3T_GetEnv("W3T_CARRY_REACH"), 0.75);
+        }
+        if(W3T_GetEnv("W3T_CARRY_SLIDE") != "")
+        {
+            peer.carrySlide = StringToFloat(W3T_GetEnv("W3T_CARRY_SLIDE"), 1.0);
+        }
+        W3T_Log("RIDE reach " + FloatToStringPrec(peer.carryReach, 2) + " of the allowance, slide "
+            + FloatToStringPrec(peer.carrySlide, 2) + " frames");
+        peer.clearCarry();
+        W3T_Log("RIDE watching from " + W3T_VecStr(thePlayer.GetWorldPosition()) + ", its horse at " + W3T_VecStr(horsePos));
+        return false;
+    }
+
+    // how far the copy has been seen to travel, tick by tick: a scenario that measured nothing passes nothing
+    gap = VecDistance2D(horsePos, bot.scenarioPos);
+    if(gap > 0.05)
+    {
+        bot.scenarioValue += gap;
+        bot.scenarioPos = horsePos;
+    }
+    W3T_Log("RIDE copy at " + W3T_VecStr(horsePos) + " travelled " + FloatToStringPrec(bot.scenarioValue, 1)
+        + " m, behind its own position by " + FloatToStringPrec(VecDistance2D(horsePos, peer.pos), 2)
+        + " m, fastest carry " + FloatToStringPrec(peer.carryStep, 1) + " m/s against "
+        + FloatToStringPrec(peer.CarryAllowed(), 1) + " allowed, jumps " + peer.carryJumps
+        + ", longest frame " + FloatToStringPrec(peer.carryFar, 2) + " m, put back " + peer.putBacks
+        + ", heard every " + FloatToStringPrec(peer.posPeriod, 3) + " s");
+    if(peer.carryJumps > 0)
+    {
+        W3T_FailScenario("the copy of a rider was carried faster than its ride explains " + peer.carryJumps
+            + " times: up to " + FloatToStringPrec(peer.carryStep, 1) + " m/s, " + FloatToStringPrec(peer.carryFar, 2)
+            + " m in one frame, while its own horse was doing " + FloatToStringPrec(peer.horseSpeed, 1) + " m/s");
+        return false;
+    }
+    return bot.scenarioValue >= 40.0;
 }
 
 // a horse of the kind the player rides, standing where it is put (the film's loose horse)
