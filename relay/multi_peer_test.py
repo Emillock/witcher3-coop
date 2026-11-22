@@ -117,7 +117,7 @@ def main():
             stack.callback(stop_relay, process)
             return process, d
 
-        def launch_guest(name, steam_id, preferred_port=None):
+        def launch_guest(name, steam_id, preferred_port=None, directory_prefix=None):
             # The port is free when selected, but another process may bind it before the relay.
             # Retry only that bind failure; do not mask unrelated startup failures.
             for attempt in range(4):
@@ -128,7 +128,7 @@ def main():
                         port = reservation.getsockname()[1]
                 guest, directory = launch(name, steam_id,
                                           ["join", "--local-port", str(port)],
-                                          f"{name}-attempt-{attempt}")
+                                          f"{directory_prefix or name}-attempt-{attempt}")
                 try:
                     wait_for_log(guest, directory, "Joined ")
                 except RuntimeError:
@@ -160,7 +160,8 @@ def main():
             print("Surviving players exchanged packets until the crashed guest timed out.")
 
             # A fresh relay with the same Steam identity must be accepted again.
-            guest, port = launch_guest("Guest1", 1002, preferred_port=guest_game[1][1])
+            guest, port = launch_guest("Guest1", 1002, preferred_port=guest_game[1][1],
+                                       directory_prefix="Guest1-returned")
             clients[b"guest1"] = (guest_game[0], ("127.0.0.1", port))
             rejoined = exchange(server, clients, first_round=seq)
             if any(rejoined[name] != endpoint for name, endpoint in survivors.items()):
