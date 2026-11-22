@@ -108,16 +108,36 @@ def main():
         os.makedirs(mock_dir)
         server = stack.enter_context(udp_socket())
         local_game = stack.enter_context(udp_socket())
-        # Reserve two distinct ports until their join relays are ready to bind them.
-        reserved = [stack.enter_context(udp_socket()) for _ in range(2)]
         dirs = []
 
-        def launch(name, steam_id, args):
-            d = relay_dir(root, name)
+        def launch(name, steam_id, args, directory_name=None):
+            d = relay_dir(root, directory_name or name)
             dirs.append(d)
             process = start_relay(d, mock_dir, steam_id, name, args)
             stack.callback(stop_relay, process)
             return process, d
+
+        def launch_guest(name, steam_id, preferred_port=None):
+            # The port is free when selected, but another process may bind it before the relay.
+            # Retry only that bind failure; do not mask unrelated startup failures.
+            for attempt in range(4):
+                if attempt == 0 and preferred_port is not None:
+                    port = preferred_port
+                else:
+                    with udp_socket() as reservation:
+                        port = reservation.getsockname()[1]
+                guest, directory = launch(name, steam_id,
+                                          ["join", "--local-port", str(port)],
+                                          f"{name}-attempt-{attempt}")
+                try:
+                    wait_for_log(guest, directory, "Joined ")
+                except RuntimeError:
+                    log = (Path(directory) / "relay.log").read_text(encoding="utf-8", errors="replace")
+                    if guest.poll() is None or "Could not bind UDP port" not in log:
+                        raise
+                    continue
+                return guest, port
+            raise RuntimeError(f"{name}: could not find a free local UDP port")
 
         try:
             host, d = launch("Host", 1001, ["host", "--server-port", str(server.getsockname()[1]), "--no-invite"])
@@ -125,13 +145,10 @@ def main():
             host_dir = d
             clients = {b"host": (local_game, server.getsockname())}
             guests = []
-            for i, reservation in enumerate(reserved, 1):
-                port = reservation.getsockname()[1]
-                reservation.close()
-                guest, d = launch(f"Guest{i}", 1001 + i, ["join", "--local-port", str(port)])
-                guests.append(guest)
+            for i in range(1, 3):
                 # Join in sequence; the mock stores membership in a shared file.
-                wait_for_log(guest, d, "Joined ")
+                guest, port = launch_guest(f"Guest{i}", 1001 + i)
+                guests.append(guest)
                 clients[f"guest{i}".encode()] = (stack.enter_context(udp_socket()), ("127.0.0.1", port))
             endpoints = exchange(server, clients)
             print(f"20 echoes per player, distinct server endpoints: {endpoints}")
@@ -143,9 +160,8 @@ def main():
             print("Surviving players exchanged packets until the crashed guest timed out.")
 
             # A fresh relay with the same Steam identity must be accepted again.
-            guest, d = launch("Guest1-returned", 1002, ["join", "--local-port", str(guest_game[1][1])])
-            wait_for_log(guest, d, "Joined ")
-            clients[b"guest1"] = guest_game
+            guest, port = launch_guest("Guest1", 1002, preferred_port=guest_game[1][1])
+            clients[b"guest1"] = (guest_game[0], ("127.0.0.1", port))
             rejoined = exchange(server, clients, first_round=seq)
             if any(rejoined[name] != endpoint for name, endpoint in survivors.items()):
                 raise RuntimeError("a surviving player changed its UDP endpoint after rejoin")
