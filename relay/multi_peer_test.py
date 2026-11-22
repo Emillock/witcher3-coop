@@ -1,4 +1,5 @@
 # One host and two guests over mock Steam, without Java or the game.
+import argparse
 import contextlib
 import os
 import select
@@ -103,6 +104,9 @@ def wait_for_departure(server, clients, endpoints, host, directory):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check-port-retry", action="store_true")
+    args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="w3relay-multi-") as root, contextlib.ExitStack() as stack:
         mock_dir = os.path.join(root, "mocksteam")
         os.makedirs(mock_dir)
@@ -147,9 +151,19 @@ def main():
             guests = []
             for i in range(1, 3):
                 # Join in sequence; the mock stores membership in a shared file.
-                guest, port = launch_guest(f"Guest{i}", 1001 + i)
+                # Deliberately choose the occupied echo server port for the first guest
+                # in the retry regression: the relay must recover with a fresh port.
+                preferred = server.getsockname()[1] if args.check_port_retry and i == 1 else None
+                guest, port = launch_guest(f"Guest{i}", 1001 + i, preferred_port=preferred)
                 guests.append(guest)
                 clients[f"guest{i}".encode()] = (stack.enter_context(udp_socket()), ("127.0.0.1", port))
+            if args.check_port_retry:
+                failed_binds = sum("Could not bind UDP port" in (Path(d) / "relay.log").read_text(
+                    encoding="utf-8", errors="replace") for d in dirs)
+                if failed_binds != 1:
+                    raise RuntimeError(f"expected exactly one failed port bind, got {failed_binds}")
+                print("Occupied port was retried successfully.")
+
             endpoints = exchange(server, clients)
             print(f"20 echoes per player, distinct server endpoints: {endpoints}")
             # Kill one relay without sending "bye", as on a crash or lost connection.

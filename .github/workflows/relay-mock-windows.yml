@@ -24,4 +24,4 @@ jobs:
       - name: Exercise single guest and intruder rejection
         run: python relay/selftest.py
       - name: Exercise two guests, timeout and rejoin
-        run: python relay/multi_peer_test.py
+        run: python relay/multi_peer_test.py --check-port-retry
