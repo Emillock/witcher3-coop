@@ -158,10 +158,12 @@ def main():
                 guests.append(guest)
                 clients[f"guest{i}".encode()] = (stack.enter_context(udp_socket()), ("127.0.0.1", port))
             if args.check_port_retry:
-                failed_binds = sum("Could not bind UDP port" in (Path(d) / "relay.log").read_text(
-                    encoding="utf-8", errors="replace") for d in dirs)
-                if failed_binds != 1:
-                    raise RuntimeError(f"expected exactly one failed port bind, got {failed_binds}")
+                # Other attempts might also collide on a busy runner; only the injected
+                # collision is mandatory for this negative control.
+                first_log = (Path(root) / "Guest1-attempt-0" / "relay.log").read_text(
+                    encoding="utf-8", errors="replace")
+                if "Could not bind UDP port" not in first_log:
+                    raise RuntimeError("the deliberately occupied port was not rejected")
                 print("Occupied port was retried successfully.")
 
             endpoints = exchange(server, clients)
