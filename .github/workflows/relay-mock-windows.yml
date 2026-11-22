@@ -3,7 +3,11 @@ name: Relay mock Steam tests (Windows)
 on:
   push:
     branches:
+      - main
       - test/relay-windows-ci
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
