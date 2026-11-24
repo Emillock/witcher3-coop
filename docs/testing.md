@@ -152,6 +152,19 @@ second and the figure that is judged, `carryStep` the fastest single frame, `car
 in metres, `carryJumps` the counted jumps, and `putBacks`/`toldFollows` how often it was put where its player
 stands and how many of those followed its player's own travel.
 
+Which body is measured follows what the mod actually slides: the polymorph if one is active, else the boat
+while sailing, else the horse while mounted, else the character on foot. A **passenger on another player's
+horse** is the one case left out - it is carried by that horse and steered nowhere by this code, and measuring
+it scored a ghost 12 m out of place for riding where its driver took it. A boat's and a polymorph's *movement*
+is still the old unbounded slide: nothing here can exercise it, because a boat's gear is changed by the engine
+from input and `CBoatComponent` exposes only getters, so a bot cannot sail. The figures are collected anyway,
+for a real session to answer with.
+
+An **animation of the player's own** moving its character here - a dodge or a roll covers metres by root motion
+- is that player's movement, so while one plays the allowance rises to what root motion accounts for
+(`carryAnimStep`). Not a blanket excuse: the ghost is nearly always playing something, idle loops included, and
+taking every animated frame as the animation's work hid a 20 m put-back behind a reading of 590 m/s.
+
 A **frame** is not what an eye catches, and the per-frame step swings by its own width for reasons that are not
 this world's doing: positions arrive every 40 ms while frames come every 31, so some frames get none and the
 next gets two, and the body's own gallop animation moves it in strides. So a jump is either an outright
@@ -177,6 +190,20 @@ put it somewhere else.
   - has to appear here too, and no count of jumps may include that. A step is compared with how far the
   position this world was told moved, over a moment rather than within one frame, since the body follows a
   frame or two behind the word of it.
+- **A monster in the water is the commonest flake there is.** Four scenarios put their monster blindly six or
+  three metres in front of the leader, so whenever the leader happened to be facing water it landed in it -
+  measured at 3.76 m under the surface, where it sits at full health for ever while the scenario waits out its
+  whole duration for a fight that cannot start. Every `hp=1 start=1` in a log was this (`hp` there is a
+  *fraction*, so 1 is full health, not one hit point). `W3T_DrySpotAhead` looks for navigable ground above the
+  water line, straight ahead first and then wider to either side; `W3T_Submersion` names the figure. That then
+  exposed the other half of it, which `igni_damage`'s own diagnostic stated outright - 149 casts at 7.1 m with
+  the leader never in combat - since Igni's cone falls short of seven metres and the dry search can place a
+  monster further out than the fixed six metres did. The caster steps to 3.5 m first: 5 casts, burning, in
+  combat, health falling.
+- **A scenario that does not tidy up hands the next one its mess.** `rider_sync` rode on for as long as it
+  ran, leaving a leader mounted forty metres away, and `kill_loot` after it spent its whole duration swinging
+  at a copy it could never reach (`hits=0 sent=0`). It returns home, dismounts and stands still after four
+  legs.
 - **And it followed a second late.** Measuring that turned up 366 carries of one shape over a suite run: the
   position told moved 16.7 m, 1.07 s earlier, and the body arrived exactly on it now. That second is the
   off-place timer - a slide cannot climb out of the water under a pier, so after a second the character is
