@@ -1672,7 +1672,12 @@ function W3T_SharedEnemyLeader(bot : W3T_Bot, coop : r_CoopEnemies) : bool
         }
         // the cheat channel: combat code resets the default one
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
-        pos = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 6.0;
+        pos = W3T_DrySpotAhead(6.0);
+        if(pos.W == 0)
+        {
+            W3T_Log("ENEMY nowhere dry within 6 m to put a monster; it goes straight ahead, "
+                + FloatToStringPrec(W3T_Submersion(pos), 2) + " m under water");
+        }
         rot = thePlayer.GetWorldRotation();
         bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
         drowner = (CNewNPC)bot.scenarioEntity;
@@ -1890,6 +1895,50 @@ function W3T_WalkableSpot(from : Vector, range : float) : Vector
     }
     spot.W = 0;
     return spot;
+}
+
+// Dry ground the navigation knows, about this far in front of the player: somewhere a monster can be put
+// and then fought. Spawning blindly ahead puts it in the water whenever the leader happens to be facing water,
+// and a drowner 3.8 m under the surface sits at full health for ever while the scenario waits out its whole
+// duration for a fight that cannot start - 330 s of a suite run, and the commonest flake there is. Straight
+// ahead is tried first, then wider and wider to either side, so a spawn still lands where the leader looks
+// whenever that works.
+function W3T_DrySpotAhead(metres : float) : Vector
+{
+    var from, spot, safe : Vector;
+    var heading, offset : float;
+    var i : int;
+
+    from = thePlayer.GetWorldPosition();
+    heading = thePlayer.GetHeading();
+    for(i = 0; i < 12; i += 1)
+    {
+        offset = 0;
+        if(i > 0)
+        {
+            offset = ((i + 1) / 2) * 30.0;
+            if(i % 2 == 0)
+            {
+                offset = -offset;
+            }
+        }
+        spot = from + VecFromHeading(heading + offset) * metres;
+        if(theGame.GetWorld().NavigationFindSafeSpot(spot, 0.5, 3.0, safe)
+            && theGame.GetWorld().GetWaterLevel(safe, true) - safe.Z < 0.5)
+        {
+            safe.W = 1;
+            return safe;
+        }
+    }
+    spot = from + VecFromHeading(heading) * metres;
+    spot.W = 0;      // nowhere dry within reach: straight ahead, as before, and the caller says so
+    return spot;
+}
+
+// how deep this spot is under water (negative above it)
+function W3T_Submersion(at : Vector) : float
+{
+    return theGame.GetWorld().GetWaterLevel(at, true) - at.Z;
 }
 
 // Ground a character can stand on, without asking whether it can walk there in a straight line: for a
@@ -2194,7 +2243,7 @@ function W3T_AttackViewLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
             thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
         }
         rot.Yaw = thePlayer.GetHeading() + 180;
-        bot.scenarioEntity = theGame.CreateEntity(template, thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0,
+        bot.scenarioEntity = theGame.CreateEntity(template, W3T_DrySpotAhead(3.0),
             rot, true, false, false, PM_DontPersist);
         npc = (CNewNPC)bot.scenarioEntity;
         npc.SetAttitude(thePlayer, AIA_Hostile);
@@ -2685,7 +2734,7 @@ function W3T_SignCheck(bot : W3T_Bot) : bool
     if(bot.scenarioCount == 0)
     {
         template = (CEntityTemplate)LoadResource("characters\npc_entities\monsters\drowner_lvl1.w2ent", true);
-        pos = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0;
+        pos = W3T_DrySpotAhead(3.0);
         bot.scenarioEntity = theGame.CreateEntity(template, pos, rot, true, false, false, PM_DontPersist);
         ((CNewNPC)bot.scenarioEntity).SetImmortalityMode(AIM_Immortal, AIC_Default);
         thePlayer.SetImmortalityMode(AIM_Invulnerable, AIC_Cheat, true);
@@ -4144,6 +4193,7 @@ function W3T_IgniDamageLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
 {
     var monster : CNewNPC;
     var rot : EulerAngles;
+    var castFrom : Vector;
 
     if(bot.scenarioCount < 2)
     {
@@ -4172,7 +4222,18 @@ function W3T_IgniDamageLeader(bot : W3T_Bot, coop : r_CoopEnemies, member : r_Re
         bot.scenarioActAt = bot.ElapsedS();
         W3T_LookAt(monster.GetWorldPosition());
         rot.Yaw = VecHeading(monster.GetWorldPosition() - thePlayer.GetWorldPosition());
-        thePlayer.TeleportWithRotation(thePlayer.GetWorldPosition(), rot);
+        // Within the sign's reach, not wherever the monster happened to be put: Igni's cone falls short of
+        // seven metres, and 149 casts from there set nothing alight and never even entered combat.
+        castFrom = thePlayer.GetWorldPosition();
+        if(VecDistance2D(castFrom, monster.GetWorldPosition()) > 4.5)
+        {
+            castFrom = monster.GetWorldPosition() - VecFromHeading(rot.Yaw) * 3.5;
+            if(!theGame.GetWorld().NavigationFindSafeSpot(castFrom, 0.5, 2.0, castFrom))
+            {
+                castFrom = thePlayer.GetWorldPosition();
+            }
+        }
+        thePlayer.TeleportWithRotation(castFrom, rot);
         thePlayer.GoToCombatIfNeeded(monster);
         GetWitcherPlayer().SetEquippedSign(ST_Igni);
         thePlayer.GainStat(BCS_Stamina, thePlayer.GetStatMax(BCS_Stamina));
@@ -6390,7 +6451,7 @@ function W3T_EnemySoundsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop
             W3T_Quit(2);
             return false;
         }
-        spot = thePlayer.GetWorldPosition() + VecFromHeading(thePlayer.GetHeading()) * 3.0;
+        spot = W3T_DrySpotAhead(3.0);
         mine = (CNewNPC)theGame.CreateEntity(template, spot, rot, true, false, false, PM_DontPersist);
         if(mine)
         {
@@ -7618,6 +7679,7 @@ function W3T_ReportExtra(bot : W3T_Bot)
         // own travel cannot account for. rider_sync fails on the last of these; every run carries the figures.
         line += " carry=" + FloatToStringPrec(players[i].carryRun, 1) + "/"
             + FloatToStringPrec(players[i].carryFar, 2) + " jumps=" + players[i].carryJumps
+            + " animated=" + FloatToStringPrec(players[i].carryAnimStep, 1)
             + " putBack=" + players[i].putBacks + "/" + players[i].toldFollows;
         line += "]";
     }
