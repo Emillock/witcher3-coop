@@ -5507,14 +5507,27 @@ function W3T_EffectsMember(bot : W3T_Bot, client : r_MultiplayerClient, coop : r
     }
     puppet = coop.PuppetAt(0);
     W3T_LookAt(puppet.GetWorldPosition());
-    // hypnosis, not confusion: confusion is one of the effects the leader gives, and on the copy the two are the
-    // same buff, so the leader's ending would take this one with it and nothing would count as dropped
-    if(!bot.scenarioFlag && coop.effectsMirrorEnded >= 5 && !puppet.HasBuff(EET_Hypnotized))
+    // Hypnosis, not confusion: confusion is one of the effects the leader gives, and on the copy the two are
+    // the same buff, so the leader's ending would take this one with it and nothing would count as dropped.
+    // The gate is that everything heard from the leader has ENDED, so nothing of its is live to collide with.
+    // Not a count of them: a gate of five opened while the leader was still part way through, two seconds
+    // after its confusion, and the hypnosis went with that confusion's ending - applied (EI_Pass) and then
+    // never seen active, so nothing was ever dropped. Nor the length of the list the leader works through,
+    // which was the next thing I tried: one of the six is regularly denied outright, so that gate never opens
+    // at all. And it tries again regardless, because the one thing being measured is that a local effect gets
+    // dropped, not that it survives whatever instant it was cast in.
+    if(coop.effectsMirrored >= 4 && coop.effectsMirrorEnded >= coop.effectsMirrored
+        && coop.localEffectsDropped < 1
+        && !puppet.HasBuff(EET_Hypnotized) && !puppet.HasBuff(EET_Confusion)
+        && bot.ElapsedS() - bot.scenarioActAt >= 4.0)
     {
         params.effectType = EET_Hypnotized;
         params.sourceName = "W3Test";
         params.duration = 10;
-        W3T_Log("EFFECTS member hypnotises the copy here only, for 10 s: result=" + (int)puppet.AddEffectCustom(params));
+        bot.scenarioActAt = bot.ElapsedS();
+        bot.scenarioStep += 1;
+        W3T_Log("EFFECTS member hypnotises the copy here only, for 10 s (try " + bot.scenarioStep
+            + "): result=" + (int)puppet.AddEffectCustom(params));
         bot.scenarioFlag = true;
     }
     W3T_Log("EFFECTS member localDropped=" + coop.localEffectsDropped + " mirrored=" + coop.effectsMirrored + " held=" + coop.effectsMirrorHeld + " ended=" + coop.effectsMirrorEnded
