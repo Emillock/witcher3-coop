@@ -1146,10 +1146,25 @@ function W3T_RiderSyncRider(bot : W3T_Bot) : bool
         return false;
     }
     here = horse.GetWorldPosition();
+    // Enough ridden: get off and stand still, back where it set out. A scenario that leaves its leader
+    // galloping forty metres away and still mounted hands the next one a fight it cannot reach - kill_loot
+    // spent its whole duration swinging at nothing after this one.
+    if(bot.scenarioFlag && bot.scenarioCount >= 4)
+    {
+        if(VecDistance2D(here, bot.scenarioPos) > 3.0 && bot.scenarioPos.W != 0)
+        {
+            horse.Teleport(bot.scenarioPos);
+            thePlayer.Teleport(bot.scenarioPos);
+        }
+        thePlayer.DismountVehicle(horse, DT_instant);
+        W3T_Log("RIDE done after " + bot.scenarioCount + " legs; off the horse at " + W3T_VecStr(bot.scenarioPos));
+        return true;
+    }
     if(!bot.scenarioFlag)
     {
         bot.scenarioFlag = true;
         bot.scenarioPos = here;      // home: every leg ends back here, so the watcher never loses sight
+        bot.scenarioPos.W = 1;
         bot.scenarioFrom = here;
         bot.scenarioActAt = bot.ElapsedS();
         bot.scenarioTime = 0;
