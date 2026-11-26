@@ -14,7 +14,10 @@ permissions:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    # Windows, not ubuntu: the harness modules these tests import reach for winreg to find
+    # Steam. config.py falls back to a path when no game is installed, so a runner without
+    # one is fine - but it cannot run on Linux at all.
+    runs-on: windows-2022
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
@@ -25,5 +28,5 @@ jobs:
         run: python -m pip install --disable-pip-version-check pytest==8.3.4
       # tests/test_package.py and tests/test_scene_inputs.py are left out on purpose:
       # they read the installed game through config.py, which no runner has.
-      - name: Run the tests that need neither the game nor Windows
+      - name: Run the tests that need no game
         run: python -m pytest -q tests/test_session_matrix.py tests/test_w3test_gwent.py
