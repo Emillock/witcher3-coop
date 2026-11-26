@@ -1,0 +1,29 @@
+name: Harness tests (no game)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check pytest==8.3.4
+      # tests/test_package.py and tests/test_scene_inputs.py are left out on purpose:
+      # they read the installed game through config.py, which no runner has.
+      - name: Run the tests that need neither the game nor Windows
+        run: python -m pytest -q tests/test_session_matrix.py tests/test_w3test_gwent.py
